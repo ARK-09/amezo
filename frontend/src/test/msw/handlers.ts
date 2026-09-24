@@ -1,10 +1,31 @@
 import { http, HttpResponse } from 'msw'
 
+import { consumeMagicLinkToken, issueMagicLinkToken } from './fixtures/sellerAuth'
 import { productDetails, reviewsFor } from './fixtures/productDetails'
 import { seedProducts } from './fixtures/products'
 import { variantOffers } from './fixtures/variants'
 
 export const handlers = [
+  http.post('http://localhost:8080/auth/seller/magic-link', async ({ request }) => {
+    const { email } = (await request.json()) as { email: string }
+    issueMagicLinkToken(email)
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post('http://localhost:8080/auth/seller/verify', async ({ request }) => {
+    const { token } = (await request.json()) as { token: string }
+    const session = consumeMagicLinkToken(token)
+    if (!session) {
+      return HttpResponse.json(
+        { type: 'https://api/errors/invalid-token', title: 'Invalid or expired token', status: 401 },
+        { status: 401 },
+      )
+    }
+    return HttpResponse.json(session)
+  }),
+
+  http.delete('http://localhost:8080/auth/seller/session', () => new HttpResponse(null, { status: 204 })),
+
   http.get('http://localhost:8080/variants', ({ request }) => {
     const url = new URL(request.url)
     const ids = (url.searchParams.get('ids') ?? '').split(',').filter(Boolean)

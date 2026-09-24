@@ -27,10 +27,16 @@ import java.util.List;
  *
  * Route table (see docs/api-design.md for the full endpoint list):
  *   public        - GET /products/**, POST /magic-links, POST /sessions,
- *                    POST /orders (guest checkout), the OpenAPI spec path
+ *                    POST /orders (guest checkout), the OpenAPI spec path,
+ *                    POST /auth/seller/magic-link, POST /auth/seller/verify
  *   either role   - GET/DELETE /sessions/current
  *   buyer only    - GET /orders/**, POST /reviews
- *   seller only   - /sellers/me/**, product/variant/image writes, order-line updates
+ *   seller only   - /sellers/me/**, product/variant/image writes, order-line
+ *                    updates, DELETE /auth/seller/session
+ *
+ * The /auth/seller/* trio is the seller-portal-specific magic-link flow
+ * (SellerAuthController) - see that class's own note on why it's a separate
+ * path prefix from the generic /magic-links + /sessions pair above.
  */
 @Configuration
 @EnableWebSecurity
@@ -53,6 +59,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/magic-links").permitAll()
                 .requestMatchers(HttpMethod.POST, "/sessions").permitAll()
                 .requestMatchers(HttpMethod.POST, "/orders").permitAll()
+                .requestMatchers(HttpMethod.POST, "/auth/seller/magic-link", "/auth/seller/verify").permitAll()
                 .requestMatchers("/v3/api-docs/**").permitAll()
                 // Spring's internal error dispatch, not a real route - without this,
                 // anyRequest().denyAll() masks every unhandled exception behind a 403
@@ -64,6 +71,8 @@ public class SecurityConfig {
 
                 .requestMatchers(HttpMethod.GET, "/orders/**").hasRole("BUYER")
                 .requestMatchers(HttpMethod.POST, "/reviews").hasRole("BUYER")
+
+                .requestMatchers(HttpMethod.DELETE, "/auth/seller/session").hasRole("SELLER")
 
                 .requestMatchers(HttpMethod.GET, "/sellers/me/**").hasRole("SELLER")
                 .requestMatchers(HttpMethod.POST, "/products").hasRole("SELLER")

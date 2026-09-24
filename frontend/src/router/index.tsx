@@ -1,7 +1,12 @@
 import { createBrowserRouter } from 'react-router'
 
+import { SellerPortalLayout } from '@/features/seller-portal/components/SellerPortalLayout'
 import { ProductDetail } from '@/pages/ProductDetail'
 import { SearchResults } from '@/pages/SearchResults'
+import { SellerOrders } from '@/pages/seller/SellerOrders'
+import { SellerProducts } from '@/pages/seller/SellerProducts'
+import { SellerSignIn } from '@/pages/seller/SellerSignIn'
+import { SellerVerify } from '@/pages/seller/SellerVerify'
 
 export const router = createBrowserRouter([
   {
@@ -11,5 +16,21 @@ export const router = createBrowserRouter([
   {
     path: '/products/:productId',
     element: <ProductDetail />,
+  },
+  {
+    path: '/seller/sign-in',
+    element: <SellerSignIn />,
+  },
+  {
+    path: '/seller/verify',
+    element: <SellerVerify />,
+  },
+  {
+    path: '/seller',
+    element: <SellerPortalLayout />,
+    children: [
+      { path: 'products', element: <SellerProducts /> },
+      { path: 'orders', element: <SellerOrders /> },
+    ],
   },
 ])
