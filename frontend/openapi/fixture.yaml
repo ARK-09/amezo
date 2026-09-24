@@ -102,6 +102,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  # Proposed contract only - no backend implementation exists yet (added for the cart drawer's batch fetch).
   /variants:
     get:
       operationId: getVariantsByIds

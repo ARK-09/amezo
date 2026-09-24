@@ -78,6 +78,8 @@ Schema keeps `offer` separate from `variant`; the DTO/projection layer joins the
 
 `GET /products/{productId}/reviews` — public, paginated, `Page<Review>` where `Review: { id, rating, body, variantLabel, createdAt, reviewerFirstName }`.
 
+`GET /variants?ids=...` — **proposed, not yet implemented.** Added by the cart-drawer frontend work as the batch-fetch contract a cart drawer needs (one call to re-price/re-check every line by variant id on open), not by any backend change. `ids` is a comma-separated list of variant ids; the response is a flat array of the same offer-flattened-onto-variant shape as `variants[]` above (`{ id, productId, productTitle, variantLabel, thumbnailUrl, price, stockQty }`); ids that don't exist are simply omitted from the response rather than erroring. No Spring controller implements this yet — see `frontend/openapi/fixture.yaml` for the placeholder contract the frontend codegens against in the meantime. Relatedly, despite being documented above, `GET /products/{productId}` itself is also not yet implemented in the backend: only `GET /products` with `q` is currently wired end-to-end (see `ProductController.java`), so the flattening example above doesn't reflect working code today.
+
 ## Images — presigned upload + confirm
 
 No standard REST shape for "get me a place to PUT a file, then tell the server it arrived." Resolution uses the resource's own state field rather than a verb in the path:
