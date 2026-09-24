@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
+import { CartProvider } from '@/features/cart/context/CartContext'
 import { server } from '@/test/msw/server'
 
 import { SearchResults } from './SearchResults'
@@ -15,9 +16,11 @@ function renderPage(initialEntry = '/') {
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <SearchResults />
-      </MemoryRouter>
+      <CartProvider>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <SearchResults />
+        </MemoryRouter>
+      </CartProvider>
     </QueryClientProvider>,
   )
 }
@@ -78,5 +81,20 @@ describe('SearchResults', () => {
     expect(
       screen.getByLabelText('Remove In stock only filter'),
     ).toBeInTheDocument()
+  })
+
+  it('adds the default variant to the cart from the product card', async () => {
+    renderPage()
+    await screen.findByText('Wireless Noise-Cancelling Headphones')
+
+    const [firstCardButton] = screen.getAllByRole('button', { name: 'Add to cart' })
+    await userEvent.click(firstCardButton)
+
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem('cart:v1') ?? '[]')
+      expect(stored).toEqual([
+        { variantId: '11111111-1111-1111-1111-111111111111-v1', quantity: 1, priceWhenAdded: 129.99 },
+      ])
+    })
   })
 })

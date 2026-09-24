@@ -2,8 +2,16 @@ import { http, HttpResponse } from 'msw'
 
 import { productDetails, reviewsFor } from './fixtures/productDetails'
 import { seedProducts } from './fixtures/products'
+import { variantOffers } from './fixtures/variants'
 
 export const handlers = [
+  http.get('http://localhost:8080/variants', ({ request }) => {
+    const url = new URL(request.url)
+    const ids = (url.searchParams.get('ids') ?? '').split(',').filter(Boolean)
+    const found = ids.map((id) => variantOffers[id]).filter((offer) => offer !== undefined)
+    return HttpResponse.json(found)
+  }),
+
   http.get('http://localhost:8080/products/:productId/reviews', ({ params, request }) => {
     const productId = params.productId as string
     const url = new URL(request.url)

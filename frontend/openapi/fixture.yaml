@@ -102,6 +102,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  # Proposed contract only - no backend implementation exists yet (added for the cart drawer's batch fetch).
+  /variants:
+    get:
+      operationId: getVariantsByIds
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: string }
+          description: Comma-separated variant ids. Ids that don't exist are simply omitted from the response.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VariantOffer' }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
 components:
   schemas:
     ProductSummary:
@@ -140,6 +164,17 @@ components:
         id: { type: string, format: uuid }
         label: { type: string }
         sku: { type: string }
+        price: { type: number }
+        stockQty: { type: integer }
+    VariantOffer:
+      type: object
+      required: [id, productId, productTitle, variantLabel, price, stockQty]
+      properties:
+        id: { type: string }
+        productId: { type: string, format: uuid }
+        productTitle: { type: string }
+        variantLabel: { type: string }
+        thumbnailUrl: { type: string, nullable: true }
         price: { type: number }
         stockQty: { type: integer }
     ReviewSummary:

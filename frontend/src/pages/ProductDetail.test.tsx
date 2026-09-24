@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+
+import { CartProvider } from '@/features/cart/context/CartContext'
 
 import { ProductDetail } from './ProductDetail'
 
@@ -12,11 +14,13 @@ function renderPage(productId: string) {
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/products/${productId}`]}>
-        <Routes>
-          <Route path="/products/:productId" element={<ProductDetail />} />
-        </Routes>
-      </MemoryRouter>
+      <CartProvider>
+        <MemoryRouter initialEntries={[`/products/${productId}`]}>
+          <Routes>
+            <Route path="/products/:productId" element={<ProductDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </CartProvider>
     </QueryClientProvider>,
   )
 }
@@ -66,18 +70,14 @@ describe('ProductDetail', () => {
     expect(await screen.findByText('No reviews yet.')).toBeInTheDocument()
   })
 
-  it('calls the add-to-cart stub with the selected variant and quantity', async () => {
-    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+  it('adds the selected variant and quantity to the cart', async () => {
     renderPage(HEADPHONES_ID)
     await screen.findByRole('heading', { name: /Wireless/ })
 
     await userEvent.click(screen.getByRole('button', { name: 'Increase quantity' }))
     await userEvent.click(screen.getByRole('button', { name: 'Add to cart' }))
 
-    expect(infoSpy).toHaveBeenCalledWith(
-      '[stub] addToCart',
-      expect.objectContaining({ variantId: `${HEADPHONES_ID}-v1`, quantity: 2 }),
-    )
-    infoSpy.mockRestore()
+    const stored = JSON.parse(localStorage.getItem('cart:v1') ?? '[]')
+    expect(stored).toEqual([{ variantId: `${HEADPHONES_ID}-v1`, quantity: 2, priceWhenAdded: 129.99 }])
   })
 })
