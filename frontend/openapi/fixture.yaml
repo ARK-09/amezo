@@ -291,6 +291,83 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /sellers/me/orders:
+    get:
+      operationId: sellerListOrders
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerOrderSummaryPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /sellers/me/orders/{orderId}:
+    get:
+      operationId: sellerGetOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerOrderDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /sellers/me/orders/{orderId}/ship:
+    post:
+      operationId: sellerShipOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trackingNumber]
+              properties:
+                trackingNumber: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerOrderDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   # Proposed contract only - no backend implementation exists yet (added for the cart drawer's batch fetch).
   /variants:
     get:
@@ -389,6 +466,48 @@ components:
         sku: { type: string }
         price: { type: number }
         stockQty: { type: integer }
+    SellerOrderSummary:
+      type: object
+      required: [id, buyerEmail, placedAt, total, status]
+      properties:
+        id: { type: string, format: uuid }
+        buyerEmail: { type: string }
+        placedAt: { type: string, format: date-time }
+        total: { type: number }
+        status: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+    SellerOrderSummaryPage:
+      type: object
+      required: [content, page, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/SellerOrderSummary' }
+        page: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    OrderLineDetail:
+      type: object
+      required: [id, productTitle, variantLabel, quantity, unitPrice]
+      properties:
+        id: { type: string, format: uuid }
+        productTitle: { type: string }
+        variantLabel: { type: string }
+        quantity: { type: integer }
+        unitPrice: { type: number }
+    SellerOrderDetail:
+      type: object
+      required: [id, buyerEmail, placedAt, total, status, lines]
+      properties:
+        id: { type: string, format: uuid }
+        buyerEmail: { type: string }
+        placedAt: { type: string, format: date-time }
+        total: { type: number }
+        status: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+        trackingNumber: { type: string, nullable: true }
+        shippedAt: { type: string, format: date-time, nullable: true }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/OrderLineDetail' }
     CreateProductRequest:
       type: object
       required: [title, category, variants]

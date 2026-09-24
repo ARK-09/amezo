@@ -1,12 +1,50 @@
 import { http, HttpResponse } from 'msw'
 
 import { consumeMagicLinkToken, issueMagicLinkToken } from './fixtures/sellerAuth'
+import { findSellerOrder, listSellerOrders, summaryOf, updateSellerOrder } from './fixtures/sellerOrders'
 import { addSellerProduct, listSellerProducts, removeSellerProduct } from './fixtures/sellerProducts'
 import { productDetails, reviewsFor } from './fixtures/productDetails'
 import { seedProducts } from './fixtures/products'
 import { variantOffers } from './fixtures/variants'
 
 export const handlers = [
+  http.get('http://localhost:8080/sellers/me/orders', ({ request }) => {
+    const url = new URL(request.url)
+    const status = url.searchParams.get('status')
+    const content = listSellerOrders()
+      .filter((order) => !status || order.status === status)
+      .map(summaryOf)
+    return HttpResponse.json({ content, page: 0, totalElements: content.length, totalPages: 1 })
+  }),
+
+  http.get('http://localhost:8080/sellers/me/orders/:orderId', ({ params }) => {
+    const order = findSellerOrder(params.orderId as string)
+    if (!order) {
+      return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
+    }
+    return HttpResponse.json({ ...order, total: summaryOf(order).total })
+  }),
+
+  http.post('http://localhost:8080/sellers/me/orders/:orderId/ship', async ({ params, request }) => {
+    const { trackingNumber } = (await request.json()) as { trackingNumber: string }
+    const order = findSellerOrder(params.orderId as string)
+    if (!order) {
+      return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
+    }
+    if (order.status !== 'PLACED') {
+      return HttpResponse.json(
+        { type: 'https://api/errors/already-shipped', title: 'Already shipped', status: 409 },
+        { status: 409 },
+      )
+    }
+    const updated = updateSellerOrder(order.id, {
+      status: 'SHIPPED',
+      trackingNumber,
+      shippedAt: new Date().toISOString(),
+    })!
+    return HttpResponse.json({ ...updated, total: summaryOf(updated).total })
+  }),
+
   http.get('http://localhost:8080/sellers/me/products', () => {
     const content = listSellerProducts()
     return HttpResponse.json({ content, page: 0, totalElements: content.length, totalPages: 1 })
