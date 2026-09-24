@@ -3,8 +3,15 @@ import { createBrowserRouter, Outlet } from 'react-router'
 import { CartDrawer } from '@/features/cart/components/CartDrawer'
 import { Checkout } from '@/pages/Checkout'
 import { OrderConfirmation } from '@/pages/OrderConfirmation'
+import { SellerPortalLayout } from '@/features/seller-portal/components/SellerPortalLayout'
 import { ProductDetail } from '@/pages/ProductDetail'
 import { SearchResults } from '@/pages/SearchResults'
+import { SellerAddProduct } from '@/pages/seller/SellerAddProduct'
+import { SellerOrderDetail } from '@/pages/seller/SellerOrderDetail'
+import { SellerOrders } from '@/pages/seller/SellerOrders'
+import { SellerProducts } from '@/pages/seller/SellerProducts'
+import { SellerSignIn } from '@/pages/seller/SellerSignIn'
+import { SellerVerify } from '@/pages/seller/SellerVerify'
 
 // CartDrawer needs useNavigate() (checkout button) and must persist across
 // route changes rather than remounting per-page - a layout route gives it
@@ -27,6 +34,24 @@ export const router = createBrowserRouter([
       { path: '/products/:productId', element: <ProductDetail /> },
       { path: '/checkout', element: <Checkout /> },
       { path: '/orders/:orderId/confirmation', element: <OrderConfirmation /> },
+    ],
+  },
+  {
+    path: '/seller/sign-in',
+    element: <SellerSignIn />,
+  },
+  {
+    path: '/seller/verify',
+    element: <SellerVerify />,
+  },
+  {
+    path: '/seller',
+    element: <SellerPortalLayout />,
+    children: [
+      { path: 'products', element: <SellerProducts /> },
+      { path: 'products/new', element: <SellerAddProduct /> },
+      { path: 'orders', element: <SellerOrders /> },
+      { path: 'orders/:orderId', element: <SellerOrderDetail /> },
     ],
   },
 ])

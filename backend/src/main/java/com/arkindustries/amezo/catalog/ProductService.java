@@ -1,6 +1,7 @@
 package com.arkindustries.amezo.catalog;
 
 import com.arkindustries.amezo.catalog.api.ProductExistenceQuery;
+import com.arkindustries.amezo.catalog.api.ProductVariantSummaryQuery;
 import com.arkindustries.amezo.catalog.dto.ProductDetailResponse;
 import com.arkindustries.amezo.catalog.dto.ProductSummaryResponse;
 import com.arkindustries.amezo.common.exception.NotFoundException;
@@ -12,6 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -19,7 +21,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
-public class ProductService implements ProductExistenceQuery {
+public class ProductService implements ProductExistenceQuery, ProductVariantSummaryQuery {
 
     private final ProductRepository productRepository;
     private final VariantRepository variantRepository;
@@ -79,5 +81,17 @@ public class ProductService implements ProductExistenceQuery {
     @Override
     public boolean exists(UUID productId) {
         return productRepository.existsById(productId);
+    }
+
+    @Override
+    public Map<UUID, String> productTitlesByIds(Collection<UUID> productIds) {
+        return productRepository.findAllById(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, Product::getTitle));
+    }
+
+    @Override
+    public Map<UUID, String> variantLabelsByIds(Collection<UUID> variantIds) {
+        return variantRepository.findAllById(variantIds).stream()
+                .collect(Collectors.toMap(Variant::getId, Variant::getLabel));
     }
 }

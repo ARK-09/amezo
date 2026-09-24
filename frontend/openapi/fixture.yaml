@@ -75,6 +75,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+    delete:
+      operationId: sellerDeleteProduct
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /products/{productId}/reviews:
     get:
       operationId: getProductReviews
@@ -121,6 +137,256 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OrderResponse'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /auth/seller/magic-link:
+    post:
+      operationId: sellerRequestMagicLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /auth/seller/verify:
+    post:
+      operationId: sellerVerify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerSession'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /auth/seller/session:
+    delete:
+      operationId: sellerSignOut
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /sellers/me/products:
+    get:
+      operationId: sellerListProducts
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerProductSummaryPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    post:
+      operationId: sellerCreateProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string, format: uuid }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /products/{productId}/images/upload-url:
+    post:
+      operationId: sellerCreateImageUploadUrl
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contentType, position]
+              properties:
+                contentType: { type: string }
+                fileSizeBytes: { type: integer }
+                position: { type: integer }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, uploadUrl, expiresAt]
+                properties:
+                  id: { type: string, format: uuid }
+                  status: { type: string }
+                  uploadUrl: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /products/{productId}/images/confirm:
+    post:
+      operationId: sellerConfirmImage
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageId]
+              properties:
+                imageId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductImage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /sellers/me/orders:
+    get:
+      operationId: sellerListOrders
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerOrderSummaryPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /sellers/me/orders/{orderId}:
+    get:
+      operationId: sellerGetOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerOrderDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /sellers/me/orders/{orderId}/ship:
+    post:
+      operationId: sellerShipOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trackingNumber]
+              properties:
+                trackingNumber: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerOrderDetail'
         default:
           description: Error
           content:
@@ -191,6 +457,151 @@ components:
         sku: { type: string }
         price: { type: number }
         stockQty: { type: integer }
+    SellerSession:
+      type: object
+      required: [sellerId, email]
+      properties:
+        sellerId: { type: string, format: uuid }
+        email: { type: string }
+    SellerProductSummary:
+      type: object
+      required: [id, title, category, variantCount, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        thumbnailUrl: { type: string, nullable: true }
+        category: { type: string }
+        variantCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+    SellerProductSummaryPage:
+      type: object
+      required: [content, page, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/SellerProductSummary' }
+        page: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    CreateVariantRequest:
+      type: object
+      required: [label, sku, price, stockQty]
+      properties:
+        label: { type: string }
+        sku: { type: string }
+        price: { type: number }
+        stockQty: { type: integer }
+    SellerOrderSummary:
+      type: object
+      required: [id, buyerEmail, placedAt, total, status]
+      properties:
+        id: { type: string, format: uuid }
+        buyerEmail: { type: string }
+        placedAt: { type: string, format: date-time }
+        total: { type: number }
+        status: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+    SellerOrderSummaryPage:
+      type: object
+      required: [content, page, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/SellerOrderSummary' }
+        page: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    OrderLineDetail:
+      type: object
+      required: [id, productTitle, variantLabel, quantity, unitPrice]
+      properties:
+        id: { type: string, format: uuid }
+        productTitle: { type: string }
+        variantLabel: { type: string }
+        quantity: { type: integer }
+        unitPrice: { type: number }
+        # Optional: the real backend's shared OrderLineResponse record (also
+        # used by checkout's confirmation response) always includes this,
+        # but the seller order-detail UI doesn't need it - total is shown
+        # per-order, not per-line.
+        lineTotal: { type: number }
+    CheckoutAddress:
+      type: object
+      required: [fullName, line1, city, state, postalCode, country]
+      properties:
+        fullName: { type: string }
+        line1: { type: string }
+        line2: { type: string, nullable: true }
+        city: { type: string }
+        state: { type: string }
+        postalCode: { type: string }
+        country: { type: string, minLength: 2, maxLength: 2 }
+    CheckoutLine:
+      type: object
+      required: [variantId, quantity]
+      properties:
+        variantId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        expectedUnitPrice: { type: number, nullable: true }
+    CheckoutRequest:
+      type: object
+      required: [email, phone, shippingAddress, sameAsShipping, lines]
+      properties:
+        email: { type: string, format: email }
+        phone: { type: string }
+        shippingAddress: { $ref: '#/components/schemas/CheckoutAddress' }
+        sameAsShipping: { type: boolean }
+        billingAddress:
+          allOf: [{ $ref: '#/components/schemas/CheckoutAddress' }]
+          nullable: true
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/CheckoutLine' }
+    OrderLineResponse:
+      type: object
+      required: [id, productTitle, variantLabel, quantity, unitPrice, lineTotal]
+      properties:
+        id: { type: string, format: uuid }
+        productTitle: { type: string }
+        variantLabel: { type: string }
+        quantity: { type: integer }
+        unitPrice: { type: number }
+        lineTotal: { type: number }
+    OrderResponse:
+      type: object
+      required: [id, placedAt, lines, total]
+      properties:
+        id: { type: string, format: uuid }
+        placedAt: { type: string, format: date-time }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/OrderLineResponse' }
+        total: { type: number }
+    SellerOrderDetail:
+      type: object
+      required: [id, buyerEmail, placedAt, total, status, lines]
+      properties:
+        id: { type: string, format: uuid }
+        buyerEmail: { type: string }
+        placedAt: { type: string, format: date-time }
+        total: { type: number }
+        status: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+        trackingNumber: { type: string, nullable: true }
+        shippedAt: { type: string, format: date-time, nullable: true }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/OrderLineDetail' }
+    CreateProductRequest:
+      type: object
+      required: [title, category, variants]
+      properties:
+        title: { type: string }
+        brandName: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        category: { type: string }
+        variants:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/CreateVariantRequest' }
     VariantOffer:
       type: object
       required: [id, productId, productTitle, variantLabel, price, stockQty]
@@ -248,58 +659,6 @@ components:
         page: { type: integer }
         totalElements: { type: integer }
         totalPages: { type: integer }
-    CheckoutAddress:
-      type: object
-      required: [fullName, line1, city, state, postalCode, country]
-      properties:
-        fullName: { type: string }
-        line1: { type: string }
-        line2: { type: string, nullable: true }
-        city: { type: string }
-        state: { type: string }
-        postalCode: { type: string }
-        country: { type: string, minLength: 2, maxLength: 2 }
-    CheckoutLine:
-      type: object
-      required: [variantId, quantity]
-      properties:
-        variantId: { type: string, format: uuid }
-        quantity: { type: integer, minimum: 1 }
-        expectedUnitPrice: { type: number, nullable: true }
-    CheckoutRequest:
-      type: object
-      required: [email, phone, shippingAddress, sameAsShipping, lines]
-      properties:
-        email: { type: string, format: email }
-        phone: { type: string }
-        shippingAddress: { $ref: '#/components/schemas/CheckoutAddress' }
-        sameAsShipping: { type: boolean }
-        billingAddress:
-          allOf: [{ $ref: '#/components/schemas/CheckoutAddress' }]
-          nullable: true
-        lines:
-          type: array
-          items: { $ref: '#/components/schemas/CheckoutLine' }
-    OrderLineResponse:
-      type: object
-      required: [id, productTitle, variantLabel, quantity, unitPrice, lineTotal]
-      properties:
-        id: { type: string, format: uuid }
-        productTitle: { type: string }
-        variantLabel: { type: string }
-        quantity: { type: integer }
-        unitPrice: { type: number }
-        lineTotal: { type: number }
-    OrderResponse:
-      type: object
-      required: [id, placedAt, lines, total]
-      properties:
-        id: { type: string, format: uuid }
-        placedAt: { type: string, format: date-time }
-        lines:
-          type: array
-          items: { $ref: '#/components/schemas/OrderLineResponse' }
-        total: { type: number }
     ProblemDetail:
       type: object
       required: [type, title, status]

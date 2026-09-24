@@ -18,6 +18,8 @@ public interface OfferRepository extends JpaRepository<Offer, UUID> {
     // not one query per variant (that would be N+1 on a multi-variant product).
     List<Offer> findByVariantIdIn(Collection<UUID> variantIds);
 
+    void deleteByVariantIdIn(Collection<UUID> variantIds);
+
     /**
      * The race-proof stock check: WHERE stock_qty >= :quantity means this
      * only matches (and only decrements) when there's enough stock. The

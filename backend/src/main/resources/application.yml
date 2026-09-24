@@ -29,6 +29,11 @@ springdoc:
                                      # how the endpoint actually works, not just a style choice
 
 app:
+  # Base URL the magic-link email points at (SellerAuthService builds
+  # /seller/verify?token=... on top of this) - the frontend dev server's own
+  # origin, not the portless-proxied one, since this is what a real browser
+  # opens from an email link.
+  frontend-url: http://localhost:5173
   cors:
     # frontend/'s `pnpm dev` proxies through portless, so the browser-visible
     # origin is the stable https name below, not localhost:5173 (that port is

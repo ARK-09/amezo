@@ -10,6 +10,8 @@ import java.util.UUID;
 
 public interface ProductRepository extends JpaRepository<Product, UUID> {
 
+    Page<Product> findBySellerId(UUID sellerId, Pageable pageable);
+
     /**
      * Full-text search over the generated search_vector column. Native
      * query because Spring Data JPQL has no tsvector/tsquery operators.
