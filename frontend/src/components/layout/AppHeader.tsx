@@ -9,9 +9,11 @@ import { CartTrigger } from '@/features/cart/components/CartTrigger'
 export function AppHeader({
   q = '',
   onSearch,
+  autoFocusSearch = false,
 }: {
   q?: string
   onSearch: (q: string) => void
+  autoFocusSearch?: boolean
 }) {
   const [value, setValue] = useState(q)
   const [prevQ, setPrevQ] = useState(q)
@@ -44,6 +46,7 @@ export function AppHeader({
             onChange={(e) => setValue(e.target.value)}
             placeholder="Search products"
             aria-label="Search products"
+            autoFocus={autoFocusSearch}
             className="h-8 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
           />
           <Button type="submit" size="sm" className="gap-1.5 rounded-full">

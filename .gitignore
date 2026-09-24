@@ -8,3 +8,4 @@ backend/target/
 .idea/
 *.iml
 .vscode/
+.m2-cache/

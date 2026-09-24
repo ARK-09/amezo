@@ -42,6 +42,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 class SellerOrderApiTest {
 
+    // Orders now require buyer_phone + full shipping/billing address (V12
+    // migration, added by checkout) - these fixtures just satisfy the
+    // NOT NULL columns, their actual values aren't asserted on anywhere.
+    private static final String TEST_PHONE = "+15551234567";
+
     @Container
     @ServiceConnection
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
@@ -105,10 +110,13 @@ class SellerOrderApiTest {
                 .buyerIdentityId(buyer.getId())
                 .buyerEmailSnapshot(buyer.getEmail())
                 .status(OrderStatus.PLACED)
+                .buyerPhone(TEST_PHONE)
+                .shippingAddress(testAddress())
+                .billingAddress(testAddress())
                 .build());
         orderLineRepository.save(OrderLine.builder()
                 .orderId(order.getId())
-                .offerId(UUID.randomUUID())
+                .offerId(seedOfferId(me.getId()))
                 .productIdSnapshot(UUID.randomUUID())
                 .variantIdSnapshot(UUID.randomUUID())
                 .sellerIdSnapshot(me.getId())
@@ -139,10 +147,13 @@ class SellerOrderApiTest {
                 .buyerIdentityId(buyer.getId())
                 .buyerEmailSnapshot(buyer.getEmail())
                 .status(OrderStatus.PLACED)
+                .buyerPhone(TEST_PHONE)
+                .shippingAddress(testAddress())
+                .billingAddress(testAddress())
                 .build());
         orderLineRepository.save(OrderLine.builder()
                 .orderId(order.getId())
-                .offerId(UUID.randomUUID())
+                .offerId(seedOfferId(sellerA.getId()))
                 .productIdSnapshot(UUID.randomUUID())
                 .variantIdSnapshot(UUID.randomUUID())
                 .sellerIdSnapshot(sellerA.getId())
@@ -151,7 +162,7 @@ class SellerOrderApiTest {
                 .build());
         orderLineRepository.save(OrderLine.builder()
                 .orderId(order.getId())
-                .offerId(UUID.randomUUID())
+                .offerId(seedOfferId(sellerB.getId()))
                 .productIdSnapshot(UUID.randomUUID())
                 .variantIdSnapshot(UUID.randomUUID())
                 .sellerIdSnapshot(sellerB.getId())
@@ -192,17 +203,21 @@ class SellerOrderApiTest {
                 Product.builder().sellerId(me.getId()).title("Trail Backpack").category("outdoor").build());
         Variant variant = variantRepository.save(
                 Variant.builder().productId(product.getId()).label("Blue / M").sku("SKU-D1").build());
-        offerRepository.save(Offer.builder().variantId(variant.getId()).price(new BigDecimal("89.99")).stockQty(5).build());
+        Offer offer = offerRepository.save(
+                Offer.builder().variantId(variant.getId()).price(new BigDecimal("89.99")).stockQty(5).build());
 
         Order order = orderRepository.save(Order.builder()
                 .buyerIdentityId(buyer.getId())
                 .sellerId(me.getId())
                 .buyerEmailSnapshot(buyer.getEmail())
                 .status(OrderStatus.PLACED)
+                .buyerPhone(TEST_PHONE)
+                .shippingAddress(testAddress())
+                .billingAddress(testAddress())
                 .build());
         orderLineRepository.save(OrderLine.builder()
                 .orderId(order.getId())
-                .offerId(UUID.randomUUID())
+                .offerId(offer.getId())
                 .productIdSnapshot(product.getId())
                 .variantIdSnapshot(variant.getId())
                 .sellerIdSnapshot(me.getId())
@@ -273,10 +288,13 @@ class SellerOrderApiTest {
                 .sellerId(sellerId)
                 .buyerEmailSnapshot(buyerIdentityRepository.findById(buyerIdentityId).orElseThrow().getEmail())
                 .status(OrderStatus.PLACED)
+                .buyerPhone(TEST_PHONE)
+                .shippingAddress(testAddress())
+                .billingAddress(testAddress())
                 .build());
         orderLineRepository.save(OrderLine.builder()
                 .orderId(order.getId())
-                .offerId(UUID.randomUUID())
+                .offerId(seedOfferId(sellerId))
                 .productIdSnapshot(UUID.randomUUID())
                 .variantIdSnapshot(UUID.randomUUID())
                 .sellerIdSnapshot(sellerId)
@@ -284,6 +302,31 @@ class SellerOrderApiTest {
                 .quantity(quantity)
                 .build());
         return order;
+    }
+
+    // order_line.offer_id is a real FK (see V10's migration comment) - unlike
+    // productIdSnapshot/variantIdSnapshot, which are deliberately
+    // unconstrained historical copies, this one needs a real offer row
+    // behind it or the insert fails with a foreign-key violation.
+    private UUID seedOfferId(UUID sellerId) {
+        Product product = productRepository.save(
+                Product.builder().sellerId(sellerId).title("Test Product").category("test").build());
+        Variant variant = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("Test Variant").sku("SKU-" + UUID.randomUUID()).build());
+        Offer offer = offerRepository.save(
+                Offer.builder().variantId(variant.getId()).price(BigDecimal.ZERO).stockQty(0).build());
+        return offer.getId();
+    }
+
+    private Address testAddress() {
+        return Address.builder()
+                .fullName("Test Buyer")
+                .line1("1 Main St")
+                .city("Springfield")
+                .state("IL")
+                .postalCode("62701")
+                .country("US")
+                .build();
     }
 
     private Seller seller(String email) {

@@ -15,7 +15,7 @@ export function SearchResults() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <AppHeader q={filters.q} onSearch={(q) => update({ q })} />
+      <AppHeader q={filters.q} onSearch={(q) => update({ q })} autoFocusSearch />
 
       <div className="mx-auto flex w-full max-w-[1320px] flex-1 gap-6 px-7 py-6">
         <FilterSidebar
