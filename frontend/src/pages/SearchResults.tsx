@@ -1,10 +1,10 @@
+import { AppHeader } from '@/components/layout/AppHeader'
 import { Button } from '@/components/ui/button'
 import { ActiveFilterChips } from '@/features/search/components/ActiveFilterChips'
 import { FilterSidebar } from '@/features/search/components/FilterSidebar'
 import { ProductCardSkeleton } from '@/features/search/components/ProductCardSkeleton'
 import { ProductGrid } from '@/features/search/components/ProductGrid'
 import { ResultsHeader } from '@/features/search/components/ResultsHeader'
-import { SearchTopBar } from '@/features/search/components/SearchTopBar'
 import { useSearchFilters } from '@/features/search/hooks/useSearchFilters'
 import { useCategoryOptions, useSearchProducts } from '@/features/search/api/useSearchProducts'
 
@@ -15,7 +15,7 @@ export function SearchResults() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <SearchTopBar q={filters.q} onSearch={(q) => update({ q })} />
+      <AppHeader q={filters.q} onSearch={(q) => update({ q })} />
 
       <div className="mx-auto flex w-full max-w-[1320px] flex-1 gap-6 px-7 py-6">
         <FilterSidebar

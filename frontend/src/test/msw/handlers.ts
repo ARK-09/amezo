@@ -1,8 +1,37 @@
 import { http, HttpResponse } from 'msw'
 
+import { productDetails, reviewsFor } from './fixtures/productDetails'
 import { seedProducts } from './fixtures/products'
 
 export const handlers = [
+  http.get('http://localhost:8080/products/:productId/reviews', ({ params, request }) => {
+    const productId = params.productId as string
+    const url = new URL(request.url)
+    const page = Number(url.searchParams.get('page') ?? 0)
+    const size = Number(url.searchParams.get('size') ?? 10)
+
+    const all = reviewsFor(productId)
+    const content = all.slice(page * size, page * size + size)
+
+    return HttpResponse.json({
+      content,
+      page,
+      totalElements: all.length,
+      totalPages: Math.ceil(all.length / size) || 1,
+    })
+  }),
+
+  http.get('http://localhost:8080/products/:productId', ({ params }) => {
+    const detail = productDetails[params.productId as string]
+    if (!detail) {
+      return HttpResponse.json(
+        { type: 'about:blank', title: 'Not found', status: 404 },
+        { status: 404 },
+      )
+    }
+    return HttpResponse.json(detail)
+  }),
+
   http.get('http://localhost:8080/products', ({ request }) => {
     const url = new URL(request.url)
     const q = url.searchParams.get('q')?.toLowerCase()

@@ -2,9 +2,9 @@ import { X } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { formatPrice } from '@/lib/formatPrice'
 
 import type { SearchFilters } from '../schema/types'
-import { formatPrice } from '../utils/formatPrice'
 
 type FilterKey = 'q' | 'category' | 'price' | 'inStockOnly'
 

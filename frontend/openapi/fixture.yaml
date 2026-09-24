@@ -54,6 +54,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /products/{productId}:
+    get:
+      operationId: getProduct
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /products/{productId}/reviews:
+    get:
+      operationId: getProductReviews
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
 components:
   schemas:
     ProductSummary:
@@ -75,6 +123,68 @@ components:
         content:
           type: array
           items: { $ref: '#/components/schemas/ProductSummary' }
+        page: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    ProductImage:
+      type: object
+      required: [id, url, position]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+        position: { type: integer }
+    ProductVariant:
+      type: object
+      required: [id, label, sku, price, stockQty]
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        sku: { type: string }
+        price: { type: number }
+        stockQty: { type: integer }
+    ReviewSummary:
+      type: object
+      required: [averageRating, count]
+      properties:
+        averageRating: { type: number, nullable: true }
+        count: { type: integer }
+    ProductDetail:
+      type: object
+      required:
+        [id, title, brandName, description, category, sellerId, sellerName, images, variants, reviewSummary]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        brandName: { type: string }
+        description: { type: string }
+        category: { type: string }
+        sellerId: { type: string, format: uuid }
+        sellerName: { type: string }
+        images:
+          type: array
+          items: { $ref: '#/components/schemas/ProductImage' }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/ProductVariant' }
+        reviewSummary:
+          $ref: '#/components/schemas/ReviewSummary'
+    Review:
+      type: object
+      required: [id, rating, body, variantLabel, createdAt, reviewerFirstName]
+      properties:
+        id: { type: string, format: uuid }
+        rating: { type: integer }
+        body: { type: string }
+        variantLabel: { type: string }
+        createdAt: { type: string, format: date-time }
+        reviewerFirstName: { type: string }
+    ReviewPage:
+      type: object
+      required: [content, page, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/Review' }
         page: { type: integer }
         totalElements: { type: integer }
         totalPages: { type: integer }

@@ -1,0 +1,72 @@
+import type { components } from '@/lib/api/schema'
+
+import { seedProducts } from './products'
+
+type ProductDetail = components['schemas']['ProductDetail']
+type Review = components['schemas']['Review']
+
+const DESCRIPTIONS: Record<string, string> = {
+  '11111111-1111-1111-1111-111111111111':
+    'Over-ear headphones with active noise cancellation, 30-hour battery life, and a foldable design for travel. Includes a hard case and USB-C fast charging.',
+  '22222222-2222-2222-2222-222222222222':
+    'A lightweight ultrabook built for everyday work: fast boot times, a full-HD display, and all-day battery life in a compact aluminum chassis.',
+  '33333333-3333-3333-3333-333333333333':
+    'A 10-piece ceramic non-stick cookware set safe up to 450°F, dishwasher-friendly, and compatible with induction, gas, and electric stovetops.',
+  '44444444-4444-4444-4444-444444444444':
+    'Trail running shoes with a grippy lugged outsole, breathable mesh upper, and a rock plate for protection on technical terrain.',
+  '55555555-5555-5555-5555-555555555555':
+    'A hot-swappable mechanical keyboard with per-key RGB, a detachable USB-C cable, and a gasket-mounted plate for a softer typing feel.',
+  '66666666-6666-6666-6666-666666666666':
+    'A double-wall insulated stainless steel bottle that keeps drinks cold for 24 hours or hot for 12, with a leak-proof lid.',
+}
+
+function variantsFor(id: string, basePrice: number, inStock: boolean) {
+  const twoVariant = id === '11111111-1111-1111-1111-111111111111' || id === '55555555-5555-5555-5555-555555555555'
+  if (!twoVariant) {
+    return [
+      { id: `${id}-v1`, label: 'Standard', sku: `${id}-STD`, price: basePrice, stockQty: inStock ? 12 : 0 },
+    ]
+  }
+  return [
+    { id: `${id}-v1`, label: 'Black', sku: `${id}-BLK`, price: basePrice, stockQty: inStock ? 8 : 0 },
+    { id: `${id}-v2`, label: 'White', sku: `${id}-WHT`, price: basePrice + 10, stockQty: inStock ? 3 : 0 },
+  ]
+}
+
+export const productDetails: Record<string, ProductDetail> = Object.fromEntries(
+  seedProducts.map((p) => [
+    p.id,
+    {
+      id: p.id,
+      title: p.title,
+      brandName: p.brandName,
+      description: DESCRIPTIONS[p.id] ?? '',
+      category: p.category,
+      sellerId: '99999999-9999-9999-9999-999999999999',
+      sellerName: p.brandName,
+      images: [],
+      variants: variantsFor(p.id, p.priceFrom, p.inStock),
+      reviewSummary: { averageRating: p.avgRating ?? null, count: p.avgRating != null ? 3 : 0 },
+    } satisfies ProductDetail,
+  ]),
+)
+
+const REVIEW_TEMPLATES: [string, number, string][] = [
+  ['Jordan K.', 5, "Exactly as described, arrived fast, works great. Would buy again."],
+  ['Sam T.', 4, 'Good value for the price. One small issue on arrival but support sorted it quickly.'],
+  ['Riley P.', 5, "Better than expected. Solid build quality and does what it says."],
+]
+
+export function reviewsFor(productId: string): Review[] {
+  const detail = productDetails[productId]
+  if (!detail || detail.reviewSummary.count === 0) return []
+  const variantLabel = detail.variants[0]?.label ?? 'Standard'
+  return REVIEW_TEMPLATES.map(([name, rating, body], i) => ({
+    id: `${productId}-review-${i}`,
+    rating,
+    body,
+    variantLabel,
+    createdAt: new Date(2026, 5 + i, 10).toISOString(),
+    reviewerFirstName: name,
+  }))
+}

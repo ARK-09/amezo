@@ -5,11 +5,11 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-export function SearchTopBar({
-  q,
+export function AppHeader({
+  q = '',
   onSearch,
 }: {
-  q: string
+  q?: string
   onSearch: (q: string) => void
 }) {
   const [value, setValue] = useState(q)

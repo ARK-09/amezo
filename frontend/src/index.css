@@ -92,6 +92,11 @@
   --radius-xl: calc(var(--radius) + 4px);
 
   --font-sans: var(--font-sans);
+
+  /* unused by any existing page before now, so redefining it to the Product
+     Detail design's H1 size (27px) is safe - no collateral resize elsewhere */
+  --text-2xl: 1.6875rem;
+  --text-2xl--line-height: 1.24;
 }
 
 @layer base {
