@@ -86,7 +86,7 @@ export function ProductDetail() {
                 quantity={quantity}
                 onQuantityChange={setQuantity}
                 isAdding={isPending}
-                onAddToCart={() => addToCart(selectedVariant.id, quantity)}
+                onAddToCart={() => addToCart(selectedVariant.id, quantity, selectedVariant.price)}
               />
             </div>
 
