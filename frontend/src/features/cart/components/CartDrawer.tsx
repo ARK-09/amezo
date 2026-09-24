@@ -22,7 +22,7 @@ export function CartDrawer() {
   return (
     <Sheet open={isOpen} onOpenChange={(open) => (open ? undefined : close())}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
-        <SheetHeader className="flex-row items-center justify-between border-b px-5 py-4">
+        <SheetHeader className="flex-row items-center justify-between border-b px-5 py-4 pr-12">
           <SheetTitle>Cart</SheetTitle>
           {lines.length > 0 && (
             <Button variant="ghost" size="sm" onClick={clear}>
@@ -49,20 +49,21 @@ export function CartDrawer() {
             </div>
           )}
 
-          {lines.map((line) => (
-            <CartLineRow
-              key={line.variantId}
-              line={line}
-              offer={offersById.get(line.variantId)}
-              isLoading={query.isLoading}
-              onQuantityChange={setQuantity}
-              onRemove={removeLine}
-              onAcknowledgePrice={acknowledgePrice}
-            />
-          ))}
+          {!query.isError &&
+            lines.map((line) => (
+              <CartLineRow
+                key={line.variantId}
+                line={line}
+                offer={offersById.get(line.variantId)}
+                isLoading={query.isLoading}
+                onQuantityChange={setQuantity}
+                onRemove={removeLine}
+                onAcknowledgePrice={acknowledgePrice}
+              />
+            ))}
         </div>
 
-        {lines.length > 0 && (
+        {lines.length > 0 && !query.isError && (
           <SheetFooter className="border-t px-5 py-4">
             <div className="mb-3 flex w-full items-center justify-between text-sm font-semibold">
               <span>Total</span>

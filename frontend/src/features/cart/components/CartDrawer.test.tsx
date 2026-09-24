@@ -1,7 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
+
+import { server } from '@/test/msw/server'
 
 import { CartProvider } from '../context/CartContext'
 import type { CartLine } from '../schema/types'
@@ -124,6 +127,46 @@ describe('CartDrawer', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear cart' }))
     expect(await screen.findByText('Your cart is empty')).toBeInTheDocument()
+  })
+
+  it('does not render lines as "No longer available" when the batch fetch errors', async () => {
+    seedCart([
+      { variantId: `${HEADPHONES_ID}-v1`, quantity: 1, priceWhenAdded: 129.99 },
+      { variantId: `${COOKWARE_ID}-v1`, quantity: 1, priceWhenAdded: 74.5 },
+    ])
+    server.use(
+      http.get(
+        'http://localhost:8080/variants',
+        () =>
+          HttpResponse.json(
+            { type: 'about:blank', title: 'Internal error', status: 500 },
+            { status: 500 },
+          ),
+        { once: true },
+      ),
+    )
+    renderDrawer()
+    await openDrawer()
+
+    expect(await screen.findByText("Couldn't load your cart items.")).toBeInTheDocument()
+    expect(screen.queryByText('No longer available')).not.toBeInTheDocument()
+  })
+
+  it('removing one line does not flicker the remaining line to a loading skeleton', async () => {
+    seedCart([
+      { variantId: `${HEADPHONES_ID}-v1`, quantity: 1, priceWhenAdded: 129.99 },
+      { variantId: `${COOKWARE_ID}-v1`, quantity: 1, priceWhenAdded: 74.5 },
+    ])
+    renderDrawer()
+    await openDrawer()
+    await screen.findByText('Wireless Noise-Cancelling Headphones')
+    await screen.findByText('Ceramic Non-Stick Cookware Set (10-piece)')
+
+    // fireEvent (not userEvent) so the assertion below runs synchronously,
+    // before the refetch's microtask can resolve and mask a flicker.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from cart' })[0])
+
+    expect(screen.getByText('Ceramic Non-Stick Cookware Set (10-piece)')).toBeInTheDocument()
   })
 
   it('closes on Escape', async () => {
