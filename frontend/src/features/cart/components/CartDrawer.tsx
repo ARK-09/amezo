@@ -55,7 +55,7 @@ export function CartDrawer() {
                 key={line.variantId}
                 line={line}
                 offer={offersById.get(line.variantId)}
-                isLoading={query.isLoading}
+                isLoading={query.isLoading || (query.isPlaceholderData && !offersById.has(line.variantId))}
                 onQuantityChange={setQuantity}
                 onRemove={removeLine}
                 onAcknowledgePrice={acknowledgePrice}

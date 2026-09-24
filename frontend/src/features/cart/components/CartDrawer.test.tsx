@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
@@ -167,6 +167,35 @@ describe('CartDrawer', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Remove from cart' })[0])
 
     expect(screen.getByText('Ceramic Non-Stick Cookware Set (10-piece)')).toBeInTheDocument()
+  })
+
+  it('does not show "No longer available" for a newly-added line while its offer is still loading', async () => {
+    const lineA: CartLine = { variantId: `${HEADPHONES_ID}-v1`, quantity: 1, priceWhenAdded: 129.99 }
+    const lineB: CartLine = { variantId: `${COOKWARE_ID}-v1`, quantity: 1, priceWhenAdded: 74.5 }
+
+    // Seed and cache only line A first (mirrors the drawer already being open
+    // with one item), so the query has previous data for keepPreviousData to
+    // serve as a placeholder once a second, different query key shows up.
+    seedCart([lineA])
+    renderDrawer()
+    await openDrawer()
+    await screen.findByText('Wireless Noise-Cancelling Headphones')
+
+    // Simulate a second line being added while the drawer stays open and
+    // mounted - the same cross-tab sync path CartContext listens for. This
+    // changes the query key (now [A, B]) while old data (just A) is cached,
+    // so TanStack Query serves the old data as a placeholder for B's id too.
+    act(() => {
+      localStorage.setItem('cart:v1', JSON.stringify([lineA, lineB]))
+      window.dispatchEvent(new StorageEvent('storage', { key: 'cart:v1' }))
+    })
+
+    // Right after the key changes, B has no entry in the (placeholder) data
+    // yet - it must render as loading, not as "gone".
+    expect(screen.queryByText('No longer available')).not.toBeInTheDocument()
+
+    await screen.findByText('Ceramic Non-Stick Cookware Set (10-piece)')
+    expect(screen.queryByText('No longer available')).not.toBeInTheDocument()
   })
 
   it('closes on Escape', async () => {
