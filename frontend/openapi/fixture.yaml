@@ -1,0 +1,95 @@
+openapi: 3.1.0
+info:
+  title: Marketplace API (fixture)
+  version: 0.0.0
+  description: >
+    Placeholder spec so the codegen pipeline (springdoc -> OpenAPI ->
+    openapi-typescript) has something to run against before the Spring
+    backend exposes its own. Modeled on docs/api-design.md's documented
+    GET /products contract, not the backend's current partial
+    implementation (q-only as of this writing — see ProductController.java).
+    Swap `gen:api` in package.json to point at the live springdoc endpoint
+    once the backend catches up to this contract; this file goes away then.
+paths:
+  /products:
+    get:
+      operationId: searchProducts
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: priceMin
+          in: query
+          schema: { type: number }
+        - name: priceMax
+          in: query
+          schema: { type: number }
+        - name: inStockOnly
+          in: query
+          schema: { type: boolean }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [relevance, price_asc, price_desc, newest]
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 16 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductSummaryPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+components:
+  schemas:
+    ProductSummary:
+      type: object
+      required: [id, title, brandName, category, priceFrom, inStock]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        brandName: { type: string }
+        category: { type: string }
+        priceFrom: { type: number }
+        thumbnailUrl: { type: string, nullable: true }
+        avgRating: { type: number, nullable: true }
+        inStock: { type: boolean }
+    ProductSummaryPage:
+      type: object
+      required: [content, page, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/ProductSummary' }
+        page: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    ProblemDetail:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              reason: { type: string }
