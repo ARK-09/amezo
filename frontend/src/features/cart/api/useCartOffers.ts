@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import { apiClient, type ProblemDetail } from '@/lib/api/client'
 
@@ -24,5 +24,6 @@ export function useCartOffers(variantIds: string[], enabled: boolean) {
     },
     enabled: enabled && sortedIds.length > 0,
     staleTime: 0,
+    placeholderData: keepPreviousData,
   })
 }
