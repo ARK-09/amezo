@@ -58,8 +58,13 @@
 
         <dependency>
             <groupId>org.springdoc</groupId>
-            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>2.6.0</version>
+            <!-- -api, not -ui: the frontend consumes /v3/api-docs JSON for
+                 codegen; -ui's bundled Swagger page registers a mapping
+                 pattern (/swagger-ui/**/*index.html) that Spring Boot
+                 3.4's default PathPatternParser rejects outright at
+                 startup, unrelated to anything in this codebase. -->
+            <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+            <version>2.9.1</version>
         </dependency>
 
         <dependency>

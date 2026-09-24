@@ -27,7 +27,7 @@ import java.util.List;
  *
  * Route table (see docs/api-design.md for the full endpoint list):
  *   public        - GET /products/**, POST /magic-links, POST /sessions,
- *                    POST /orders (guest checkout), OpenAPI/Swagger paths
+ *                    POST /orders (guest checkout), the OpenAPI spec path
  *   either role   - GET/DELETE /sessions/current
  *   buyer only    - GET /orders/**, POST /reviews
  *   seller only   - /sellers/me/**, product/variant/image writes, order-line updates
@@ -53,7 +53,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/magic-links").permitAll()
                 .requestMatchers(HttpMethod.POST, "/sessions").permitAll()
                 .requestMatchers(HttpMethod.POST, "/orders").permitAll()
-                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                .requestMatchers("/v3/api-docs/**").permitAll()
                 // Spring's internal error dispatch, not a real route - without this,
                 // anyRequest().denyAll() masks every unhandled exception behind a 403
                 // instead of the real ProblemDetail from ApiExceptionHandler.

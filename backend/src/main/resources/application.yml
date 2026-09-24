@@ -19,8 +19,10 @@ spring:
 springdoc:
   api-docs:
     path: /v3/api-docs
-  swagger-ui:
-    path: /swagger-ui.html
+  default-flat-param-object: true   # Pageable already binds page/size/sort as flat query
+                                     # params at runtime; without this springdoc documents
+                                     # it as one opaque nested object, which misrepresents
+                                     # how the endpoint actually works, not just a style choice
 
 app:
   cors:
