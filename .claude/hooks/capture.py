@@ -32,6 +32,7 @@ IGNORED_PROMPT_PREFIXES = (
 # ---------------------------------------------------------------------------
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.S)
+RESPONSE_NUM_RE = re.compile(r"\[LOG_ENTRY type=RESPONSE num=(\d+)(?:-(\d+))?")
 FM_ORDER = [
     "session_id", "date", "author", "model", "tool",
     "project", "total_exchanges", "first_prompt_time", "last_prompt_time",
@@ -133,6 +134,14 @@ def read_doc(path):
     return fm, text[match.end():]
 
 
+def last_response_covered_through(body):
+    """Highest PROMPT num any logged RESPONSE already covers (0 if none)."""
+    end = 0
+    for match in RESPONSE_NUM_RE.finditer(body):
+        end = int(match.group(2) or match.group(1))
+    return end
+
+
 def write_doc(path, fm, body):
     lines = ["---"]
     lines += ["%s: %s" % (k, fm[k]) for k in FM_ORDER if k in fm]
@@ -213,10 +222,22 @@ def main():
         )
 
     prompts = body.count("[LOG_ENTRY type=PROMPT ")
-    num = prompts + 1 if kind == "PROMPT" else max(prompts, 1)
+    if kind == "PROMPT":
+        num = str(prompts + 1)
+    else:
+        # A Stop only fires once per turn, but a turn can carry several
+        # mid-turn PROMPT hooks (injected user messages) before it - so one
+        # RESPONSE can answer more than one logged PROMPT. Cover the whole
+        # unanswered range ("4-6") instead of stamping just the last one and
+        # leaving the earlier prompts in the batch looking unanswered.
+        start = last_response_covered_through(body) + 1
+        end = max(prompts, 1)
+        if start > end:
+            start = end
+        num = str(end) if start == end else "%d-%d" % (start, end)
 
     body += (
-        "[LOG_ENTRY type=%s num=%d session=%s]\ntimestamp: %s\nmodel: %s\n\n%s\n\n\n"
+        "[LOG_ENTRY type=%s num=%s session=%s]\ntimestamp: %s\nmodel: %s\n\n%s\n\n\n"
         % (kind, num, short, timestamp, model, text.rstrip("\n"))
     )
 
