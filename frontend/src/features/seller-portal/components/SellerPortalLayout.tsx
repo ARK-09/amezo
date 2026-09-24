@@ -11,6 +11,10 @@ const NAV_ITEMS = [
   { to: '/seller/orders', label: 'Orders', icon: ShoppingCart },
 ]
 
+// Same flag SellerSignIn uses to bypass the real magic-link flow - see its
+// comment. Banner makes the bypass visible rather than silent.
+const DEMO_AUTH = import.meta.env.VITE_DEMO_SELLER_AUTH === 'true'
+
 export function SellerPortalLayout() {
   const { seller, signOut } = useSellerAuth()
   const { mutate: signOutRequest } = useSellerSignOut()
@@ -63,6 +67,14 @@ export function SellerPortalLayout() {
       </aside>
 
       <main className="min-w-0 flex-1">
+        {DEMO_AUTH && (
+          <div
+            role="status"
+            className="border-b border-primary/50 bg-primary/5 px-4 py-2 text-center text-sm font-medium text-primary"
+          >
+            Demo mode — authentication is mocked.
+          </div>
+        )}
         <Outlet />
       </main>
     </div>

@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
 import { server } from '@/test/msw/server'
 
 import { SellerSignIn } from './SellerSignIn'
@@ -13,9 +14,11 @@ function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <SellerSignIn />
-      </MemoryRouter>
+      <SellerAuthProvider>
+        <MemoryRouter>
+          <SellerSignIn />
+        </MemoryRouter>
+      </SellerAuthProvider>
     </QueryClientProvider>,
   )
 }

@@ -1,18 +1,37 @@
 import { ShoppingBag } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
+import { useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useRequestMagicLink } from '@/features/seller-portal/api/useSellerAuth'
+import { useSellerAuth } from '@/features/seller-portal/context/SellerAuthContext'
+
+// The Vercel demo has no real backend to send/verify a magic-link email, so
+// this flag (only set in .env.production) skips straight to a mocked
+// session on submit - no token, no verify step. Real flow (below) is
+// untouched for dev/test. SellerPortalLayout shows a banner off the same flag.
+const DEMO_AUTH = import.meta.env.VITE_DEMO_SELLER_AUTH === 'true'
 
 export function SellerSignIn() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const { mutate, isPending, isError } = useRequestMagicLink()
+  const { signIn } = useSellerAuth()
+  const navigate = useNavigate()
 
   function submit(e: FormEvent) {
     e.preventDefault()
-    mutate(email, { onSuccess: () => setSent(true) })
+    mutate(email, {
+      onSuccess: () => {
+        if (DEMO_AUTH) {
+          signIn({ sellerId: crypto.randomUUID(), email })
+          navigate('/seller/products', { replace: true })
+          return
+        }
+        setSent(true)
+      },
+    })
   }
 
   return (
