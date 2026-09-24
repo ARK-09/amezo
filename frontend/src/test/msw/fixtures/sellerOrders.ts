@@ -2,7 +2,122 @@ import type { components } from '@/lib/api/schema'
 
 type SellerOrderDetail = components['schemas']['SellerOrderDetail']
 
-let orders: SellerOrderDetail[] = []
+// Demo-account starting orders (browser/dev only - every test resets this to
+// [] via resetSellerOrders() in beforeEach/afterEach). Lines reference the
+// same products as fixtures/sellerProducts.ts's DEMO_SEED. One of each
+// status so the status filter and the "mark as shipped" action both have
+// something to show.
+const DEMO_SEED: SellerOrderDetail[] = [
+  {
+    id: 'd0000000-0000-0000-0000-000000000001',
+    buyerEmail: 'alex@example.com',
+    placedAt: '2026-09-23T14:12:00.000Z',
+    total: 129.99,
+    status: 'PLACED',
+    lines: [
+      {
+        id: 'd0000000-0000-0000-0000-000000000001-line-1',
+        productTitle: 'Wireless Noise-Cancelling Headphones',
+        variantLabel: 'Black',
+        quantity: 1,
+        unitPrice: 129.99,
+        lineTotal: 129.99,
+      },
+    ],
+  },
+  {
+    id: 'd0000000-0000-0000-0000-000000000002',
+    buyerEmail: 'priya@example.com',
+    placedAt: '2026-09-22T09:45:00.000Z',
+    total: 203,
+    status: 'PLACED',
+    lines: [
+      {
+        id: 'd0000000-0000-0000-0000-000000000002-line-1',
+        productTitle: 'Mechanical Keyboard, Hot-Swappable',
+        variantLabel: 'White',
+        quantity: 1,
+        unitPrice: 159,
+        lineTotal: 159,
+      },
+      {
+        id: 'd0000000-0000-0000-0000-000000000002-line-2',
+        productTitle: 'Stainless Steel Water Bottle, 32oz',
+        variantLabel: 'Standard',
+        quantity: 2,
+        unitPrice: 22,
+        lineTotal: 44,
+      },
+    ],
+  },
+  {
+    id: 'd0000000-0000-0000-0000-000000000003',
+    buyerEmail: 'morgan@example.com',
+    placedAt: '2026-09-20T18:30:00.000Z',
+    total: 899,
+    status: 'SHIPPED',
+    trackingNumber: '1Z999AA10123456784',
+    shippedAt: '2026-09-21T16:05:00.000Z',
+    lines: [
+      {
+        id: 'd0000000-0000-0000-0000-000000000003-line-1',
+        productTitle: '14" Ultrabook Laptop, 16GB RAM',
+        variantLabel: 'Standard',
+        quantity: 1,
+        unitPrice: 899,
+        lineTotal: 899,
+      },
+    ],
+  },
+  {
+    id: 'd0000000-0000-0000-0000-000000000004',
+    buyerEmail: 'sam@example.com',
+    placedAt: '2026-09-19T11:00:00.000Z',
+    total: 96.5,
+    status: 'SHIPPED',
+    trackingNumber: '9400111899223197428490',
+    shippedAt: '2026-09-19T22:15:00.000Z',
+    lines: [
+      {
+        id: 'd0000000-0000-0000-0000-000000000004-line-1',
+        productTitle: 'Ceramic Non-Stick Cookware Set (10-piece)',
+        variantLabel: 'Standard',
+        quantity: 1,
+        unitPrice: 74.5,
+        lineTotal: 74.5,
+      },
+      {
+        id: 'd0000000-0000-0000-0000-000000000004-line-2',
+        productTitle: 'Stainless Steel Water Bottle, 32oz',
+        variantLabel: 'Standard',
+        quantity: 1,
+        unitPrice: 22,
+        lineTotal: 22,
+      },
+    ],
+  },
+  {
+    id: 'd0000000-0000-0000-0000-000000000005',
+    buyerEmail: 'jamie@example.com',
+    placedAt: '2026-09-15T08:20:00.000Z',
+    total: 139.99,
+    status: 'DELIVERED',
+    trackingNumber: '1Z999AA10198765436',
+    shippedAt: '2026-09-15T20:00:00.000Z',
+    lines: [
+      {
+        id: 'd0000000-0000-0000-0000-000000000005-line-1',
+        productTitle: 'Wireless Noise-Cancelling Headphones',
+        variantLabel: 'White',
+        quantity: 1,
+        unitPrice: 139.99,
+        lineTotal: 139.99,
+      },
+    ],
+  },
+]
+
+let orders: SellerOrderDetail[] = [...DEMO_SEED]
 
 export function resetSellerOrders(seed: SellerOrderDetail[] = []) {
   orders = [...seed]
