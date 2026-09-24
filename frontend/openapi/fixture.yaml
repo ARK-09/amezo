@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Marketplace API (fixture)
+  title: Amezo API (fixture)
   version: 0.0.0
   description: >
     Placeholder spec so the codegen pipeline (springdoc -> OpenAPI ->

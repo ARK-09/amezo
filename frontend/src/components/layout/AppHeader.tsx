@@ -32,7 +32,7 @@ export function AppHeader({
           <span className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <ShoppingBag className="size-4" />
           </span>
-          <span className="text-lg font-bold">Marketplace</span>
+          <span className="text-lg font-bold">Amezo</span>
         </div>
 
         <form

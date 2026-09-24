@@ -1,4 +1,4 @@
-# frontend
+# amezo
 
 Vite + React + TypeScript. See `src/features/*` for feature code, `src/pages`
 for routed pages, `src/components/ui` for shadcn primitives.
@@ -6,7 +6,7 @@ for routed pages, `src/components/ui` for shadcn primitives.
 ## Commands
 
 ```bash
-pnpm dev          # dev server, proxied at https://marketplace-frontend.localhost (portless)
+pnpm dev          # dev server, proxied at https://amezo-frontend.localhost (portless)
 pnpm build        # typecheck + production build
 pnpm test         # vitest (unit/component, MSW-mocked)
 pnpm e2e          # playwright (spins up its own dev server)
