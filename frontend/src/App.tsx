@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router'
 
-import { CartDrawer } from '@/features/cart/components/CartDrawer'
 import { CartProvider } from '@/features/cart/context/CartContext'
 import { router } from '@/router'
 
@@ -12,7 +11,6 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <CartProvider>
         <RouterProvider router={router} />
-        <CartDrawer />
       </CartProvider>
     </QueryClientProvider>
   )

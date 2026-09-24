@@ -1,4 +1,5 @@
 import { ShoppingCart } from 'lucide-react'
+import { useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetClose, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -9,6 +10,7 @@ import { useCart } from '../context/CartContext'
 import { CartLineRow } from './CartLineRow'
 
 export function CartDrawer() {
+  const navigate = useNavigate()
   const { lines, isOpen, close, setQuantity, removeLine, acknowledgePrice, clear } = useCart()
   const variantIds = lines.map((line) => line.variantId)
   const query = useCartOffers(variantIds, isOpen)
@@ -69,8 +71,14 @@ export function CartDrawer() {
               <span>Total</span>
               <span>{formatPrice(total)}</span>
             </div>
-            {/* ponytail: no checkout flow exists yet - button is inert */}
-            <Button className="w-full rounded-full" size="lg">
+            <Button
+              className="w-full rounded-full"
+              size="lg"
+              onClick={() => {
+                close()
+                navigate('/checkout')
+              }}
+            >
               Checkout
             </Button>
             <SheetClose asChild>

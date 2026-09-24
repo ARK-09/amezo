@@ -102,6 +102,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  # Matches the real backend (orders/CheckoutService.java, orders/OrderController.java) -
+  # variantId not offerId, expectedUnitPrice optional (used for price-drift detection
+  # only when provided), sameAsShipping not billingSameAsShipping.
+  /orders:
+    post:
+      operationId: checkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   # Proposed contract only - no backend implementation exists yet (added for the cart drawer's batch fetch).
   /variants:
     get:
@@ -223,6 +248,58 @@ components:
         page: { type: integer }
         totalElements: { type: integer }
         totalPages: { type: integer }
+    CheckoutAddress:
+      type: object
+      required: [fullName, line1, city, state, postalCode, country]
+      properties:
+        fullName: { type: string }
+        line1: { type: string }
+        line2: { type: string, nullable: true }
+        city: { type: string }
+        state: { type: string }
+        postalCode: { type: string }
+        country: { type: string, minLength: 2, maxLength: 2 }
+    CheckoutLine:
+      type: object
+      required: [variantId, quantity]
+      properties:
+        variantId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        expectedUnitPrice: { type: number, nullable: true }
+    CheckoutRequest:
+      type: object
+      required: [email, phone, shippingAddress, sameAsShipping, lines]
+      properties:
+        email: { type: string, format: email }
+        phone: { type: string }
+        shippingAddress: { $ref: '#/components/schemas/CheckoutAddress' }
+        sameAsShipping: { type: boolean }
+        billingAddress:
+          allOf: [{ $ref: '#/components/schemas/CheckoutAddress' }]
+          nullable: true
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/CheckoutLine' }
+    OrderLineResponse:
+      type: object
+      required: [id, productTitle, variantLabel, quantity, unitPrice, lineTotal]
+      properties:
+        id: { type: string, format: uuid }
+        productTitle: { type: string }
+        variantLabel: { type: string }
+        quantity: { type: integer }
+        unitPrice: { type: number }
+        lineTotal: { type: number }
+    OrderResponse:
+      type: object
+      required: [id, placedAt, lines, total]
+      properties:
+        id: { type: string, format: uuid }
+        placedAt: { type: string, format: date-time }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/OrderLineResponse' }
+        total: { type: number }
     ProblemDetail:
       type: object
       required: [type, title, status]
