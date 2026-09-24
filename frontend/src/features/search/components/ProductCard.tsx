@@ -4,11 +4,14 @@ import { Link } from 'react-router'
 import { RatingBadge } from '@/components/RatingBadge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { useAddToCartFromProduct } from '@/features/cart/api/useAddToCartFromProduct'
 import { formatPrice } from '@/lib/formatPrice'
 
 import type { ProductSummary } from '../schema/types'
 
 export function ProductCard({ product }: { product: ProductSummary }) {
+  const { addDefaultVariant, isPending } = useAddToCartFromProduct()
+
   return (
     <Card className="h-full gap-3 overflow-hidden py-0">
       <Link to={`/products/${product.id}`} className="flex aspect-square items-center justify-center bg-muted">
@@ -36,8 +39,9 @@ export function ProductCard({ product }: { product: ProductSummary }) {
           <Button
             size="icon"
             className="ml-auto"
-            disabled={!product.inStock}
+            disabled={!product.inStock || isPending}
             aria-label={product.inStock ? 'Add to cart' : 'Out of stock'}
+            onClick={() => addDefaultVariant(product.id)}
           >
             <ShoppingCart />
           </Button>
