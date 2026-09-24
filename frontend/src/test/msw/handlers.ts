@@ -1,11 +1,59 @@
 import { http, HttpResponse } from 'msw'
 
 import { consumeMagicLinkToken, issueMagicLinkToken } from './fixtures/sellerAuth'
+import { addSellerProduct, listSellerProducts, removeSellerProduct } from './fixtures/sellerProducts'
 import { productDetails, reviewsFor } from './fixtures/productDetails'
 import { seedProducts } from './fixtures/products'
 import { variantOffers } from './fixtures/variants'
 
 export const handlers = [
+  http.get('http://localhost:8080/sellers/me/products', () => {
+    const content = listSellerProducts()
+    return HttpResponse.json({ content, page: 0, totalElements: content.length, totalPages: 1 })
+  }),
+
+  http.post('http://localhost:8080/sellers/me/products', async ({ request }) => {
+    const body = (await request.json()) as {
+      title: string
+      category: string
+      variants: unknown[]
+    }
+    const id = crypto.randomUUID()
+    addSellerProduct({
+      id,
+      title: body.title,
+      thumbnailUrl: null,
+      category: body.category,
+      variantCount: body.variants.length,
+      createdAt: new Date().toISOString(),
+    })
+    return HttpResponse.json({ id }, { status: 201 })
+  }),
+
+  http.delete('http://localhost:8080/products/:productId', ({ params }) => {
+    removeSellerProduct(params.productId as string)
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post('http://localhost:8080/products/:productId/images/upload-url', () => {
+    const id = crypto.randomUUID()
+    return HttpResponse.json(
+      {
+        id,
+        status: 'PENDING',
+        uploadUrl: `https://mock-s3.local/upload/${id}`,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      },
+      { status: 201 },
+    )
+  }),
+
+  http.put('https://mock-s3.local/upload/:imageId', () => new HttpResponse(null, { status: 200 })),
+
+  http.post('http://localhost:8080/products/:productId/images/confirm', async ({ request }) => {
+    const { imageId } = (await request.json()) as { imageId: string }
+    return HttpResponse.json({ id: imageId, url: `https://mock-s3.local/stored/${imageId}`, position: 0 })
+  }),
   http.post('http://localhost:8080/auth/seller/magic-link', async ({ request }) => {
     const { email } = (await request.json()) as { email: string }
     issueMagicLinkToken(email)

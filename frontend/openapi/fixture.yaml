@@ -75,6 +75,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+    delete:
+      operationId: sellerDeleteProduct
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /products/{productId}/reviews:
     get:
       operationId: getProductReviews
@@ -160,6 +176,121 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /sellers/me/products:
+    get:
+      operationId: sellerListProducts
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerProductSummaryPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    post:
+      operationId: sellerCreateProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string, format: uuid }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /products/{productId}/images/upload-url:
+    post:
+      operationId: sellerCreateImageUploadUrl
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contentType, position]
+              properties:
+                contentType: { type: string }
+                fileSizeBytes: { type: integer }
+                position: { type: integer }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, uploadUrl, expiresAt]
+                properties:
+                  id: { type: string, format: uuid }
+                  status: { type: string }
+                  uploadUrl: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /products/{productId}/images/confirm:
+    post:
+      operationId: sellerConfirmImage
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageId]
+              properties:
+                imageId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductImage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   # Proposed contract only - no backend implementation exists yet (added for the cart drawer's batch fetch).
   /variants:
     get:
@@ -230,6 +361,46 @@ components:
       properties:
         sellerId: { type: string, format: uuid }
         email: { type: string }
+    SellerProductSummary:
+      type: object
+      required: [id, title, category, variantCount, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        thumbnailUrl: { type: string, nullable: true }
+        category: { type: string }
+        variantCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+    SellerProductSummaryPage:
+      type: object
+      required: [content, page, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/SellerProductSummary' }
+        page: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    CreateVariantRequest:
+      type: object
+      required: [label, sku, price, stockQty]
+      properties:
+        label: { type: string }
+        sku: { type: string }
+        price: { type: number }
+        stockQty: { type: integer }
+    CreateProductRequest:
+      type: object
+      required: [title, category, variants]
+      properties:
+        title: { type: string }
+        brandName: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        category: { type: string }
+        variants:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/CreateVariantRequest' }
     VariantOffer:
       type: object
       required: [id, productId, productTitle, variantLabel, price, stockQty]

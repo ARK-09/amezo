@@ -14,4 +14,6 @@ public interface OfferRepository extends JpaRepository<Offer, UUID> {
     // Batched for product detail - one query for every variant's offer,
     // not one query per variant (that would be N+1 on a multi-variant product).
     List<Offer> findByVariantIdIn(Collection<UUID> variantIds);
+
+    void deleteByVariantIdIn(Collection<UUID> variantIds);
 }

@@ -76,9 +76,11 @@ public class SecurityConfig {
 
                 .requestMatchers(HttpMethod.GET, "/sellers/me/**").hasRole("SELLER")
                 .requestMatchers(HttpMethod.POST, "/products").hasRole("SELLER")
+                .requestMatchers(HttpMethod.DELETE, "/products/*").hasRole("SELLER")
                 .requestMatchers(HttpMethod.PATCH, "/products/**").hasRole("SELLER")
                 .requestMatchers(HttpMethod.POST,
-                        "/products/*/variants", "/products/*/images", "/variants/*/images").hasRole("SELLER")
+                        "/products/*/variants", "/products/*/images", "/variants/*/images",
+                        "/products/*/images/upload-url", "/products/*/images/confirm").hasRole("SELLER")
                 .requestMatchers(HttpMethod.PATCH, "/variants/**", "/images/**", "/order-lines/**").hasRole("SELLER")
 
                 .anyRequest().denyAll()
