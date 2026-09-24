@@ -15,12 +15,12 @@ describe('CartContext', () => {
     expect(result.current.isOpen).toBe(false)
   })
 
-  it('addLine adds a new line and opens the drawer', () => {
+  it('addLine adds a new line without opening the drawer', () => {
     const { result } = setup()
     act(() => result.current.addLine('v1', 2, 10))
     expect(result.current.lines).toEqual([{ variantId: 'v1', quantity: 2, priceWhenAdded: 10 }])
     expect(result.current.itemCount).toBe(2)
-    expect(result.current.isOpen).toBe(true)
+    expect(result.current.isOpen).toBe(false)
   })
 
   it('addLine on an existing variant increments rather than duplicating', () => {

@@ -49,7 +49,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
     close: () => setIsOpen(false),
     addLine: (variantId, quantity, price) => {
       dispatch({ type: 'ADD', variantId, quantity, price })
-      setIsOpen(true)
     },
     setQuantity: (variantId, quantity) => dispatch({ type: 'SET_QUANTITY', variantId, quantity }),
     removeLine: (variantId) => dispatch({ type: 'REMOVE', variantId }),
