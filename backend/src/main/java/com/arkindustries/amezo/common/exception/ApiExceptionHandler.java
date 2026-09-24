@@ -44,14 +44,15 @@ public class ApiExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
         problem.setTitle("Validation failed");
         problem.setType(URI.create("https://api/errors/validation-error"));
-        List<Map<String, String>> errors = ex.getBindingResult().getFieldErrors().stream()
-                .map(fe -> Map.of("field", fe.getField(), "reason", defaultMessage(fe)))
+        // getFieldErrors() alone silently drops class-level constraints (a
+        // cross-field @Constraint on the whole request type produces a
+        // global ObjectError, not a FieldError) - getAllErrors() covers both.
+        List<Map<String, String>> errors = ex.getBindingResult().getAllErrors().stream()
+                .map(err -> Map.of(
+                        "field", err instanceof FieldError fe ? fe.getField() : "request",
+                        "reason", err.getDefaultMessage() != null ? err.getDefaultMessage() : "invalid"))
                 .toList();
         problem.setProperty("errors", errors);
         return problem;
-    }
-
-    private String defaultMessage(FieldError fe) {
-        return fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "invalid";
     }
 }
