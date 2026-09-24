@@ -1,13 +1,16 @@
 package com.arkindustries.marketplace.catalog;
 
+import com.arkindustries.marketplace.catalog.api.ProductExistenceQuery;
 import com.arkindustries.marketplace.catalog.dto.ProductSummaryResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
+
 @Service
-public class ProductService {
+public class ProductService implements ProductExistenceQuery {
 
     private final ProductRepository productRepository;
 
@@ -23,5 +26,10 @@ public class ProductService {
         // deferred business logic (see docs/api-design.md), not built yet.
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
         return productRepository.search(query, unsorted).map(ProductMapper::toSummary);
+    }
+
+    @Override
+    public boolean exists(UUID productId) {
+        return productRepository.existsById(productId);
     }
 }
