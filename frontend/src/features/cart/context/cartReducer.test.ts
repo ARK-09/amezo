@@ -67,4 +67,14 @@ describe('cartReducer', () => {
     const result = cartReducer(initial, { type: 'ACKNOWLEDGE_PRICE', variantId: 'v1', price: 15 })
     expect(result).toEqual([{ variantId: 'v1', quantity: 3, priceWhenAdded: 15 }])
   })
+
+  it('REPLACE sets the lines to exactly the given array, discarding what was there before', () => {
+    const initial: CartLine[] = [
+      { variantId: 'v1', quantity: 1, priceWhenAdded: 10 },
+      { variantId: 'v2', quantity: 1, priceWhenAdded: 5 },
+    ]
+    const replacement: CartLine[] = [{ variantId: 'v9', quantity: 4, priceWhenAdded: 1 }]
+    const result = cartReducer(initial, { type: 'REPLACE', lines: replacement })
+    expect(result).toEqual(replacement)
+  })
 })

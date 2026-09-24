@@ -1,6 +1,6 @@
 import type { CartLine } from './schema/types'
 
-const STORAGE_KEY = 'cart:v1'
+export const STORAGE_KEY = 'cart:v1'
 
 function isCartLine(value: unknown): value is CartLine {
   if (typeof value !== 'object' || value === null) return false

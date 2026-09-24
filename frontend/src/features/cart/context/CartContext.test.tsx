@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { CartProvider, useCart } from './CartContext'
@@ -72,5 +72,19 @@ describe('CartContext', () => {
 
   it('throws when used outside a CartProvider', () => {
     expect(() => renderHook(() => useCart())).toThrow('useCart must be used within a CartProvider')
+  })
+
+  it('picks up cart changes written by another tab via the storage event', async () => {
+    const { result } = setup()
+    act(() => result.current.addLine('v1', 1, 10))
+
+    localStorage.setItem('cart:v1', JSON.stringify([{ variantId: 'v9', quantity: 4, priceWhenAdded: 1 }]))
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'cart:v1' }))
+    })
+
+    await waitFor(() =>
+      expect(result.current.lines).toEqual([{ variantId: 'v9', quantity: 4, priceWhenAdded: 1 }]),
+    )
   })
 })

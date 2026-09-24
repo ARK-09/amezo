@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import { loadCart, saveCart } from '../storage'
+import { loadCart, saveCart, STORAGE_KEY } from '../storage'
 import { cartReducer } from './cartReducer'
 
 interface CartContextValue {
@@ -26,6 +26,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     saveCart(lines)
   }, [lines])
+
+  // ponytail: storage events only fire in OTHER tabs/documents, never the
+  // one that made the write, so this can't loop with the persistence effect above.
+  useEffect(() => {
+    function onStorage(event: StorageEvent) {
+      if (event.key === STORAGE_KEY) {
+        dispatch({ type: 'REPLACE', lines: loadCart() })
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   const itemCount = useMemo(() => lines.reduce((sum, line) => sum + line.quantity, 0), [lines])
 

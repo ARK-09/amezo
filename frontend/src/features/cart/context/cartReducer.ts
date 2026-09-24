@@ -6,6 +6,7 @@ export type CartAction =
   | { type: 'REMOVE'; variantId: string }
   | { type: 'CLEAR' }
   | { type: 'ACKNOWLEDGE_PRICE'; variantId: string; price: number }
+  | { type: 'REPLACE'; lines: CartLine[] }
 
 export function cartReducer(lines: CartLine[], action: CartAction): CartLine[] {
   switch (action.type) {
@@ -32,6 +33,8 @@ export function cartReducer(lines: CartLine[], action: CartAction): CartLine[] {
       return lines.map((line) =>
         line.variantId === action.variantId ? { ...line, priceWhenAdded: action.price } : line,
       )
+    case 'REPLACE':
+      return action.lines
     default:
       return lines
   }
