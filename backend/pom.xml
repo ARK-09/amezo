@@ -12,10 +12,10 @@
     </parent>
 
     <groupId>com.arkindustries</groupId>
-    <artifactId>marketplace</artifactId>
+    <artifactId>amezo</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>marketplace</name>
-    <description>Marketplace backend</description>
+    <name>amezo</name>
+    <description>Amezo backend</description>
 
     <properties>
         <java.version>21</java.version>
