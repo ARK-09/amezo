@@ -1,7 +1,11 @@
 spring:
   application:
-    name: marketplace
+    name: amezo
   datasource:
+    # DB name intentionally left as "marketplace", not renamed to match the
+    # project: this points at the Postgres instance already running and
+    # migrated locally (see the identity commit's own note on this). Renaming
+    # it here would just point at a database that doesn't exist.
     url: jdbc:postgresql://localhost:5432/marketplace
     username: postgres
     password: root
@@ -29,14 +33,14 @@ app:
     # frontend/'s `pnpm dev` proxies through portless, so the browser-visible
     # origin is the stable https name below, not localhost:5173 (that port is
     # still listed for `pnpm exec vite` / Playwright, which bypass the proxy)
-    allowed-origins: http://localhost:5173,https://marketplace-frontend.localhost
+    allowed-origins: http://localhost:5173,https://amezo-frontend.localhost
   session:
     cookie-name: mp_session
     ttl-days: 30
   magic-link:
     ttl-minutes: 15
   s3:
-    bucket: ${AWS_S3_BUCKET:marketplace-dev}
+    bucket: ${AWS_S3_BUCKET:amezo-dev}
     region: ${AWS_REGION:us-east-1}
 
 logging:

@@ -2,9 +2,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: marketplace
-      POSTGRES_USER: marketplace
-      POSTGRES_PASSWORD: marketplace
+      POSTGRES_DB: amezo
+      POSTGRES_USER: amezo
+      POSTGRES_PASSWORD: amezo
     ports:
       - "5432:5432"
     volumes:
