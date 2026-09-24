@@ -10,6 +10,7 @@ import com.arkindustries.amezo.identity.BuyerIdentity;
 import com.arkindustries.amezo.identity.BuyerIdentityRepository;
 import com.arkindustries.amezo.identity.Seller;
 import com.arkindustries.amezo.identity.SellerRepository;
+import com.arkindustries.amezo.orders.Address;
 import com.arkindustries.amezo.orders.Order;
 import com.arkindustries.amezo.orders.OrderLine;
 import com.arkindustries.amezo.orders.OrderLineRepository;
@@ -139,9 +140,14 @@ class ReviewsApiTest {
             Seller seller, Product product, Variant variant, Offer offer, String buyerEmail, int rating, String body) {
         BuyerIdentity buyer = buyerIdentityRepository.save(BuyerIdentity.builder()
                 .email(buyerEmail).fullName("Test Buyer").build());
+        Address address = Address.builder()
+                .fullName("Test Buyer").line1("1 Main St").city("Springfield")
+                .state("IL").postalCode("62704").country("US").build();
         Order order = orderRepository.save(Order.builder()
                 .buyerIdentityId(buyer.getId()).sellerId(seller.getId())
-                .buyerEmailSnapshot(buyer.getEmail()).status(OrderStatus.DELIVERED).build());
+                .buyerEmailSnapshot(buyer.getEmail()).buyerPhone("+15551234567")
+                .shippingAddress(address).billingSameAsShipping(true).billingAddress(address)
+                .status(OrderStatus.DELIVERED).build());
         OrderLine orderLine = orderLineRepository.save(OrderLine.builder()
                 .orderId(order.getId()).offerId(offer.getId())
                 .productIdSnapshot(product.getId()).variantIdSnapshot(variant.getId())

@@ -1,6 +1,9 @@
 package com.arkindustries.amezo.orders;
 
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -24,11 +27,10 @@ import java.util.UUID;
  * isn't worth it over the standard plural-table/singular-entity
  * convention already used everywhere else in this codebase.
  *
- * sellerId: one seller per order, per the checkout design in
- * docs/api-design.md - a multi-seller cart becomes N orders, one per
- * seller, never one order with mixed-ownership lines. This field wasn't
- * spelled out in the original ADR sketch; it's what makes that decision
- * concrete in the schema.
+ * sellerId is nullable (see V12's migration comment): checkout creates
+ * one order per call regardless of how many sellers its lines belong to,
+ * so this column is no longer a reliable single answer - order_line's
+ * own seller_id_snapshot is the authoritative field, per line.
  */
 @Entity
 @Table(name = "orders")
@@ -46,11 +48,41 @@ public class Order {
     @Column(name = "buyer_identity_id", nullable = false)
     private UUID buyerIdentityId;
 
-    @Column(name = "seller_id", nullable = false)
+    @Column(name = "seller_id")
     private UUID sellerId;
 
     @Column(name = "buyer_email_snapshot", nullable = false)
     private String buyerEmailSnapshot;
+
+    @Column(name = "buyer_phone", nullable = false)
+    private String buyerPhone;
+
+    @Embedded
+    @AttributeOverrides({
+            @AttributeOverride(name = "fullName", column = @Column(name = "shipping_full_name")),
+            @AttributeOverride(name = "line1", column = @Column(name = "shipping_line1")),
+            @AttributeOverride(name = "line2", column = @Column(name = "shipping_line2")),
+            @AttributeOverride(name = "city", column = @Column(name = "shipping_city")),
+            @AttributeOverride(name = "state", column = @Column(name = "shipping_state")),
+            @AttributeOverride(name = "postalCode", column = @Column(name = "shipping_postal_code")),
+            @AttributeOverride(name = "country", column = @Column(name = "shipping_country"))
+    })
+    private Address shippingAddress;
+
+    @Column(name = "billing_same_as_shipping", nullable = false)
+    private boolean billingSameAsShipping;
+
+    @Embedded
+    @AttributeOverrides({
+            @AttributeOverride(name = "fullName", column = @Column(name = "billing_full_name")),
+            @AttributeOverride(name = "line1", column = @Column(name = "billing_line1")),
+            @AttributeOverride(name = "line2", column = @Column(name = "billing_line2")),
+            @AttributeOverride(name = "city", column = @Column(name = "billing_city")),
+            @AttributeOverride(name = "state", column = @Column(name = "billing_state")),
+            @AttributeOverride(name = "postalCode", column = @Column(name = "billing_postal_code")),
+            @AttributeOverride(name = "country", column = @Column(name = "billing_country"))
+    })
+    private Address billingAddress;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
