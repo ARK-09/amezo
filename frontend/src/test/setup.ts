@@ -14,4 +14,5 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => server.resetHandlers())
+afterEach(() => localStorage.clear())
 afterAll(() => server.close())
