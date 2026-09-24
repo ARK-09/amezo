@@ -3,8 +3,8 @@ spring:
     name: marketplace
   datasource:
     url: jdbc:postgresql://localhost:5432/marketplace
-    username: marketplace
-    password: marketplace
+    username: postgres
+    password: root
   jpa:
     hibernate:
       ddl-auto: validate   # Flyway owns the schema; Hibernate only checks entities match it
@@ -24,7 +24,10 @@ springdoc:
 
 app:
   cors:
-    allowed-origins: http://localhost:5173
+    # frontend/'s `pnpm dev` proxies through portless, so the browser-visible
+    # origin is the stable https name below, not localhost:5173 (that port is
+    # still listed for `pnpm exec vite` / Playwright, which bypass the proxy)
+    allowed-origins: http://localhost:5173,https://marketplace-frontend.localhost
   session:
     cookie-name: mp_session
     ttl-days: 30
