@@ -118,7 +118,7 @@ class SellerProductApiTest {
                 }
                 """;
 
-        String responseBody = mockMvc.perform(post("/products").cookie(cookie)
+        String responseBody = mockMvc.perform(post("/sellers/me/products").cookie(cookie)
                         .contentType("application/json").content(body))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
@@ -146,7 +146,7 @@ class SellerProductApiTest {
                 { "title": "No variants", "category": "outdoor", "variants": [] }
                 """;
 
-        mockMvc.perform(post("/products").cookie(cookie).contentType("application/json").content(body))
+        mockMvc.perform(post("/sellers/me/products").cookie(cookie).contentType("application/json").content(body))
                 .andExpect(status().isUnprocessableEntity());
     }
 

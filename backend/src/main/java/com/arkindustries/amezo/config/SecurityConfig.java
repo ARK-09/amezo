@@ -33,8 +33,10 @@ import java.util.List;
  *                    POST /auth/seller/magic-link, POST /auth/seller/verify
  *   either role   - GET/DELETE /sessions/current
  *   buyer only    - GET /orders/**, POST /reviews
- *   seller only   - /sellers/me/**, product/variant/image writes, order-line
- *                    updates, DELETE /auth/seller/session
+ *   seller only   - every method under /sellers/me/** (own product list,
+ *                    product create, orders, ship), plus product/variant/image
+ *                    writes under /products/**, order-line updates, and
+ *                    DELETE /auth/seller/session
  *
  * The /auth/seller/* trio is the seller-portal-specific magic-link flow
  * (SellerAuthController) - see that class's own note on why it's a separate
@@ -83,14 +85,18 @@ public class SecurityConfig {
 
                 .requestMatchers(HttpMethod.DELETE, "/auth/seller/session").hasRole("SELLER")
 
-                .requestMatchers(HttpMethod.GET, "/sellers/me/**").hasRole("SELLER")
-                .requestMatchers(HttpMethod.POST, "/products").hasRole("SELLER")
+                // Every method, not just GET: /sellers/me/** is the seller's own
+                // namespace by construction, and a method-by-method allow-list is
+                // how POST /sellers/me/products ended up 403ing - the endpoint
+                // existed, no rule named it, and anyRequest().denyAll() answered.
+                // Listing the namespace once means a new endpoint under it is
+                // seller-only from the moment it exists.
+                .requestMatchers("/sellers/me/**").hasRole("SELLER")
                 .requestMatchers(HttpMethod.DELETE, "/products/*").hasRole("SELLER")
                 .requestMatchers(HttpMethod.PATCH, "/products/**").hasRole("SELLER")
                 .requestMatchers(HttpMethod.POST,
                         "/products/*/variants", "/products/*/images", "/variants/*/images",
-                        "/products/*/images/upload-url", "/products/*/images/confirm",
-                        "/sellers/me/orders/*/ship").hasRole("SELLER")
+                        "/products/*/images/upload-url", "/products/*/images/confirm").hasRole("SELLER")
                 .requestMatchers(HttpMethod.PATCH, "/variants/**", "/images/**", "/order-lines/**").hasRole("SELLER")
 
                 .anyRequest().denyAll()
