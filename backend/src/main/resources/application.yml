@@ -1,14 +1,28 @@
+server:
+  # Container hosts (Render, Cloud Run, Koyeb, Northflank) inject the port they
+  # route to as $PORT and don't let you pick it - 8080 is only the local default.
+  port: ${PORT:8080}
+
 spring:
   application:
     name: amezo
   datasource:
-    # DB name intentionally left as "marketplace", not renamed to match the
-    # project: this points at the Postgres instance already running and
-    # migrated locally (see the identity commit's own note on this). Renaming
-    # it here would just point at a database that doesn't exist.
-    url: jdbc:postgresql://localhost:5432/marketplace
-    username: postgres
-    password: root
+    # Local default is the Postgres instance already running and migrated
+    # locally - DB name intentionally "marketplace", not renamed to match the
+    # project (see the identity commit's own note on this). Deployments
+    # override it with JDBC_DATABASE_URL, which must be a *JDBC* URL, not the
+    # postgres://user:pass@host/db URI most providers hand you:
+    #   jdbc:postgresql://<host>/<db>?sslmode=require
+    # with the user/password split out into the two vars below (Spring's
+    # datasource URL parser doesn't read credentials out of the URI).
+    url: ${JDBC_DATABASE_URL:jdbc:postgresql://localhost:5432/marketplace}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:root}
+    hikari:
+      # Free Postgres plans cap connections hard (Neon free: ~100 across all
+      # clients, and its pooler counts per-endpoint), and one 512 MB JVM has no
+      # use for Hikari's default 10 anyway.
+      maximum-pool-size: ${DATABASE_POOL_SIZE:5}
   jpa:
     hibernate:
       ddl-auto: validate   # Flyway owns the schema; Hibernate only checks entities match it
@@ -32,22 +46,43 @@ app:
   # Base URL the magic-link email points at (SellerAuthService builds
   # /seller/verify?token=... on top of this) - the frontend dev server's own
   # origin, not the portless-proxied one, since this is what a real browser
-  # opens from an email link.
-  frontend-url: http://localhost:5173
+  # opens from an email link. Deployed, this is the Vercel URL.
+  frontend-url: ${APP_FRONTEND_URL:http://localhost:5173}
   cors:
     # frontend/'s `pnpm dev` proxies through portless, so the browser-visible
     # origin is the stable https name below, not localhost:5173 (that port is
-    # still listed for `pnpm exec vite` / Playwright, which bypass the proxy)
-    allowed-origins: http://localhost:5173,https://amezo-frontend.localhost
+    # still listed for `pnpm exec vite` / Playwright, which bypass the proxy).
+    # Deployed, this is the Vercel origin(s), comma-separated - and it has to
+    # be exact: allowCredentials(true) means a wildcard is rejected outright.
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,https://amezo-frontend.localhost}
   session:
     cookie-name: mp_session
     ttl-days: 30
+    # Local dev is same-site over plain http, so Lax + no Secure flag. Hosted,
+    # the frontend (Vercel) and API (anywhere else) are different registrable
+    # domains, which makes every API call cross-site: the cookie is then only
+    # sent back with SameSite=None, and browsers reject SameSite=None unless
+    # Secure is also set. Hence both are config, not constants:
+    # APP_SESSION_COOKIE_SAME_SITE=None + APP_SESSION_COOKIE_SECURE=true.
+    cookie-same-site: ${APP_SESSION_COOKIE_SAME_SITE:Lax}
+    cookie-secure: ${APP_SESSION_COOKIE_SECURE:false}
   magic-link:
     ttl-minutes: 15
   s3:
     bucket: ${AWS_S3_BUCKET:amezo-dev}
     region: ${AWS_REGION:us-east-1}
+    # Empty = real AWS S3. Set it to an S3-compatible provider's API endpoint
+    # (R2: https://<account-id>.r2.cloudflarestorage.com, with region auto) and
+    # config/S3Config.java switches the client and presigner over.
+    endpoint: ${S3_ENDPOINT:}
+    # Where buyers' browsers load the images from, which on a non-AWS provider
+    # is a different host than the API endpoint above (R2's pub-*.r2.dev
+    # subdomain, or a custom domain in front of the bucket). Empty falls back to
+    # the AWS virtual-hosted URL built from bucket + region.
+    public-base-url: ${S3_PUBLIC_BASE_URL:}
 
 logging:
   level:
-    org.hibernate.SQL: debug
+    # Every statement at debug is a lot of log volume for a hosted instance
+    # (and free tiers meter or truncate logs) - deployments set this to warn.
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:debug}

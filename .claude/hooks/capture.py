@@ -29,10 +29,27 @@ IGNORED_PROMPT_PREFIXES = (
     "Please write a 5-10 word title",
     "Analyze this conversation and generate",
 )
+
+# A finished background command wakes the session through UserPromptSubmit as
+# well, so the hook sees tool chatter on the same channel as typed prompts -
+# and when someone types something mid-turn, their words and a pending
+# notification arrive in one payload. Strip the machine half and keep theirs;
+# a payload that was nothing but a notification then drops out entirely
+# (see the empty-after-stripping check in main()).
+NOTIFICATION_RE = re.compile(
+    r"\[SYSTEM NOTIFICATION[^\n]*\].*?</task-notification>"
+    r"|<task-notification>.*?</task-notification>",
+    re.S,
+)
 # ---------------------------------------------------------------------------
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.S)
 RESPONSE_NUM_RE = re.compile(r"\[LOG_ENTRY type=RESPONSE num=(\d+)(?:-(\d+))?")
+# Anchored to a full entry header ([LOG_ENTRY ...] / timestamp / model), so a
+# prompt whose own text quotes "model: unknown" isn't rewritten along with it.
+UNKNOWN_MODEL_RE = re.compile(
+    r"^(\[LOG_ENTRY [^\n]*\]\ntimestamp: \S+\nmodel: )unknown$", re.M
+)
 FM_ORDER = [
     "session_id", "date", "author", "model", "tool",
     "project", "total_exchanges", "first_prompt_time", "last_prompt_time",
@@ -178,6 +195,11 @@ def main():
         text = data.get("prompt") or ""
         if text.lstrip().startswith(IGNORED_PROMPT_PREFIXES):
             return
+        text = NOTIFICATION_RE.sub("", text).strip()
+        if not text:
+            # Pure machine wakeup - nobody typed anything, so there is no
+            # exchange to log and total_exchanges shouldn't count one.
+            return
     else:
         kind = "RESPONSE"
         text = (
@@ -196,12 +218,12 @@ def main():
     # On the first PROMPT of a session the transcript has no assistant
     # message yet, so model_from_transcript() can't resolve anything and
     # that entry gets logged as "model: unknown". By the following Stop the
-    # transcript has it, so backfill that entry's line once it's known.
+    # transcript has it, so backfill those lines once it's known. Every
+    # unknown entry, not just the last: a turn carrying injected mid-turn
+    # prompts logs several PROMPTs before the first Stop resolves the model,
+    # and each of them is sitting on "unknown" too.
     if kind == "RESPONSE" and model != "unknown":
-        marker = "\nmodel: unknown\n"
-        idx = body.rfind(marker)
-        if idx != -1:
-            body = body[:idx] + "\nmodel: %s\n" % model + body[idx + len(marker):]
+        body = UNKNOWN_MODEL_RE.sub(lambda m: m.group(1) + model, body)
 
     if not fm:
         fm = {

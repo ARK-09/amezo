@@ -35,14 +35,20 @@ public class SellerAuthController {
     private final SellerAuthService sellerAuthService;
     private final String cookieName;
     private final long sessionTtlDays;
+    private final String cookieSameSite;
+    private final boolean cookieSecure;
 
     public SellerAuthController(
             SellerAuthService sellerAuthService,
             @Value("${app.session.cookie-name}") String cookieName,
-            @Value("${app.session.ttl-days}") long sessionTtlDays) {
+            @Value("${app.session.ttl-days}") long sessionTtlDays,
+            @Value("${app.session.cookie-same-site}") String cookieSameSite,
+            @Value("${app.session.cookie-secure}") boolean cookieSecure) {
         this.sellerAuthService = sellerAuthService;
         this.cookieName = cookieName;
         this.sessionTtlDays = sessionTtlDays;
+        this.cookieSameSite = cookieSameSite;
+        this.cookieSecure = cookieSecure;
     }
 
     @PostMapping("/magic-link")
@@ -57,9 +63,12 @@ public class SellerAuthController {
 
         ResponseCookie cookie = ResponseCookie.from(cookieName, result.rawSessionToken())
                 .httpOnly(true)
-                // Secure is left off for local http dev (see app.frontend-url) -
-                // flip on once this deploys behind https.
-                .sameSite("Lax")
+                // Both come from app.session.* rather than being fixed here: local dev is
+                // same-site over plain http (Lax, no Secure), while a deployed frontend on
+                // a different domain than the API needs SameSite=None + Secure or the
+                // browser drops the cookie on every API call. See application.yml.
+                .sameSite(cookieSameSite)
+                .secure(cookieSecure)
                 .path("/")
                 .maxAge(Duration.ofDays(sessionTtlDays))
                 .build();
@@ -73,9 +82,13 @@ public class SellerAuthController {
     public ResponseEntity<Void> signOut(HttpServletRequest request) {
         sellerAuthService.signOut(readCookie(request));
 
+        // Same attributes as the cookie set on verify - a browser only replaces a
+        // cookie when name/path/domain match, and SameSite=None without Secure is
+        // rejected outright, so the expiry has to carry both flags too.
         ResponseCookie expired = ResponseCookie.from(cookieName, "")
                 .httpOnly(true)
-                .sameSite("Lax")
+                .sameSite(cookieSameSite)
+                .secure(cookieSecure)
                 .path("/")
                 .maxAge(0)
                 .build();

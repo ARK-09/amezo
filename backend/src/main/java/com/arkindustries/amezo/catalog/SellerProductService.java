@@ -46,7 +46,7 @@ public class SellerProductService {
     private final CurrentSeller currentSeller;
     private final S3Presigner s3Presigner;
     private final String s3Bucket;
-    private final String s3Region;
+    private final ImageUrlResolver imageUrls;
 
     public SellerProductService(
             ProductRepository productRepository,
@@ -56,7 +56,7 @@ public class SellerProductService {
             CurrentSeller currentSeller,
             S3Presigner s3Presigner,
             @Value("${app.s3.bucket}") String s3Bucket,
-            @Value("${app.s3.region}") String s3Region) {
+            ImageUrlResolver imageUrls) {
         this.productRepository = productRepository;
         this.variantRepository = variantRepository;
         this.offerRepository = offerRepository;
@@ -64,7 +64,7 @@ public class SellerProductService {
         this.currentSeller = currentSeller;
         this.s3Presigner = s3Presigner;
         this.s3Bucket = s3Bucket;
-        this.s3Region = s3Region;
+        this.imageUrls = imageUrls;
     }
 
     public Page<SellerProductSummaryResponse> listMine(Pageable pageable) {
@@ -82,7 +82,7 @@ public class SellerProductService {
                 product.getId(),
                 product.getTitle(),
                 thumbnails.containsKey(product.getId())
-                        ? imageUrl(thumbnails.get(product.getId()))
+                        ? imageUrls.forKey(thumbnails.get(product.getId()))
                         : null,
                 product.getCategory(),
                 variantCounts.getOrDefault(product.getId(), 0L).intValue(),
@@ -177,7 +177,7 @@ public class SellerProductService {
         image.setStatus(ImageStatus.STORED);
         imageRepository.save(image);
 
-        return new ImageResponse(image.getId(), imageUrl(image.getS3Key()), image.getPosition());
+        return new ImageResponse(image.getId(), imageUrls.forKey(image.getS3Key()), image.getPosition());
     }
 
     private Product ownedProduct(UUID productId) {
@@ -187,9 +187,5 @@ public class SellerProductService {
             throw new NotFoundException("Product " + productId + " not found");
         }
         return product;
-    }
-
-    private String imageUrl(String s3Key) {
-        return "https://%s.s3.%s.amazonaws.com/%s".formatted(s3Bucket, s3Region, s3Key);
     }
 }
