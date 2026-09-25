@@ -5,9 +5,14 @@ import type { components } from '@/lib/api/schema'
 
 type SellerProductSummaryPage = components['schemas']['SellerProductSummaryPage']
 type CreateProductRequest = components['schemas']['CreateProductRequest']
+export type SellerProductDetail = components['schemas']['SellerProductDetail']
+export type SellerVariant = components['schemas']['SellerVariant']
+type UpdateProductRequest = components['schemas']['UpdateProductRequest']
+type UpdateVariantRequest = components['schemas']['UpdateVariantRequest']
 
 export const sellerProductKeys = {
   all: ['seller', 'products'] as const,
+  detail: (productId: string) => ['seller', 'products', productId] as const,
 }
 
 export function useSellerProducts() {
@@ -82,4 +87,63 @@ export async function uploadProductImage(productId: string, staged: StagedImageU
     body: { imageId: uploadUrlData.id },
   })
   if (confirmError) throw confirmError
+}
+
+export function useSellerProduct(productId: string) {
+  return useQuery<SellerProductDetail, ProblemDetail>({
+    queryKey: sellerProductKeys.detail(productId),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await apiClient.GET('/sellers/me/products/{productId}', {
+        signal,
+        params: { path: { productId } },
+      })
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+export function useUpdateProduct(productId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<SellerProductDetail, ProblemDetail, UpdateProductRequest>({
+    mutationFn: async (body) => {
+      const { data, error } = await apiClient.PATCH('/products/{productId}', {
+        params: { path: { productId } },
+        body,
+      })
+      if (error) throw error
+      return data
+    },
+    // The response is the whole product, so seed the detail cache from it rather
+    // than refetching; the list still needs invalidating because a title or
+    // category change shows up there too.
+    onSuccess: (updated) => {
+      queryClient.setQueryData(sellerProductKeys.detail(productId), updated)
+      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
+    },
+  })
+}
+
+export function useUpdateVariant(productId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<SellerVariant, ProblemDetail, { variantId: string; body: UpdateVariantRequest }>({
+    mutationFn: async ({ variantId, body }) => {
+      const { data, error } = await apiClient.PATCH('/variants/{variantId}', {
+        params: { path: { variantId } },
+        body,
+      })
+      if (error) throw error
+      return data
+    },
+    // One variant came back, so patch it into the cached product in place - a
+    // whole-product refetch would wipe the other rows' unsaved edits.
+    onSuccess: (updated) => {
+      queryClient.setQueryData<SellerProductDetail>(sellerProductKeys.detail(productId), (current) =>
+        current
+          ? { ...current, variants: current.variants.map((v) => (v.id === updated.id ? updated : v)) }
+          : current,
+      )
+      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
+    },
+  })
 }

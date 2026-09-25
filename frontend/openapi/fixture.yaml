@@ -91,6 +91,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+    patch:
+      operationId: sellerUpdateProduct
+      description: Partial update of a product's own fields - an omitted field is left as it is.
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerProductDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /products/{productId}/reviews:
     get:
       operationId: getProductReviews
@@ -316,6 +343,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /sellers/me/products/{productId}:
+    get:
+      operationId: sellerGetProduct
+      description: The seller's own view of one product - exact stock, SKUs, and pending images included.
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerProductDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /variants/{variantId}:
+    patch:
+      operationId: sellerUpdateVariant
+      description: Partial update, flattened across variant (label, sku) and offer (price, stockQty).
+      parameters:
+        - name: variantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVariantRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerVariant'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /sellers/me/orders:
     get:
       operationId: sellerListOrders
@@ -473,6 +550,54 @@ components:
         category: { type: string }
         variantCount: { type: integer }
         createdAt: { type: string, format: date-time }
+    SellerVariant:
+      type: object
+      required: [id, label, sku, stockQty]
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        sku: { type: string }
+        price: { type: number, nullable: true }
+        stockQty: { type: integer }
+    SellerImage:
+      type: object
+      required: [id, url, position, status]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+        position: { type: integer }
+        status: { type: string, enum: [PENDING, STORED] }
+    SellerProductDetail:
+      type: object
+      required: [id, title, category, variants, images]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        brandName: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        category: { type: string }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/SellerVariant' }
+        images:
+          type: array
+          items: { $ref: '#/components/schemas/SellerImage' }
+    UpdateProductRequest:
+      type: object
+      description: Every field optional - an omitted field is left as it is.
+      properties:
+        title: { type: string }
+        brandName: { type: string }
+        description: { type: string }
+        category: { type: string }
+    UpdateVariantRequest:
+      type: object
+      description: Every field optional - an omitted field is left as it is.
+      properties:
+        label: { type: string }
+        sku: { type: string }
+        price: { type: number }
+        stockQty: { type: integer }
     SellerProductSummaryPage:
       type: object
       required: [content, page, totalElements, totalPages]

@@ -9,6 +9,7 @@ import { SearchResults } from '@/pages/SearchResults'
 import { SellerAddProduct } from '@/pages/seller/SellerAddProduct'
 import { SellerOrderDetail } from '@/pages/seller/SellerOrderDetail'
 import { SellerOrders } from '@/pages/seller/SellerOrders'
+import { SellerProductDetail } from '@/pages/seller/SellerProductDetail'
 import { SellerProducts } from '@/pages/seller/SellerProducts'
 import { SellerSignIn } from '@/pages/seller/SellerSignIn'
 import { SellerVerify } from '@/pages/seller/SellerVerify'
@@ -49,7 +50,11 @@ export const router = createBrowserRouter([
     element: <SellerPortalLayout />,
     children: [
       { path: 'products', element: <SellerProducts /> },
+      // 'new' before ':productId' for the reader's sake - React Router ranks a
+      // static segment above a dynamic one whatever the order here, but nobody
+      // should have to know that to be sure /seller/products/new still works.
       { path: 'products/new', element: <SellerAddProduct /> },
+      { path: 'products/:productId', element: <SellerProductDetail /> },
       { path: 'orders', element: <SellerOrders /> },
       { path: 'orders/:orderId', element: <SellerOrderDetail /> },
     ],
