@@ -19,7 +19,18 @@ public interface ImageRepository extends JpaRepository<Image, UUID> {
     // Batched thumbnail lookup for the seller's product list.
     List<Image> findByProductIdInAndStatusOrderByPositionAsc(Collection<UUID> productIds, ImageStatus status);
 
+    // Read before deleting: the rows carry the s3 keys, and once they're gone
+    // there is nothing left to say which objects the bucket should lose.
+    List<Image> findByProductId(UUID productId);
+
+    // An image can hang off a variant instead of a product (the image table's
+    // own CHECK allows either). Nothing creates those yet, but delete has to
+    // cover them or variant deletion trips image.variant_id's foreign key.
+    List<Image> findByVariantIdIn(Collection<UUID> variantIds);
+
     void deleteByProductId(UUID productId);
+
+    void deleteByVariantIdIn(Collection<UUID> variantIds);
 
     /**
      * Bytes counting against the storage cap: everything already in the bucket,

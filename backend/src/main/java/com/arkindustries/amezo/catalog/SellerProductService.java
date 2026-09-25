@@ -14,12 +14,21 @@ import com.arkindustries.amezo.common.exception.PayloadTooLargeException;
 import com.arkindustries.amezo.common.exception.StorageCapReachedException;
 import com.arkindustries.amezo.common.exception.StorageUnavailableException;
 import com.arkindustries.amezo.identity.api.CurrentSeller;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import software.amazon.awssdk.core.exception.SdkException;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
@@ -27,6 +36,7 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -41,6 +51,8 @@ import java.util.stream.Collectors;
 @Service
 public class SellerProductService {
 
+    private static final Logger log = LoggerFactory.getLogger(SellerProductService.class);
+
     private static final Duration UPLOAD_URL_TTL = Duration.ofMinutes(15);
 
     private final ProductRepository productRepository;
@@ -49,6 +61,7 @@ public class SellerProductService {
     private final ImageRepository imageRepository;
     private final CurrentSeller currentSeller;
     private final S3Presigner s3Presigner;
+    private final S3Client s3Client;
     private final String s3Bucket;
     private final ImageUrlResolver imageUrls;
     private final long maxUploadBytes;
@@ -61,6 +74,7 @@ public class SellerProductService {
             ImageRepository imageRepository,
             CurrentSeller currentSeller,
             S3Presigner s3Presigner,
+            S3Client s3Client,
             @Value("${app.s3.bucket}") String s3Bucket,
             ImageUrlResolver imageUrls,
             @Value("${app.s3.max-upload-bytes}") long maxUploadBytes,
@@ -71,6 +85,7 @@ public class SellerProductService {
         this.imageRepository = imageRepository;
         this.currentSeller = currentSeller;
         this.s3Presigner = s3Presigner;
+        this.s3Client = s3Client;
         this.s3Bucket = s3Bucket;
         this.imageUrls = imageUrls;
         this.maxUploadBytes = maxUploadBytes;
@@ -133,10 +148,67 @@ public class SellerProductService {
                 .map(Variant::getId)
                 .toList();
 
+        // Collected before the rows go: the keys only exist on those rows, and
+        // without them the objects would sit in the bucket forever - billed, and
+        // invisible to the storage cap, which counts image rows. That drift is the
+        // whole reason this deletes from the bucket at all.
+        List<String> keys = new ArrayList<>();
+        imageRepository.findByProductId(product.getId()).forEach(image -> keys.add(image.getS3Key()));
+        if (!variantIds.isEmpty()) {
+            imageRepository.findByVariantIdIn(variantIds).forEach(image -> keys.add(image.getS3Key()));
+            imageRepository.deleteByVariantIdIn(variantIds);
+        }
+
         offerRepository.deleteByVariantIdIn(variantIds);
         imageRepository.deleteByProductId(product.getId());
         variantRepository.deleteByProductId(product.getId());
         productRepository.delete(product);
+
+        deleteObjectsAfterCommit(keys);
+    }
+
+    /**
+     * Objects go after the database says the rows are really gone, never before.
+     * Object storage has no part in the transaction, so the two orders fail
+     * differently: delete objects first and a rolled-back transaction leaves a
+     * live product whose images 404 forever, while this way a failed delete leaves
+     * objects nobody references - wasteful, logged, and fixable, which is the
+     * better of the two.
+     */
+    private void deleteObjectsAfterCommit(List<String> keys) {
+        if (keys.isEmpty()) {
+            return;
+        }
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            deleteObjects(keys);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                deleteObjects(keys);
+            }
+        });
+    }
+
+    /**
+     * One request per key rather than a batch delete: a product holds at most a
+     * handful of images, every S3-compatible provider implements single-object
+     * DELETE identically, and a partial batch failure is fiddlier to report than a
+     * per-key loop that logs what it couldn't remove.
+     */
+    private void deleteObjects(List<String> keys) {
+        for (String key : keys) {
+            try {
+                s3Client.deleteObject(DeleteObjectRequest.builder().bucket(s3Bucket).key(key).build());
+            } catch (SdkException ex) {
+                // Never fatal: the rows are already gone and the caller's delete
+                // succeeded. This is the leak worth an operator's attention, not a
+                // reason to fail a request that has already been committed.
+                log.error("Deleted image row but could not remove {} from bucket {}: {}",
+                        key, s3Bucket, ex.getMessage());
+            }
+        }
     }
 
     /**
@@ -199,10 +271,6 @@ public class SellerProductService {
                 .filter(candidate -> candidate.getProductId() != null && candidate.getProductId().equals(product.getId()))
                 .orElseThrow(() -> new NotFoundException("Image " + request.imageId() + " not found on this product"));
 
-        // No real S3 HEAD check here (see docs/api-design.md's PATCH
-        // /images/{id} for the intended design) - trusts the client's
-        // confirm call. A time-boxed simplification, flagged rather than
-        // silently pretending to verify the upload.
         if (image.getStatus() != ImageStatus.PENDING) {
             throw new ConflictException(
                     java.net.URI.create("https://api/errors/already-confirmed"),
@@ -210,10 +278,40 @@ public class SellerProductService {
                     "Image " + image.getId() + " was already confirmed",
                     List.of());
         }
+        // Verified against the bucket rather than taken on trust: confirm is a
+        // client call, and a STORED row with no object behind it renders as a
+        // broken image on the product page for good. The response also carries the
+        // object's real size, which replaces the size the client declared at
+        // presign time - that is what the storage cap counts, so it should be the
+        // bucket's number, not the client's.
+        HeadObjectResponse head = headStoredObject(image);
         image.setStatus(ImageStatus.STORED);
+        image.setSizeBytes(head.contentLength());
         imageRepository.save(image);
 
         return new ImageResponse(image.getId(), imageUrls.forKey(image.getS3Key()), image.getPosition());
+    }
+
+    private HeadObjectResponse headStoredObject(Image image) {
+        try {
+            return s3Client.headObject(HeadObjectRequest.builder()
+                    .bucket(s3Bucket)
+                    .key(image.getS3Key())
+                    .build());
+        } catch (NoSuchKeyException ex) {
+            throw new ConflictException(
+                    java.net.URI.create("https://api/errors/upload-not-found"),
+                    "Upload not found",
+                    "No uploaded file was found for image " + image.getId()
+                            + ". The presigned URL may have expired before the upload finished.",
+                    List.of());
+        } catch (SdkException ex) {
+            // Same reasoning as the presign path: a deployment with no object
+            // storage configured says so, instead of 500ing on a stack trace.
+            throw new StorageUnavailableException(
+                    "Image upload isn't configured on this deployment: object storage could not be "
+                            + "reached to verify the upload. See backend/.env.example (AWS_*/S3_* vars).", ex);
+        }
     }
 
     /**

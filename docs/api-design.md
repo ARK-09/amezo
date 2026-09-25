@@ -94,6 +94,16 @@ No standard REST shape for "get me a place to PUT a file, then tell the server i
 
 An unused presigned URL just leaves an `image` row stuck at `pending` forever — cheap to ignore or garbage-collect later, and it never displays (only `stored` images render on the product page). No verb anywhere in the path; the transition is the resource's own status field.
 
+**As built**, three differences from the sketch above, all deliberate:
+
+- The paths are `POST /products/{id}/images/upload-url` and `POST /products/{id}/images/confirm` (a body carrying the image id) rather than `POST .../images` + `PATCH /images/{id}`. `/variants/{variantId}/images` was never built — see the variant note below.
+- Presigned **PUT**, not POST-with-policy. The size range the sketch wanted POST for is covered differently: `fileSizeBytes` is required and signed into the URL as `Content-Length`, so the upload can only be exactly the size the seller declared, and the request is refused up front if that size breaks the per-file limit or the deployment's total storage cap.
+- The S3 HEAD on confirm **is** implemented: the object must exist or confirm answers `409 upload-not-found` and the row stays `pending`. HEAD's `Content-Length` also replaces the declared size on the row, so the storage cap counts what the bucket holds rather than what a client claimed.
+
+Deleting a product deletes its objects from the bucket as well as its rows — after the transaction commits, so a rolled-back delete can't strand a live product with 404ing images. A bucket that refuses the delete is logged, not fatal: the rows are already gone.
+
+**Variant-level images** are modeled (`image.variant_id`, with the table's `product_id IS NOT NULL OR variant_id IS NOT NULL` check) but nothing writes them — no endpoint accepts a variant id, `VariantDetail` carries no images, and the product page's gallery is product-level. Product deletion clears variant-linked rows anyway, so wiring them later can't trip `image.variant_id`'s foreign key.
+
 ## Checkout — the atomic call
 
 `POST /orders` — auth: none (guest).
