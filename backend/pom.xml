@@ -73,6 +73,17 @@
             <version>2.29.0</version>
         </dependency>
 
+        <!-- Magic-link delivery (identity/ResendEmailSender). Their HTTP API over
+             their own SDK rather than SMTP: no spring-boot-starter-mail, no SMTP
+             credentials, and Render's free plan blocks outbound SMTP ports
+             anyway. Falls back to logging the link when no API key is set, so
+             this dependency is inert on a deployment that skips it. -->
+        <dependency>
+            <groupId>com.resend</groupId>
+            <artifactId>resend-java</artifactId>
+            <version>4.26.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

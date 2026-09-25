@@ -71,6 +71,14 @@ public class ApiExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(EmailDeliveryException.class)
+    public ProblemDetail handleEmailDelivery(EmailDeliveryException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, ex.getMessage());
+        problem.setTitle("Email delivery failed");
+        problem.setType(URI.create("https://api/errors/email-delivery-failed"));
+        return problem;
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);

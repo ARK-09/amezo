@@ -81,6 +81,19 @@ app:
     cookie-secure: ${APP_SESSION_COOKIE_SECURE:false}
   magic-link:
     ttl-minutes: ${APP_MAGIC_LINK_TTL_MINUTES:15}
+  email:
+    # Sender address on the magic-link email. Resend's onboarding@resend.dev works
+    # without any DNS setup, but only delivers to the address the Resend account
+    # was signed up with - a sandbox, not a sending address. Anything else
+    # requires a domain verified in Resend, which is also what lets real sellers
+    # receive their links.
+    from: ${APP_EMAIL_FROM:onboarding@resend.dev}
+    resend:
+      # Empty = no provider, and magic links get written to the log instead
+      # (identity/EmailSenderConfig). A bearer credential that can send mail as
+      # the verified domain, so it lives in the environment only - never in this
+      # file, and never in git.
+      api-key: ${RESEND_API_KEY:}
   s3:
     bucket: ${AWS_S3_BUCKET:amezo-dev}
     region: ${AWS_REGION:us-east-1}
