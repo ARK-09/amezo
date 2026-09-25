@@ -41,7 +41,11 @@ public class SellerProductController {
         return sellerProductService.listMine(pageable);
     }
 
-    @PostMapping("/products")
+    // Create lives under /sellers/me/, not /products, matching
+    // frontend/openapi/fixture.yaml - the contract both sides are generated
+    // against. It was /products here, which no security rule covered, so every
+    // create fell through to anyRequest().denyAll() and 403'd.
+    @PostMapping("/sellers/me/products")
     public ResponseEntity<CreateProductResponse> create(@Valid @RequestBody CreateProductRequest request) {
         CreateProductResponse response = sellerProductService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);

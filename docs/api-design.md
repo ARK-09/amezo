@@ -176,7 +176,7 @@ Reaching it from the email link: the confirmation/history email contains a magic
 | Method & path | Nesting reason |
 |---|---|
 | `GET /sellers/me` | profile display (`fullName`, `email`) |
-| `POST /products` | flat — seller creates from their own session, `sellerId` taken from auth not body |
+| `POST /sellers/me/products` | flat — seller creates from their own session, `sellerId` taken from auth not body. Under `/sellers/me/` rather than `/products` so the whole namespace is seller-only in one security rule |
 | `PATCH /products/{id}` | must own it (`404` if not) |
 | `POST /products/{id}/variants` | nested — variant can't exist without its product. Body accepts **flattened** `{ label, sku, price, stockQty }`; server writes `variant` + `offer` in one transaction |
 | `PATCH /variants/{id}` | same flattening, writes to both tables |
