@@ -13,7 +13,7 @@ export function Breadcrumb({
   const crumbs = [
     { label: 'Home', to: '/' },
     { label: category, to: `/search?category=${encodeURIComponent(category)}` },
-    { label: brandName, to: `/search?q=${encodeURIComponent(brandName)}` },
+    { label: brandName, to: `/stores/${encodeURIComponent(brandName)}` },
   ]
 
   return (

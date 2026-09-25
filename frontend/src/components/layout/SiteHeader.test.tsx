@@ -70,7 +70,17 @@ describe('SiteHeader', () => {
       'href',
       '/search?category=Electronics',
     )
-    expect(screen.getByRole('link', { name: 'All products' })).toHaveAttribute('href', '/search')
+    expect(screen.getByRole('link', { name: /All categories/ })).toHaveAttribute('href', '/search')
+  })
+
+  it('remembers the delivery city across visits', async () => {
+    renderHeader()
+
+    await userEvent.click(screen.getByRole('button', { name: /Deliver to Dubai/ }))
+    await userEvent.click(screen.getByRole('option', { name: 'Sharjah' }))
+
+    expect(screen.getByRole('button', { name: /Deliver to Sharjah/ })).toBeInTheDocument()
+    expect(localStorage.getItem('delivery-city:v1')).toBe('Sharjah')
   })
 
   it('links the wordmark home and offers the seller entry point', () => {

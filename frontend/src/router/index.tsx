@@ -7,6 +7,7 @@ import { SellerPortalLayout } from '@/features/seller-portal/components/SellerPo
 import { Landing } from '@/pages/Landing'
 import { ProductDetail } from '@/pages/ProductDetail'
 import { SearchResults } from '@/pages/SearchResults'
+import { StoreFront } from '@/pages/StoreFront'
 import { SellerAddProduct } from '@/pages/seller/SellerAddProduct'
 import { SellerOrderDetail } from '@/pages/seller/SellerOrderDetail'
 import { SellerOrders } from '@/pages/seller/SellerOrders'
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
       { path: '/', element: <Landing /> },
       { path: '/search', element: <SearchResults /> },
       { path: '/products/:productId', element: <ProductDetail /> },
+      { path: '/stores/:brand', element: <StoreFront /> },
       { path: '/checkout', element: <Checkout /> },
       { path: '/orders/:orderId/confirmation', element: <OrderConfirmation /> },
     ],

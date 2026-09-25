@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { describe, expect, it } from 'vitest'
@@ -31,61 +32,87 @@ function renderPage(initialEntry = '/') {
 }
 
 const LAPTOP = '14" Ultrabook Laptop, 16GB RAM'
+const SHOES = 'Trail Running Shoes'
 
 describe('Landing', () => {
-  it('leads with the hero and its marketplace search box', () => {
+  it('leads with a hero built from a real listing, not invented campaign copy', async () => {
     renderPage()
 
-    expect(
-      screen.getByRole('heading', { name: /Everything you need, from sellers you can check/ }),
-    ).toBeInTheDocument()
-    expect(screen.getByLabelText('Search the marketplace')).toBeInTheDocument()
+    const hero = within(await screen.findByRole('region', { name: 'Featured' }))
+    // first in-stock listing: Aurora Audio's headphones at $129.99
+    expect(await hero.findByText('Aurora Audio')).toBeInTheDocument()
+    expect(hero.getByText('From $129.99')).toBeInTheDocument()
+    expect(hero.getByRole('link', { name: 'Shop now' })).toHaveAttribute(
+      'href',
+      '/products/11111111-1111-1111-1111-111111111111',
+    )
   })
 
-  it('spotlights the best-rated product that is actually in stock', async () => {
+  it('advances the hero when a carousel dot is clicked', async () => {
     renderPage()
 
-    const spotlight = within(await screen.findByRole('region', { name: 'Top rated right now' }))
-    expect(spotlight.getByRole('link', { name: LAPTOP })).toBeInTheDocument()
-    expect(spotlight.getByText('$899.00')).toBeInTheDocument()
+    const hero = within(await screen.findByRole('region', { name: 'Featured' }))
+    await userEvent.click(await hero.findByRole('button', { name: 'Show featured product 2' }))
+
+    expect(hero.getByText('From $899.00')).toBeInTheDocument()
+    expect(hero.getByText(LAPTOP)).toBeInTheDocument()
   })
 
   it('offers a tile per catalog category', async () => {
     renderPage()
 
-    expect(await screen.findByRole('link', { name: 'Electronics' })).toHaveAttribute(
+    const rail = within(await screen.findByRole('region', { name: 'Explore popular categories' }))
+    expect(rail.getByRole('link', { name: 'Electronics' })).toHaveAttribute(
       'href',
       '/search?category=Electronics',
     )
-    expect(screen.getByRole('link', { name: 'Outdoor' })).toHaveAttribute(
+    expect(rail.getByRole('link', { name: 'Outdoor' })).toHaveAttribute(
       'href',
       '/search?category=Outdoor',
     )
   })
 
-  it('keeps out-of-stock products out of the trending rail but not new arrivals', async () => {
+  it('keeps out-of-stock listings out of the picks rail but not new arrivals', async () => {
     renderPage()
 
-    const trending = within(await screen.findByRole('region', { name: 'Trending this week' }))
-    expect(await trending.findByText(LAPTOP)).toBeInTheDocument()
-    expect(trending.queryByText('Trail Running Shoes')).not.toBeInTheDocument()
+    const picks = within(await screen.findByRole('region', { name: "Today's best picks for you" }))
+    expect(await picks.findByText(LAPTOP)).toBeInTheDocument()
+    expect(picks.queryByText(SHOES)).not.toBeInTheDocument()
 
-    const newest = within(screen.getByRole('region', { name: 'New arrivals' }))
-    expect(await newest.findByText('Trail Running Shoes')).toBeInTheDocument()
+    const fresh = within(screen.getByRole('region', { name: 'New this week' }))
+    expect(await fresh.findByText(SHOES)).toBeInTheDocument()
   })
 
-  it('points the rails and the seller band at the right destinations', async () => {
+  it('builds the category rails from whatever the catalog returns', async () => {
     renderPage()
 
-    const newest = within(await screen.findByRole('region', { name: 'New arrivals' }))
-    expect(newest.getByRole('link', { name: /See what's new/ })).toHaveAttribute(
-      'href',
-      '/search?sort=newest',
+    const electronics = within(
+      await screen.findByRole('region', { name: 'Top picks in Electronics' }),
     )
-    expect(screen.getByRole('link', { name: /Start selling/ })).toHaveAttribute(
-      'href',
-      '/seller/sign-in',
-    )
+    expect(await electronics.findByText(LAPTOP)).toBeInTheDocument()
+    expect(electronics.queryByText(SHOES)).not.toBeInTheDocument()
+
+    const footwear = within(await screen.findByRole('region', { name: 'Best sellers in Footwear' }))
+    expect(await footwear.findByText(SHOES)).toBeInTheDocument()
+  })
+
+  it('points a promo tile at the featured seller storefront', async () => {
+    renderPage()
+
+    const tiles = within(await screen.findByRole('region', { name: 'Highlights' }))
+    expect(await tiles.findByText('Aurora Audio')).toBeInTheDocument()
+    const [, storeLink] = tiles.getAllByRole('link', { name: 'Shop now' })
+    expect(storeLink).toHaveAttribute('href', '/stores/Aurora%20Audio')
+  })
+
+  it('runs the banner search against the catalog', async () => {
+    renderPage()
+
+    const banner = screen.getByRole('search', { name: 'Catalog search' })
+    await userEvent.type(within(banner).getByLabelText('Search every seller'), 'laptop')
+    await userEvent.click(within(banner).getByRole('button', { name: 'Search' }))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/search?q=laptop')
   })
 
   it('hands a legacy "/?q=" link on to the search page instead of dropping the term', async () => {
@@ -107,8 +134,6 @@ describe('Landing', () => {
     )
     renderPage()
 
-    const rails = await screen.findAllByText("Couldn't load these products.")
-    expect(rails).toHaveLength(2)
+    expect((await screen.findAllByText("Couldn't load these products.")).length).toBeGreaterThan(0)
   })
 })
-

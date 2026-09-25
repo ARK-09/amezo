@@ -1,11 +1,12 @@
+import { ProductTile } from '@/features/catalog/components/ProductTile'
+
 import type { ProductSummary } from '../schema/types'
-import { ProductCard } from './ProductCard'
 
 export function ProductGrid({ products }: { products: ProductSummary[] }) {
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+    <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
       {products.map((product) => (
-        <ProductCard key={product.id} product={product} />
+        <ProductTile key={product.id} product={product} />
       ))}
     </div>
   )

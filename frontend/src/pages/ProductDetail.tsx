@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 
 import { RatingBadge } from '@/components/RatingBadge'
 import { Button } from '@/components/ui/button'
@@ -59,12 +59,21 @@ export function ProductDetail() {
             <div className="min-w-[300px] flex-1">
               <h1 className="mb-3.5 text-2xl">{product.title}</h1>
 
-              <div className="mb-4 flex items-center gap-3">
+              <div className="mb-4 flex flex-wrap items-center gap-3">
                 {product.reviewSummary.averageRating != null && (
                   <RatingBadge rating={product.reviewSummary.averageRating} />
                 )}
                 <span className="border-l pl-3 text-sm text-muted-foreground">
                   {product.reviewSummary.count} reviews
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  Sold by{' '}
+                  <Link
+                    to={`/stores/${encodeURIComponent(product.brandName)}`}
+                    className="font-semibold text-foreground underline decoration-border underline-offset-[3px] hover:decoration-primary"
+                  >
+                    {product.brandName}
+                  </Link>
                 </span>
               </div>
 

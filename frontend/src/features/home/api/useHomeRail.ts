@@ -9,6 +9,7 @@ type ProductSummaryPage = components['schemas']['ProductSummaryPage']
 export interface HomeRailParams {
   sort: SortOption
   size: number
+  category?: string
   inStockOnly?: boolean
 }
 
@@ -17,12 +18,13 @@ export const homeKeys = {
   rail: (params: HomeRailParams) => [...homeKeys.all, 'rail', params] as const,
 }
 
-// The landing page reads the same /products endpoint the search page does -
-// there is no separate merchandising endpoint - so each rail is just a small,
+// The landing page reads the same /products endpoint search does - there is
+// no separate merchandising endpoint - so each rail is just a small,
 // pre-sorted page of it. Cached long enough that bouncing between the landing
 // page and a product doesn't refetch the whole front page every time.
-export function useHomeRail(params: HomeRailParams) {
+export function useHomeRail(params: HomeRailParams, options: { enabled?: boolean } = {}) {
   return useQuery<ProductSummaryPage, ProblemDetail>({
+    enabled: options.enabled ?? true,
     queryKey: homeKeys.rail(params),
     queryFn: async ({ signal }) => {
       const { data, error } = await apiClient.GET('/products', {
@@ -32,6 +34,7 @@ export function useHomeRail(params: HomeRailParams) {
             sort: params.sort,
             page: 0,
             size: params.size,
+            category: params.category || undefined,
             inStockOnly: params.inStockOnly || undefined,
           },
         },
