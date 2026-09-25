@@ -1,9 +1,10 @@
-import { createBrowserRouter, Outlet } from 'react-router'
+import { createBrowserRouter } from 'react-router'
 
-import { CartDrawer } from '@/features/cart/components/CartDrawer'
+import { BuyerLayout } from '@/components/layout/BuyerLayout'
 import { Checkout } from '@/pages/Checkout'
 import { OrderConfirmation } from '@/pages/OrderConfirmation'
 import { SellerPortalLayout } from '@/features/seller-portal/components/SellerPortalLayout'
+import { Landing } from '@/pages/Landing'
 import { ProductDetail } from '@/pages/ProductDetail'
 import { SearchResults } from '@/pages/SearchResults'
 import { SellerAddProduct } from '@/pages/seller/SellerAddProduct'
@@ -14,24 +15,12 @@ import { SellerProducts } from '@/pages/seller/SellerProducts'
 import { SellerSignIn } from '@/pages/seller/SellerSignIn'
 import { SellerVerify } from '@/pages/seller/SellerVerify'
 
-// CartDrawer needs useNavigate() (checkout button) and must persist across
-// route changes rather than remounting per-page - a layout route gives it
-// both, which rendering it as App.tsx's sibling to <RouterProvider> can't:
-// that placement has no Router context at all.
-function RootLayout() {
-  return (
-    <>
-      <Outlet />
-      <CartDrawer />
-    </>
-  )
-}
-
 export const router = createBrowserRouter([
   {
-    element: <RootLayout />,
+    element: <BuyerLayout />,
     children: [
-      { path: '/', element: <SearchResults /> },
+      { path: '/', element: <Landing /> },
+      { path: '/search', element: <SearchResults /> },
       { path: '/products/:productId', element: <ProductDetail /> },
       { path: '/checkout', element: <Checkout /> },
       { path: '/orders/:orderId/confirmation', element: <OrderConfirmation /> },

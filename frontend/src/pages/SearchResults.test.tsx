@@ -10,7 +10,7 @@ import { server } from '@/test/msw/server'
 
 import { SearchResults } from './SearchResults'
 
-function renderPage(initialEntry = '/') {
+function renderPage(initialEntry = '/search') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -35,7 +35,7 @@ describe('SearchResults', () => {
   })
 
   it('shows the query in the results header once searched', async () => {
-    renderPage('/?q=laptop')
+    renderPage('/search?q=laptop')
     expect(await screen.findByText('14" Ultrabook Laptop, 16GB RAM')).toBeInTheDocument()
     expect(screen.getByText(/results for/)).toBeInTheDocument()
     expect(
@@ -44,7 +44,7 @@ describe('SearchResults', () => {
   })
 
   it('shows the no-results state for a query that matches nothing', async () => {
-    renderPage('/?q=doesnotexist')
+    renderPage('/search?q=doesnotexist')
     expect(await screen.findByText('No products found')).toBeInTheDocument()
   })
 
