@@ -5,8 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "py",
-            "args": ["-3", "${CLAUDE_PROJECT_DIR}/.claude/hooks/capture.py"],
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/capture.py\" || py -3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/capture.py\"",
+            "shell": "bash",
             "timeout": 20,
             "statusMessage": "capturing prompt"
           }
@@ -18,8 +18,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "py",
-            "args": ["-3", "${CLAUDE_PROJECT_DIR}/.claude/hooks/capture.py"],
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/capture.py\" || py -3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/capture.py\"",
+            "shell": "bash",
             "timeout": 30,
             "statusMessage": "capturing response"
           }

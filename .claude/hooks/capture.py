@@ -28,11 +28,21 @@ IGNORED_PROMPT_PREFIXES = (
     "Context: This summary will be shown in a list",
     "Please write a 5-10 word title",
     "Analyze this conversation and generate",
+    # Mid-turn machine injections, not something anyone typed: a backgrounded
+    # command finishing wakes the session through UserPromptSubmit too, and
+    # logging those as PROMPTs inflates total_exchanges with tool chatter.
+    "<task-notification>",
+    "[SYSTEM NOTIFICATION",
 )
 # ---------------------------------------------------------------------------
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.S)
 RESPONSE_NUM_RE = re.compile(r"\[LOG_ENTRY type=RESPONSE num=(\d+)(?:-(\d+))?")
+# Anchored to a full entry header ([LOG_ENTRY ...] / timestamp / model), so a
+# prompt whose own text quotes "model: unknown" isn't rewritten along with it.
+UNKNOWN_MODEL_RE = re.compile(
+    r"^(\[LOG_ENTRY [^\n]*\]\ntimestamp: \S+\nmodel: )unknown$", re.M
+)
 FM_ORDER = [
     "session_id", "date", "author", "model", "tool",
     "project", "total_exchanges", "first_prompt_time", "last_prompt_time",
@@ -196,12 +206,12 @@ def main():
     # On the first PROMPT of a session the transcript has no assistant
     # message yet, so model_from_transcript() can't resolve anything and
     # that entry gets logged as "model: unknown". By the following Stop the
-    # transcript has it, so backfill that entry's line once it's known.
+    # transcript has it, so backfill those lines once it's known. Every
+    # unknown entry, not just the last: a turn carrying injected mid-turn
+    # prompts logs several PROMPTs before the first Stop resolves the model,
+    # and each of them is sitting on "unknown" too.
     if kind == "RESPONSE" and model != "unknown":
-        marker = "\nmodel: unknown\n"
-        idx = body.rfind(marker)
-        if idx != -1:
-            body = body[:idx] + "\nmodel: %s\n" % model + body[idx + len(marker):]
+        body = UNKNOWN_MODEL_RE.sub(lambda m: m.group(1) + model, body)
 
     if not fm:
         fm = {

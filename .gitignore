@@ -9,3 +9,6 @@ backend/target/
 *.iml
 .vscode/
 .m2-cache/
+
+# Per-machine Claude Code overrides (interpreter paths, local hook tweaks)
+.claude/settings.local.json
