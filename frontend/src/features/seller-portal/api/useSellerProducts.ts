@@ -208,18 +208,61 @@ export function useDeleteImage(productId: string) {
   })
 }
 
+export interface ImageUploadFailure {
+  fileName: string
+  error: ProblemDetail | Error
+}
+
+export interface ImageBatchUploadResult {
+  uploaded: number
+  failed: ImageUploadFailure[]
+}
+
 /**
- * Upload one image to an existing product. Same three steps as the create page's
- * upload - presign, PUT straight to storage, confirm - and the detail query is
- * refetched afterwards because only the server knows the row the confirm created.
+ * Upload a batch of images to an existing product. Each file is the create page's
+ * same three steps - presign, PUT straight to storage, confirm - and the detail
+ * query is refetched afterwards because only the server knows the rows the
+ * confirms created.
+ *
+ * Sequential on purpose. Every presign both reserves a row against the product's
+ * 7-image cap and charges the deployment's storage budget, and the server checks
+ * those per request; firing six presigns at once would race both checks. It also
+ * keeps one slow file from stalling the others' progress reporting.
+ *
+ * Resolves even when some files fail, rather than throwing on the first one: five
+ * pictures where the third is a 40 MB raw file should upload four, not zero, and
+ * the caller needs to know which one to fix. A rejection here means the batch
+ * itself could not be attempted.
  */
-export function useUploadImage(productId: string) {
+export function useUploadImages(productId: string) {
   const queryClient = useQueryClient()
-  return useMutation<void, ProblemDetail | Error, { file: File; position: number }>({
-    mutationFn: async ({ file, position }) => {
-      await uploadProductImage(productId, { file, position })
+  return useMutation<
+    ImageBatchUploadResult,
+    ProblemDetail | Error,
+    { files: File[]; startPosition: number; onProgress?: (done: number, total: number) => void }
+  >({
+    mutationFn: async ({ files, startPosition, onProgress }) => {
+      const failed: ImageUploadFailure[] = []
+      let uploaded = 0
+
+      for (const file of files) {
+        try {
+          // Positions stay contiguous by counting successes, not attempts, so a
+          // file that fails doesn't leave a gap in the gallery ordering.
+          await uploadProductImage(productId, { file, position: startPosition + uploaded })
+          uploaded++
+        } catch (error) {
+          failed.push({ fileName: file.name, error: error as ProblemDetail | Error })
+        }
+        onProgress?.(uploaded + failed.length, files.length)
+      }
+
+      return { uploaded, failed }
     },
-    onSuccess: () => {
+    onSuccess: ({ uploaded }) => {
+      // Nothing landed, so nothing to refetch - and refetching would only make
+      // the failure message flicker behind a reload of unchanged data.
+      if (uploaded === 0) return
       void queryClient.invalidateQueries({ queryKey: sellerProductKeys.detail(productId) })
       void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
     },

@@ -23,7 +23,7 @@ import {
   useSellerProduct,
   useUpdateProduct,
   useUpdateVariant,
-  useUploadImage,
+  useUploadImages,
 } from '@/features/seller-portal/api/useSellerProducts'
 
 /**
@@ -399,26 +399,44 @@ function Images({
   productId: string
   images: SellerProductDetailData['images']
 }) {
-  const upload = useUploadImage(productId)
+  const upload = useUploadImages(productId)
   const remove = useDeleteImage(productId)
   const fileInput = useRef<HTMLInputElement>(null)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [skipped, setSkipped] = useState(0)
 
   const MAX_IMAGES = 7
   const atCap = images.length >= MAX_IMAGES
+  const remaining = MAX_IMAGES - images.length
 
   function pick(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    // Reset first: picking the same file twice in a row fires no change event
-    // otherwise, so a failed upload couldn't be retried with the same file.
+    const picked = Array.from(e.target.files ?? [])
+    // Reset first: picking the same files twice in a row fires no change event
+    // otherwise, so a failed upload couldn't be retried with the same files.
     e.target.value = ''
-    if (!file) {
+    if (picked.length === 0) {
       return
     }
-    // Position after the last existing image, so the first upload stays the
-    // thumbnail and new ones land at the end of the gallery.
-    const position = images.reduce((max, image) => Math.max(max, image.position + 1), 0)
-    upload.mutate({ file, position })
+
+    // Clamped here as well as on the server, which counts PENDING rows toward the
+    // cap exactly as this does. Without the clamp the extra files would each
+    // presign, get a 409, and read as five failures instead of one clear "that's
+    // more than the product can hold".
+    const files = picked.slice(0, remaining)
+    setSkipped(picked.length - files.length)
+    setProgress({ done: 0, total: files.length })
+
+    // Position after the last existing image, so the existing thumbnail stays the
+    // thumbnail and the new ones land at the end of the gallery in the order they
+    // were picked.
+    const startPosition = images.reduce((max, image) => Math.max(max, image.position + 1), 0)
+    upload.mutate(
+      { files, startPosition, onProgress: (done, total) => setProgress({ done, total }) },
+      { onSettled: () => setProgress(null) },
+    )
   }
+
+  const failures = upload.data?.failed ?? []
 
   return (
     <div className="flex flex-col gap-4 rounded-lg border p-6">
@@ -437,11 +455,17 @@ function Images({
             onClick={() => fileInput.current?.click()}
           >
             <Upload className="size-4" aria-hidden />
-            {upload.isPending ? 'Uploading…' : 'Add image'}
+            {upload.isPending
+              ? // Counted, because a batch of six over a phone connection is a long
+                // enough wait that an unchanging "Uploading…" looks stuck.
+                `Uploading ${progress ? `${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : ''}…`
+              : 'Add images'}
           </Button>
-          {atCap && (
+          {atCap ? (
+            <span className="text-xs text-muted-foreground">Remove one to add another</span>
+          ) : (
             <span className="text-xs text-muted-foreground">
-              Remove one to add another
+              {remaining} {remaining === 1 ? 'slot' : 'slots'} left
             </span>
           )}
         </div>
@@ -451,15 +475,41 @@ function Images({
         ref={fileInput}
         type="file"
         accept="image/*"
+        multiple
         className="hidden"
-        aria-label="Add image"
+        aria-label="Add images"
         onChange={pick}
       />
+
+      {skipped > 0 && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {skipped} {skipped === 1 ? 'file was' : 'files were'} left out — a product holds at most{' '}
+          {MAX_IMAGES} images.
+        </p>
+      )}
 
       {(upload.isError || remove.isError) && (
         <p role="alert" className="text-sm text-destructive">
           {errorText(upload.error) ?? errorText(remove.error) ?? 'Something went wrong'}
         </p>
+      )}
+
+      {/* Per file, because a batch can half succeed: the ones that landed are
+          already in the gallery below, and these name what to fix and retry. */}
+      {failures.length > 0 && (
+        <div role="alert" className="text-sm text-destructive">
+          <p>
+            {failures.length} of {failures.length + (upload.data?.uploaded ?? 0)} images didn't
+            upload:
+          </p>
+          <ul className="mt-1 list-inside list-disc">
+            {failures.map((failure) => (
+              <li key={failure.fileName}>
+                {failure.fileName} — {errorText(failure.error)}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {images.length === 0 && <p className="text-sm text-muted-foreground">No images uploaded.</p>}

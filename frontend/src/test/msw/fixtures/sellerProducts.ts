@@ -171,6 +171,38 @@ export function removeSellerVariant(variantId: string): 'ok' | 'not-found' | 'la
   return 'not-found'
 }
 
+/** Matches the backend's cap, which counts PENDING rows as well as STORED ones. */
+export const MAX_IMAGES_PER_PRODUCT = 7
+
+/**
+ * What POST /images/upload-url does on the backend: reserves a PENDING row that
+ * already counts against the cap, so a batch of presigns fills the product up the
+ * same way here as it does there.
+ */
+export function reserveSellerImage(
+  productId: string,
+  position: number,
+): { id: string } | 'not-found' | 'too-many-images' {
+  const detail = findSellerProductDetail(productId)
+  if (!detail) return 'not-found'
+  if (detail.images.length >= MAX_IMAGES_PER_PRODUCT) return 'too-many-images'
+  const id = crypto.randomUUID()
+  detail.images.push({ id, url: `https://mock-s3.local/stored/${id}`, position, status: 'PENDING' })
+  return { id }
+}
+
+/** POST /images/confirm: the row becomes visible to buyers. */
+export function confirmSellerImage(imageId: string): boolean {
+  for (const detail of Object.values(details)) {
+    const image = detail.images.find((i) => i.id === imageId)
+    if (image) {
+      image.status = 'STORED'
+      return true
+    }
+  }
+  return false
+}
+
 export function removeSellerImage(imageId: string): boolean {
   for (const detail of Object.values(details)) {
     if (detail.images.some((i) => i.id === imageId)) {

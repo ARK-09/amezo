@@ -10,7 +10,10 @@ import { findSellerOrder, listSellerOrders, summaryOf, updateSellerOrder } from 
 import {
   addSellerProduct,
   addSellerVariant,
+  confirmSellerImage,
   findSellerProductDetail,
+  MAX_IMAGES_PER_PRODUCT,
+  reserveSellerImage,
   removeSellerImage,
   removeSellerVariant,
   listSellerProducts,
@@ -281,13 +284,29 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  http.post('http://localhost:8080/products/:productId/images/upload-url', () => {
-    const id = crypto.randomUUID()
+  // Reserves a row against the product's image cap, as the backend's presign does,
+  // so uploading a batch fills the gallery here too instead of leaving the detail
+  // query to answer with whatever it started with.
+  http.post('http://localhost:8080/products/:productId/images/upload-url', async ({ params, request }) => {
+    const { position } = (await request.json()) as { position: number }
+    const reserved = reserveSellerImage(String(params.productId), position)
+    if (reserved === 'not-found') return notFound()
+    if (reserved === 'too-many-images') {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/too-many-images',
+          title: 'Too many images',
+          status: 409,
+          detail: `A product can hold at most ${MAX_IMAGES_PER_PRODUCT} images. Remove one before adding another.`,
+        },
+        { status: 409 },
+      )
+    }
     return HttpResponse.json(
       {
-        id,
+        id: reserved.id,
         status: 'PENDING',
-        uploadUrl: `https://mock-s3.local/upload/${id}`,
+        uploadUrl: `https://mock-s3.local/upload/${reserved.id}`,
         expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
       },
       { status: 201 },
@@ -298,6 +317,7 @@ export const handlers = [
 
   http.post('http://localhost:8080/products/:productId/images/confirm', async ({ request }) => {
     const { imageId } = (await request.json()) as { imageId: string }
+    if (!confirmSellerImage(imageId)) return notFound()
     return HttpResponse.json({ id: imageId, url: `https://mock-s3.local/stored/${imageId}`, position: 0 })
   }),
   http.post('http://localhost:8080/auth/seller/magic-link', async ({ request }) => {
