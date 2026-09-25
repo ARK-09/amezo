@@ -16,4 +16,8 @@ public interface OrderLineRepository extends JpaRepository<OrderLine, UUID> {
     // order's lines, not one query per order (same reasoning used
     // throughout catalog's repositories).
     List<OrderLine> findByOrderIdIn(Collection<UUID> orderIds);
+
+    // Backs OfferOrderHistoryQuery: catalog asks before deleting an offer,
+    // because order_line.offer_id is a foreign key and a sold offer can't go.
+    boolean existsByOfferIdIn(Collection<UUID> offerIds);
 }

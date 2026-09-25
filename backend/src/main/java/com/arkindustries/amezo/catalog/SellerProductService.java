@@ -7,13 +7,18 @@ import com.arkindustries.amezo.catalog.dto.ImageConfirmRequest;
 import com.arkindustries.amezo.catalog.dto.ImageResponse;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlRequest;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlResponse;
+import com.arkindustries.amezo.catalog.dto.SellerProductDetailResponse;
 import com.arkindustries.amezo.catalog.dto.SellerProductSummaryResponse;
+import com.arkindustries.amezo.catalog.dto.SellerVariantResponse;
+import com.arkindustries.amezo.catalog.dto.UpdateProductRequest;
+import com.arkindustries.amezo.catalog.dto.UpdateVariantRequest;
 import com.arkindustries.amezo.common.exception.ConflictException;
 import com.arkindustries.amezo.common.exception.NotFoundException;
 import com.arkindustries.amezo.common.exception.PayloadTooLargeException;
 import com.arkindustries.amezo.common.exception.StorageCapReachedException;
 import com.arkindustries.amezo.common.exception.StorageUnavailableException;
 import com.arkindustries.amezo.identity.api.CurrentSeller;
+import com.arkindustries.amezo.orders.api.OfferOrderHistoryQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,9 +42,11 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -60,6 +67,7 @@ public class SellerProductService {
     private final OfferRepository offerRepository;
     private final ImageRepository imageRepository;
     private final CurrentSeller currentSeller;
+    private final OfferOrderHistoryQuery offerOrderHistory;
     private final S3Presigner s3Presigner;
     private final S3Client s3Client;
     private final String s3Bucket;
@@ -73,6 +81,7 @@ public class SellerProductService {
             OfferRepository offerRepository,
             ImageRepository imageRepository,
             CurrentSeller currentSeller,
+            OfferOrderHistoryQuery offerOrderHistory,
             S3Presigner s3Presigner,
             S3Client s3Client,
             @Value("${app.s3.bucket}") String s3Bucket,
@@ -84,6 +93,7 @@ public class SellerProductService {
         this.offerRepository = offerRepository;
         this.imageRepository = imageRepository;
         this.currentSeller = currentSeller;
+        this.offerOrderHistory = offerOrderHistory;
         this.s3Presigner = s3Presigner;
         this.s3Client = s3Client;
         this.s3Bucket = s3Bucket;
@@ -140,6 +150,119 @@ public class SellerProductService {
         return new CreateProductResponse(product.getId());
     }
 
+    /**
+     * One product as its own seller sees it. Not the public GET /products/{id}:
+     * that hides exact stock behind an inStock flag and only shows STORED images,
+     * both of which the person editing needs to see.
+     */
+    @Transactional(readOnly = true)
+    public SellerProductDetailResponse getMine(UUID productId) {
+        Product product = ownedProduct(productId);
+
+        List<Variant> variants = variantRepository.findByProductId(product.getId());
+        Map<UUID, Offer> offersByVariantId = variants.isEmpty()
+                ? Map.of()
+                : offerRepository.findByVariantIdIn(variants.stream().map(Variant::getId).toList()).stream()
+                        .collect(Collectors.toMap(Offer::getVariantId, Function.identity()));
+
+        List<SellerVariantResponse> variantResponses = variants.stream()
+                .map(variant -> {
+                    Offer offer = offersByVariantId.get(variant.getId());
+                    return new SellerVariantResponse(
+                            variant.getId(),
+                            variant.getLabel(),
+                            variant.getSku(),
+                            offer != null ? offer.getPrice() : null,
+                            offer != null ? offer.getStockQty() : 0);
+                })
+                .toList();
+
+        List<SellerProductDetailResponse.SellerImageResponse> imageResponses =
+                imageRepository.findByProductId(product.getId()).stream()
+                        .sorted(Comparator.comparingInt(Image::getPosition))
+                        .map(image -> new SellerProductDetailResponse.SellerImageResponse(
+                                image.getId(),
+                                imageUrls.forKey(image.getS3Key()),
+                                image.getPosition(),
+                                image.getStatus().name()))
+                        .toList();
+
+        return new SellerProductDetailResponse(
+                product.getId(),
+                product.getTitle(),
+                product.getBrandName(),
+                product.getDescription(),
+                product.getCategory(),
+                variantResponses,
+                imageResponses);
+    }
+
+    /** Partial update: only the fields the request actually carries are written. */
+    @Transactional
+    public SellerProductDetailResponse update(UUID productId, UpdateProductRequest request) {
+        Product product = ownedProduct(productId);
+
+        if (request.title() != null) {
+            product.setTitle(request.title());
+        }
+        if (request.brandName() != null) {
+            product.setBrandName(request.brandName());
+        }
+        if (request.description() != null) {
+            product.setDescription(request.description());
+        }
+        if (request.category() != null) {
+            product.setCategory(request.category());
+        }
+        productRepository.save(product);
+
+        return getMine(product.getId());
+    }
+
+    /**
+     * Writes across both tables the create request spans: label and sku on the
+     * variant, price and stock on its offer. Ownership is the variant's product's
+     * seller - a variant id is not a capability, so someone else's variant is a
+     * 404 here exactly as their product is.
+     */
+    @Transactional
+    public SellerVariantResponse updateVariant(UUID variantId, UpdateVariantRequest request) {
+        Variant variant = variantRepository.findById(variantId)
+                .orElseThrow(() -> new NotFoundException("Variant " + variantId + " not found"));
+        ownedProduct(variant.getProductId());
+
+        if (request.label() != null) {
+            variant.setLabel(request.label());
+        }
+        if (request.sku() != null && !request.sku().equals(variant.getSku())) {
+            // Checked here rather than left to the unique index: a caught
+            // constraint violation would reach the seller as a 500, and the useful
+            // answer is which field collided.
+            variantRepository.findBySku(request.sku()).ifPresent(clash -> {
+                throw new ConflictException(
+                        java.net.URI.create("https://api/errors/sku-taken"),
+                        "SKU already in use",
+                        "SKU " + request.sku() + " belongs to another variant",
+                        List.of(new ConflictException.FieldError("sku", "already in use")));
+            });
+            variant.setSku(request.sku());
+        }
+        variantRepository.save(variant);
+
+        Offer offer = offerRepository.findByVariantId(variant.getId())
+                .orElseThrow(() -> new NotFoundException("Variant " + variantId + " has no offer"));
+        if (request.price() != null) {
+            offer.setPrice(request.price());
+        }
+        if (request.stockQty() != null) {
+            offer.setStockQty(request.stockQty());
+        }
+        offerRepository.save(offer);
+
+        return new SellerVariantResponse(
+                variant.getId(), variant.getLabel(), variant.getSku(), offer.getPrice(), offer.getStockQty());
+    }
+
     @Transactional
     public void delete(UUID productId) {
         Product product = ownedProduct(productId);
@@ -147,6 +270,23 @@ public class SellerProductService {
         List<UUID> variantIds = variantRepository.findByProductId(product.getId()).stream()
                 .map(Variant::getId)
                 .toList();
+
+        // A sold offer cannot be deleted - order_line.offer_id is a foreign key,
+        // on purpose, so an order stays traceable to the offer it was placed
+        // against. Without this check the delete reached the database and came
+        // back as a 500 on a constraint name; the seller's actual options are to
+        // leave it listed or take it out of stock.
+        List<UUID> offerIds = variantIds.isEmpty()
+                ? List.of()
+                : offerRepository.findByVariantIdIn(variantIds).stream().map(Offer::getId).toList();
+        if (offerOrderHistory.anySoldOffer(offerIds)) {
+            throw new ConflictException(
+                    java.net.URI.create("https://api/errors/product-has-orders"),
+                    "Product has orders",
+                    "Product " + product.getId() + " has been ordered and can't be deleted. "
+                            + "Set its variants' stock to 0 to stop selling it.",
+                    List.of());
+        }
 
         // Collected before the rows go: the keys only exist on those rows, and
         // without them the objects would sit in the bucket forever - billed, and

@@ -102,7 +102,13 @@ An unused presigned URL just leaves an `image` row stuck at `pending` forever �
 
 Deleting a product deletes its objects from the bucket as well as its rows — after the transaction commits, so a rolled-back delete can't strand a live product with 404ing images. A bucket that refuses the delete is logged, not fatal: the rows are already gone.
 
+**Deleting a sold product** is `409 product-has-orders`, not a delete. `order_line.offer_id` is a real foreign key on purpose — an order stays traceable to the offer it was placed against — so the row physically can't go, and the endpoint says so instead of returning the constraint violation as a 500. The seller's alternative, named in the message, is setting the variants' stock to 0. Archiving (a `deleted_at` that hides a product from the catalog while keeping its order history) is the real answer and isn't built.
+
 **Variant-level images** are modeled (`image.variant_id`, with the table's `product_id IS NOT NULL OR variant_id IS NOT NULL` check) but nothing writes them — no endpoint accepts a variant id, `VariantDetail` carries no images, and the product page's gallery is product-level. Product deletion clears variant-linked rows anyway, so wiring them later can't trip `image.variant_id`'s foreign key.
+
+### Seller read of one product
+
+`GET /sellers/me/products/{productId}` — auth: owning seller, `404` otherwise. The portal's view/edit page reads this rather than the public `GET /products/{id}`, for two reasons the page depends on: variants carry exact `stockQty` (the buyer-facing shape reduces it to an `inStock` flag, and a number is what a seller edits) and SKUs, and images include `PENDING` ones so an upload that never completed is visible instead of silently absent.
 
 ## Checkout — the atomic call
 
@@ -187,9 +193,9 @@ Reaching it from the email link: the confirmation/history email contains a magic
 |---|---|
 | `GET /sellers/me` | profile display (`fullName`, `email`) |
 | `POST /sellers/me/products` | flat — seller creates from their own session, `sellerId` taken from auth not body. Under `/sellers/me/` rather than `/products` so the whole namespace is seller-only in one security rule |
-| `PATCH /products/{id}` | must own it (`404` if not) |
+| `PATCH /products/{id}` | must own it (`404` if not). Built: partial update, an omitted field is left as it is, and a blank title or category is `422` rather than stored |
 | `POST /products/{id}/variants` | nested — variant can't exist without its product. Body accepts **flattened** `{ label, sku, price, stockQty }`; server writes `variant` + `offer` in one transaction |
-| `PATCH /variants/{id}` | same flattening, writes to both tables |
+| `PATCH /variants/{id}` | same flattening, writes to both tables. Built: label/sku on the variant, price/stockQty on its offer; a SKU another variant already holds is `409 sku-taken`, checked before the unique index so the seller learns which field collided |
 | `POST /products/{id}/images`, `POST /variants/{id}/images` | as above |
 | `GET /sellers/me/order-lines` | nested, real ownership — a seller only ever lists **their own** lines, never whole orders (an order may contain another seller's lines too) |
 | `PATCH /order-lines/{id}` | flat path, ownership enforced by auth (`403` if not yours). Body: `{ status: "shipped", trackingNumber }`. No shipping-carrier integration — tracking is a free string the seller types, consistent with everything else cut this round |

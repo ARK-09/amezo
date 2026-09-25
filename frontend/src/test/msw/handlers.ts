@@ -2,7 +2,15 @@ import { http, HttpResponse } from 'msw'
 
 import { consumeMagicLinkToken, issueMagicLinkToken } from './fixtures/sellerAuth'
 import { findSellerOrder, listSellerOrders, summaryOf, updateSellerOrder } from './fixtures/sellerOrders'
-import { addSellerProduct, listSellerProducts, removeSellerProduct } from './fixtures/sellerProducts'
+import {
+  addSellerProduct,
+  findSellerProductDetail,
+  listSellerProducts,
+  removeSellerProduct,
+  TAKEN_SKU,
+  updateSellerProductDetail,
+  updateSellerVariant,
+} from './fixtures/sellerProducts'
 import { productDetails, reviewsFor } from './fixtures/productDetails'
 import { seedProducts } from './fixtures/products'
 import { variantOffers } from './fixtures/variants'
@@ -15,6 +23,13 @@ interface CheckoutLineBody {
 
 interface CheckoutRequestBody {
   lines: CheckoutLineBody[]
+}
+
+function notFound() {
+  return HttpResponse.json(
+    { type: 'https://api/errors/not-found', title: 'Not found', status: 404 },
+    { status: 404 },
+  )
 }
 
 export const handlers = [
@@ -137,6 +152,36 @@ export const handlers = [
       shippedAt: new Date().toISOString(),
     })!
     return HttpResponse.json({ ...updated, total: summaryOf(updated).total })
+  }),
+
+  http.get('http://localhost:8080/sellers/me/products/:productId', ({ params }) => {
+    const detail = findSellerProductDetail(params.productId as string)
+    return detail ? HttpResponse.json(detail) : notFound()
+  }),
+
+  // Absent fields are left alone, same as the backend's PATCH semantics.
+  http.patch('http://localhost:8080/products/:productId', async ({ params, request }) => {
+    const patch = (await request.json()) as Record<string, unknown>
+    const updated = updateSellerProductDetail(params.productId as string, patch)
+    return updated ? HttpResponse.json(updated) : notFound()
+  }),
+
+  http.patch('http://localhost:8080/variants/:variantId', async ({ params, request }) => {
+    const patch = (await request.json()) as Record<string, unknown>
+    // The 409 the edit page has to surface inline - provoked by one reserved SKU.
+    if (patch.sku === TAKEN_SKU) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/sku-taken',
+          title: 'SKU already in use',
+          status: 409,
+          detail: `SKU ${TAKEN_SKU} belongs to another variant`,
+        },
+        { status: 409 },
+      )
+    }
+    const updated = updateSellerVariant(params.variantId as string, patch)
+    return updated ? HttpResponse.json(updated) : notFound()
   }),
 
   http.get('http://localhost:8080/sellers/me/products', () => {

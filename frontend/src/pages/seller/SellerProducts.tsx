@@ -60,7 +60,14 @@ export function SellerProducts() {
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="font-medium">{product.title}</TableCell>
+                <TableCell className="font-medium">
+                  <Link
+                    to={`/seller/products/${product.id}`}
+                    className="underline-offset-4 hover:underline"
+                  >
+                    {product.title}
+                  </Link>
+                </TableCell>
                 <TableCell>{product.category}</TableCell>
                 <TableCell>{product.variantCount}</TableCell>
                 <TableCell>{new Date(product.createdAt).toLocaleDateString()}</TableCell>

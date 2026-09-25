@@ -6,7 +6,11 @@ import com.arkindustries.amezo.catalog.dto.ImageConfirmRequest;
 import com.arkindustries.amezo.catalog.dto.ImageResponse;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlRequest;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlResponse;
+import com.arkindustries.amezo.catalog.dto.SellerProductDetailResponse;
 import com.arkindustries.amezo.catalog.dto.SellerProductSummaryResponse;
+import com.arkindustries.amezo.catalog.dto.SellerVariantResponse;
+import com.arkindustries.amezo.catalog.dto.UpdateProductRequest;
+import com.arkindustries.amezo.catalog.dto.UpdateVariantRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,6 +39,28 @@ public class SellerProductController {
 
     public SellerProductController(SellerProductService sellerProductService) {
         this.sellerProductService = sellerProductService;
+    }
+
+    // Read-then-write for one product, the pair behind the portal's view/edit
+    // page. The read sits under /sellers/me/ with the seller's own collection;
+    // the writes are keyed by product id under /products/, alongside DELETE
+    // /products/{id} - the shape docs/api-design.md set out and the contract in
+    // frontend/openapi/fixture.yaml matches.
+    @GetMapping("/sellers/me/products/{id}")
+    public SellerProductDetailResponse getMine(@PathVariable UUID id) {
+        return sellerProductService.getMine(id);
+    }
+
+    @PatchMapping("/products/{id}")
+    public SellerProductDetailResponse update(
+            @PathVariable UUID id, @Valid @RequestBody UpdateProductRequest request) {
+        return sellerProductService.update(id, request);
+    }
+
+    @PatchMapping("/variants/{variantId}")
+    public SellerVariantResponse updateVariant(
+            @PathVariable UUID variantId, @Valid @RequestBody UpdateVariantRequest request) {
+        return sellerProductService.updateVariant(variantId, request);
     }
 
     @GetMapping("/sellers/me/products")

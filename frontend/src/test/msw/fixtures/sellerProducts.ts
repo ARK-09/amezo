@@ -1,6 +1,8 @@
 import type { components } from '@/lib/api/schema'
 
 type SellerProductSummary = components['schemas']['SellerProductSummary']
+type SellerProductDetail = components['schemas']['SellerProductDetail']
+type SellerVariant = components['schemas']['SellerVariant']
 
 // Demo-account starting catalog (browser/dev only - every test resets this
 // to [] via resetSellerProducts() in beforeEach/afterEach). Same 5 of the 6
@@ -65,4 +67,83 @@ export function addSellerProduct(product: SellerProductSummary) {
 
 export function removeSellerProduct(id: string) {
   products = products.filter((p) => p.id !== id)
+}
+
+/** The SKU the variant PATCH handler always rejects, so the 409 path is testable. */
+export const TAKEN_SKU = 'ALREADY-TAKEN'
+
+function detailFor(summary: SellerProductSummary): SellerProductDetail {
+  return {
+    id: summary.id,
+    title: summary.title,
+    brandName: 'Demo Brand',
+    description: 'Demo description.',
+    category: summary.category,
+    variants: Array.from({ length: summary.variantCount }, (_, i) => ({
+      id: `${summary.id.slice(0, 8)}-variant-${i}`,
+      label: i === 0 ? 'Default' : `Option ${i + 1}`,
+      sku: `${summary.id.slice(0, 4).toUpperCase()}-${i}`,
+      price: 49.99 + i * 10,
+      stockQty: 5 + i,
+    })),
+    images: [],
+  }
+}
+
+let details: Record<string, SellerProductDetail> = {}
+
+export function resetSellerProductDetails(seed: SellerProductDetail[] = []) {
+  details = {}
+  for (const detail of seed) {
+    details[detail.id] = structuredClone(detail)
+  }
+}
+
+/**
+ * Derived from the summary on first read rather than kept as a second hand-written
+ * dataset - one place to add a product, and the detail can't drift from the row
+ * the list shows.
+ */
+export function findSellerProductDetail(id: string): SellerProductDetail | undefined {
+  if (details[id]) {
+    return details[id]
+  }
+  const summary = products.find((p) => p.id === id)
+  if (!summary) {
+    return undefined
+  }
+  details[id] = detailFor(summary)
+  return details[id]
+}
+
+export function updateSellerProductDetail(
+  id: string,
+  patch: Partial<SellerProductDetail>,
+): SellerProductDetail | undefined {
+  const current = findSellerProductDetail(id)
+  if (!current) {
+    return undefined
+  }
+  details[id] = { ...current, ...patch }
+  // Keep the list row honest about the fields it shares with the detail.
+  products = products.map((p) =>
+    p.id === id
+      ? { ...p, title: details[id].title, category: details[id].category }
+      : p,
+  )
+  return details[id]
+}
+
+export function updateSellerVariant(
+  variantId: string,
+  patch: Partial<SellerVariant>,
+): SellerVariant | undefined {
+  for (const id of Object.keys(details)) {
+    const variant = details[id].variants.find((v) => v.id === variantId)
+    if (variant) {
+      Object.assign(variant, patch)
+      return variant
+    }
+  }
+  return undefined
 }

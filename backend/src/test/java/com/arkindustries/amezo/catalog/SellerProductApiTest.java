@@ -1,6 +1,7 @@
 package com.arkindustries.amezo.catalog;
 
 import com.arkindustries.amezo.identity.IdentityType;
+import com.arkindustries.amezo.orders.api.OfferOrderHistoryQuery;
 import com.arkindustries.amezo.identity.Seller;
 import com.arkindustries.amezo.identity.SellerRepository;
 import com.arkindustries.amezo.identity.Session;
@@ -42,6 +43,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -98,6 +100,14 @@ class SellerProductApiTest {
      */
     @MockitoBean
     private S3Client s3Client;
+
+    /**
+     * Mocked so "this product has been sold" is a condition a test can state
+     * directly, instead of building an order through another feature's tables to
+     * provoke the foreign key underneath it.
+     */
+    @MockitoBean
+    private OfferOrderHistoryQuery offerOrderHistory;
 
     @Test
     void listMineOnlyReturnsTheCallingSellersProducts() throws Exception {
@@ -442,5 +452,159 @@ class SellerProductApiTest {
                 .andExpect(status().isNoContent());
 
         assertThat(productRepository.findById(product.getId())).isEmpty();
+    }
+    @Test
+    void sellerViewShowsExactStockSkusAndPendingImages() throws Exception {
+        Seller me = seller("view-detail@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Viewable").brandName("Acme")
+                .description("Full text").category("outdoor").build());
+        Variant variant = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("Large").sku("VIEW-L").build());
+        offerRepository.save(Offer.builder()
+                .variantId(variant.getId()).price(new BigDecimal("19.50")).stockQty(0).build());
+        imageRepository.save(Image.builder()
+                .productId(product.getId()).s3Key("products/" + product.getId() + "/pending")
+                .position(0).status(ImageStatus.PENDING).sizeBytes(10L).build());
+
+        mockMvc.perform(get("/sellers/me/products/" + product.getId()).cookie(sessionCookieFor(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Viewable"))
+                .andExpect(jsonPath("$.description").value("Full text"))
+                .andExpect(jsonPath("$.variants[0].sku").value("VIEW-L"))
+                // Exact stock, not the buyer-facing inStock flag: 0 is a number the
+                // seller edits, not a product to hide.
+                .andExpect(jsonPath("$.variants[0].stockQty").value(0))
+                // Pending images are visible here so an upload that never finished
+                // isn't silently missing from the page.
+                .andExpect(jsonPath("$.images[0].status").value("PENDING"));
+    }
+
+    @Test
+    void anotherSellersProductIsNotFoundForViewOrEdit() throws Exception {
+        Seller other = seller("owner@example.com");
+        Seller me = seller("intruder@example.com");
+        Product theirs = productRepository.save(Product.builder()
+                .sellerId(other.getId()).title("Not yours").category("outdoor").build());
+        Cookie mine = sessionCookieFor(me);
+
+        mockMvc.perform(get("/sellers/me/products/" + theirs.getId()).cookie(mine))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch("/products/" + theirs.getId()).cookie(mine)
+                        .contentType("application/json")
+                        .content("""
+                                {"title":"Mine now"}"""))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void patchWritesOnlyTheFieldsItCarries() throws Exception {
+        Seller me = seller("patch-product@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Old title").brandName("Keep me")
+                .description("Keep this too").category("outdoor").build());
+
+        mockMvc.perform(patch("/products/" + product.getId()).cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"title":"New title"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("New title"))
+                .andExpect(jsonPath("$.brandName").value("Keep me"))
+                .andExpect(jsonPath("$.description").value("Keep this too"))
+                .andExpect(jsonPath("$.category").value("outdoor"));
+    }
+
+    @Test
+    void patchRejectsABlankTitleRatherThanStoringIt() throws Exception {
+        Seller me = seller("patch-blank@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Has a title").category("outdoor").build());
+
+        mockMvc.perform(patch("/products/" + product.getId()).cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"title":"   "}"""))
+                .andExpect(status().isUnprocessableEntity());
+
+        assertThat(productRepository.findById(product.getId()).orElseThrow().getTitle())
+                .isEqualTo("Has a title");
+    }
+
+    /** One request, two tables: label/sku on the variant, price/stock on its offer. */
+    @Test
+    void patchVariantWritesAcrossBothTables() throws Exception {
+        Seller me = seller("patch-variant@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Has variants").category("outdoor").build());
+        Variant variant = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("Small").sku("PV-S").build());
+        Offer offer = offerRepository.save(Offer.builder()
+                .variantId(variant.getId()).price(new BigDecimal("10.00")).stockQty(2).build());
+
+        mockMvc.perform(patch("/variants/" + variant.getId()).cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"label":"Small (relabelled)","price":12.75,"stockQty":9}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.label").value("Small (relabelled)"))
+                .andExpect(jsonPath("$.price").value(12.75))
+                .andExpect(jsonPath("$.stockQty").value(9));
+
+        assertThat(variantRepository.findById(variant.getId()).orElseThrow().getLabel())
+                .isEqualTo("Small (relabelled)");
+        Offer reloaded = offerRepository.findById(offer.getId()).orElseThrow();
+        assertThat(reloaded.getPrice()).isEqualByComparingTo("12.75");
+        assertThat(reloaded.getStockQty()).isEqualTo(9);
+        // SKU untouched, since the request didn't carry one.
+        assertThat(variantRepository.findById(variant.getId()).orElseThrow().getSku()).isEqualTo("PV-S");
+    }
+
+    @Test
+    void patchVariantRefusesASkuAnotherVariantAlreadyHas() throws Exception {
+        Seller me = seller("sku-clash@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Two variants").category("outdoor").build());
+        Variant first = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("One").sku("CLASH-1").build());
+        offerRepository.save(Offer.builder()
+                .variantId(first.getId()).price(new BigDecimal("5.00")).stockQty(1).build());
+        Variant second = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("Two").sku("CLASH-2").build());
+        offerRepository.save(Offer.builder()
+                .variantId(second.getId()).price(new BigDecimal("6.00")).stockQty(1).build());
+
+        mockMvc.perform(patch("/variants/" + second.getId()).cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"sku":"CLASH-1"}"""))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://api/errors/sku-taken"));
+
+        assertThat(variantRepository.findById(second.getId()).orElseThrow().getSku()).isEqualTo("CLASH-2");
+    }
+
+    /**
+     * order_line.offer_id is a real foreign key, so this used to reach the
+     * database and come back as a 500 on a constraint name. The seller's real
+     * options are in the message.
+     */
+    @Test
+    void deleteIsRefusedWhenTheProductHasBeenOrdered() throws Exception {
+        Seller me = seller("sold-product@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Already sold").category("outdoor").build());
+        Variant variant = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("Only").sku("SOLD-1").build());
+        offerRepository.save(Offer.builder()
+                .variantId(variant.getId()).price(new BigDecimal("8.00")).stockQty(1).build());
+
+        when(offerOrderHistory.anySoldOffer(any())).thenReturn(true);
+
+        mockMvc.perform(delete("/products/" + product.getId()).cookie(sessionCookieFor(me)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://api/errors/product-has-orders"));
+
+        assertThat(productRepository.findById(product.getId())).isPresent();
     }
 }
