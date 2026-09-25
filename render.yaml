@@ -38,6 +38,12 @@ services:
       # compute is shared - keep the pool small enough to survive a cold start.
       - key: DATABASE_POOL_SIZE
         value: "3"
+      # Magic-link email. Without RESEND_API_KEY the backend logs sign-in links
+      # instead of sending them, which works but puts usable tokens in the log.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: APP_EMAIL_FROM            # an address on a domain verified in Resend,
+        sync: false                    # or onboarding@resend.dev for owner-only sandbox sends
       # Image upload only (docs/deploy.md). Cloudflare R2 rather than AWS S3:
       # 10 GB free with no egress charge, and S3-compatible enough that the
       # existing presigned-PUT flow works unchanged. Drop these five and image

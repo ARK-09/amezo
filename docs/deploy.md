@@ -64,6 +64,8 @@ still runs locally; this table is what a *deployment* cares about.
 | `APP_SESSION_COOKIE_NAME` | `mp_session` | No |
 | `APP_SESSION_TTL_DAYS` | `30` | No |
 | `APP_MAGIC_LINK_TTL_MINUTES` | `15` | No |
+| `RESEND_API_KEY` | empty (log the link) | **Yes**, for real sign-in emails |
+| `APP_EMAIL_FROM` | `onboarding@resend.dev` | Yes, once a domain is verified |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | — | Image upload only |
 | `AWS_SESSION_TOKEN` | — | Only for temporary credentials |
 | `AWS_S3_BUCKET` | `amezo-dev` | Image upload only |
@@ -167,6 +169,25 @@ itself.
   virtual-hosted form. Everything except image upload works with none of this
   configured.
 
+- **Email / sign-in.** Magic-link delivery goes through
+  [Resend](https://resend.com)'s HTTP API — chosen over SMTP because Render's free
+  plan blocks outbound SMTP ports. Set `RESEND_API_KEY` and it sends; leave it
+  empty and `EmailSenderConfig` falls back to writing the link to the log, which
+  works but means anyone who can read your logs can sign in as anyone.
+
+  **The sandbox catch, worth knowing before you demo:** until you verify a domain
+  in Resend, you can only send *from* `onboarding@resend.dev` and only *to* the
+  address the Resend account was created with. Every other recipient is refused.
+  So with an unverified domain, the seeded `demo@example.com` seller cannot receive
+  a link — sign in with your own Resend account address, or verify a domain
+  (Resend dashboard → Domains, three DNS records) and set `APP_EMAIL_FROM` to an
+  address on it.
+
+  A refusal surfaces as a 502 `ProblemDetail` from `POST /auth/seller/magic-link`,
+  with the provider's own reason in the server log. It is deliberately not
+  swallowed: that endpoint sends for every address it is given without checking
+  whether an account exists, so failing loudly reveals nothing about who has one,
+  and the alternative is a seller waiting on a link that was never sent.
 - **Storage cap.** `POST /products/{id}/images/upload-url` refuses to issue a URL
   once stored-plus-reserved bytes reach `S3_MAX_TOTAL_BYTES` (507), and refuses any
   single file over `S3_MAX_UPLOAD_BYTES` (413). The declared size is signed into the
