@@ -3,11 +3,10 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 
-// The backend currently only implements GET /products?q= (no
-// category/price/stock/sort, no seed data) - see openapi/fixture.yaml's own
-// note on this. VITE_USE_MSW lets the dev server run against the full
-// fixture dataset in the meantime; flip it off in .env once the backend
-// catches up, same swap point fixture.yaml already anticipates for gen:api.
+// Off in production (.env.production) now that the backend implements the whole
+// read surface the app calls - search filters and sort, product detail, and the
+// cart's GET /variants batch. Still available for local work against the fixture
+// dataset without running Postgres: set VITE_USE_MSW=true in .env.local.
 async function enableMocking() {
   if (import.meta.env.VITE_USE_MSW !== 'true') return
   const { worker } = await import('./test/msw/browser')

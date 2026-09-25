@@ -47,6 +47,30 @@ public class ApiExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(PayloadTooLargeException.class)
+    public ProblemDetail handlePayloadTooLarge(PayloadTooLargeException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.PAYLOAD_TOO_LARGE, ex.getMessage());
+        problem.setTitle("File too large");
+        problem.setType(URI.create("https://api/errors/file-too-large"));
+        return problem;
+    }
+
+    @ExceptionHandler(StorageCapReachedException.class)
+    public ProblemDetail handleStorageCapReached(StorageCapReachedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.INSUFFICIENT_STORAGE, ex.getMessage());
+        problem.setTitle("Storage cap reached");
+        problem.setType(URI.create("https://api/errors/storage-cap-reached"));
+        return problem;
+    }
+
+    @ExceptionHandler(StorageUnavailableException.class)
+    public ProblemDetail handleStorageUnavailable(StorageUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+        problem.setTitle("Image storage unavailable");
+        problem.setType(URI.create("https://api/errors/storage-unavailable"));
+        return problem;
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);

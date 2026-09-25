@@ -16,12 +16,20 @@ import java.util.UUID;
 // should ever need to map a Product entity itself.
 class ProductMapper {
 
-    static ProductSummaryResponse toSummary(Product product) {
+    static ProductSummaryResponse toSummary(
+            Product product, BigDecimal priceFrom, String thumbnailUrl, boolean inStock) {
         return new ProductSummaryResponse(
                 product.getId(),
                 product.getTitle(),
                 product.getBrandName(),
-                product.getCategory()
+                product.getCategory(),
+                // A product with no offer has no price to show. Zero rather than
+                // null because the field is non-nullable in the frontend contract,
+                // and inStock is false alongside it, so the card renders as
+                // unbuyable instead of as free.
+                priceFrom != null ? priceFrom : BigDecimal.ZERO,
+                thumbnailUrl,
+                inStock
         );
     }
 

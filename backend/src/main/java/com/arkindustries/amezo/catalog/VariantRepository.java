@@ -15,5 +15,9 @@ public interface VariantRepository extends JpaRepository<Variant, UUID> {
     // OfferRepository.findByVariantIdIn).
     List<Variant> findByProductIdIn(Collection<UUID> productIds);
 
+    // The cart's batch lookup (GET /variants?ids=) - one query for the whole
+    // drawer, not one per line.
+    List<Variant> findByIdIn(Collection<UUID> ids);
+
     void deleteByProductId(UUID productId);
 }
