@@ -28,11 +28,18 @@ IGNORED_PROMPT_PREFIXES = (
     "Context: This summary will be shown in a list",
     "Please write a 5-10 word title",
     "Analyze this conversation and generate",
-    # Mid-turn machine injections, not something anyone typed: a backgrounded
-    # command finishing wakes the session through UserPromptSubmit too, and
-    # logging those as PROMPTs inflates total_exchanges with tool chatter.
-    "<task-notification>",
-    "[SYSTEM NOTIFICATION",
+)
+
+# A finished background command wakes the session through UserPromptSubmit as
+# well, so the hook sees tool chatter on the same channel as typed prompts -
+# and when someone types something mid-turn, their words and a pending
+# notification arrive in one payload. Strip the machine half and keep theirs;
+# a payload that was nothing but a notification then drops out entirely
+# (see the empty-after-stripping check in main()).
+NOTIFICATION_RE = re.compile(
+    r"\[SYSTEM NOTIFICATION[^\n]*\].*?</task-notification>"
+    r"|<task-notification>.*?</task-notification>",
+    re.S,
 )
 # ---------------------------------------------------------------------------
 
@@ -187,6 +194,11 @@ def main():
         kind = "PROMPT"
         text = data.get("prompt") or ""
         if text.lstrip().startswith(IGNORED_PROMPT_PREFIXES):
+            return
+        text = NOTIFICATION_RE.sub("", text).strip()
+        if not text:
+            # Pure machine wakeup - nobody typed anything, so there is no
+            # exchange to log and total_exchanges shouldn't count one.
             return
     else:
         kind = "RESPONSE"
