@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router'
+import { Navigate, createBrowserRouter } from 'react-router'
 
 import { BuyerLayout } from '@/components/layout/BuyerLayout'
 import { Checkout } from '@/pages/Checkout'
@@ -40,6 +40,8 @@ export const router = createBrowserRouter([
     path: '/seller',
     element: <SellerPortalLayout />,
     children: [
+      // /seller on its own rendered the portal shell around an empty outlet.
+      { index: true, element: <Navigate to="/seller/products" replace /> },
       { path: 'products', element: <SellerProducts /> },
       // 'new' before ':productId' for the reader's sake - React Router ranks a
       // static segment above a dynamic one whatever the order here, but nobody

@@ -1,8 +1,9 @@
-import { ArrowLeft, ImageOff } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
+import { ArrowLeft, ImageOff, Plus, Trash2, Upload } from 'lucide-react'
+import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import type { ProblemDetail } from '@/lib/api/client'
 import { Input } from '@/components/ui/input'
 import {
   Table,
@@ -13,10 +14,15 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  type SellerProductDetail as SellerProductDetailData,
   type SellerVariant,
+  useAddVariant,
+  useDeleteImage,
+  useDeleteVariant,
   useSellerProduct,
   useUpdateProduct,
   useUpdateVariant,
+  useUploadImage,
 } from '@/features/seller-portal/api/useSellerProducts'
 
 /**
@@ -56,7 +62,7 @@ export function SellerProductDetail() {
         <>
           <ProductFields productId={productId} product={query.data} />
           <VariantRows productId={productId} variants={query.data.variants} />
-          <Images images={query.data.images} />
+          <Images productId={productId} images={query.data.images} />
         </>
       )}
     </div>
@@ -147,13 +153,22 @@ function ProductFields({
 }
 
 function VariantRows({ productId, variants }: { productId: string; variants: SellerVariant[] }) {
+  const [adding, setAdding] = useState(false)
+
   return (
     <div className="flex flex-col gap-4 rounded-lg border p-6">
-      <div>
-        <h2 className="text-lg font-semibold">Variants</h2>
-        <p className="text-sm text-muted-foreground">
-          Set stock to 0 to stop selling a variant. Each row saves on its own.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Variants</h2>
+          <p className="text-sm text-muted-foreground">
+            Set stock to 0 to stop selling a variant. Each row saves on its own.
+          </p>
+        </div>
+        {!adding && (
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            <Plus className="size-4" aria-hidden /> Add variant
+          </Button>
+        )}
       </div>
 
       <Table>
@@ -168,16 +183,120 @@ function VariantRows({ productId, variants }: { productId: string; variants: Sel
         </TableHeader>
         <TableBody>
           {variants.map((variant) => (
-            <VariantRow key={variant.id} productId={productId} variant={variant} />
+            <VariantRow
+              key={variant.id}
+              productId={productId}
+              variant={variant}
+              // The last variant can't be removed - a product needs one to have a
+              // price at all - so the button says why instead of failing on click.
+              isOnlyVariant={variants.length <= 1}
+            />
           ))}
         </TableBody>
       </Table>
+
+      {adding && (
+        <NewVariantForm
+          productId={productId}
+          onDone={() => setAdding(false)}
+          onCancel={() => setAdding(false)}
+        />
+      )}
     </div>
   )
 }
 
-function VariantRow({ productId, variant }: { productId: string; variant: SellerVariant }) {
+function NewVariantForm({
+  productId,
+  onDone,
+  onCancel,
+}: {
+  productId: string
+  onDone: () => void
+  onCancel: () => void
+}) {
+  const { mutate, isPending, isError, error } = useAddVariant(productId)
+  const [label, setLabel] = useState('')
+  const [sku, setSku] = useState('')
+  const [price, setPrice] = useState('')
+  const [stockQty, setStockQty] = useState('')
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    mutate(
+      { label, sku, price: Number(price), stockQty: Number(stockQty) },
+      { onSuccess: onDone },
+    )
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3 rounded-md border border-dashed p-4">
+      <h3 className="text-sm font-medium">New variant</h3>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <Input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="Label"
+          aria-label="New variant label"
+          required
+        />
+        <Input
+          value={sku}
+          onChange={(e) => setSku(e.target.value)}
+          placeholder="SKU"
+          aria-label="New variant SKU"
+          required
+        />
+        <Input
+          type="number"
+          step="0.01"
+          min="0"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          placeholder="Price"
+          aria-label="New variant price"
+          required
+        />
+        <Input
+          type="number"
+          min="0"
+          value={stockQty}
+          onChange={(e) => setStockQty(e.target.value)}
+          placeholder="Stock"
+          aria-label="New variant stock"
+          required
+        />
+      </div>
+
+      {isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {error.detail ?? error.title}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
+        <Button type="submit" size="sm" disabled={isPending}>
+          {isPending ? 'Adding…' : 'Add variant'}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function VariantRow({
+  productId,
+  variant,
+  isOnlyVariant,
+}: {
+  productId: string
+  variant: SellerVariant
+  isOnlyVariant: boolean
+}) {
   const { mutate, isPending, isError, error } = useUpdateVariant(productId)
+  const remove = useDeleteVariant(productId)
 
   const [label, setLabel] = useState(variant.label)
   const [sku, setSku] = useState(variant.sku)
@@ -242,15 +361,29 @@ function VariantRow({ productId, variant }: { productId: string; variant: Seller
           />
         </TableCell>
         <TableCell className="text-right">
-          <Button size="sm" variant="outline" disabled={!dirty || isPending} onClick={save}>
-            {isPending ? 'Saving…' : 'Save'}
-          </Button>
+          <div className="flex items-center justify-end gap-2">
+            <Button size="sm" variant="outline" disabled={!dirty || isPending} onClick={save}>
+              {isPending ? 'Saving…' : 'Save'}
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label={`Remove ${variant.sku}`}
+              title={isOnlyVariant ? 'A product needs at least one variant' : undefined}
+              disabled={isOnlyVariant || remove.isPending}
+              onClick={() => remove.mutate(variant.id)}
+            >
+              <Trash2 className="size-4" aria-hidden />
+            </Button>
+          </div>
         </TableCell>
       </TableRow>
-      {isError && (
+      {(isError || remove.isError) && (
         <TableRow>
           <TableCell colSpan={5} className="text-sm text-destructive" role="alert">
-            {error.detail ?? error.title}
+            {isError
+              ? (error.detail ?? error.title)
+              : (remove.error?.detail ?? remove.error?.title)}
           </TableCell>
         </TableRow>
       )}
@@ -259,21 +392,74 @@ function VariantRow({ productId, variant }: { productId: string; variant: Seller
 }
 
 function Images({
+  productId,
   images,
 }: {
-  images: { id: string; url: string; position: number; status: string }[]
+  productId: string
+  images: SellerProductDetailData['images']
 }) {
+  const upload = useUploadImage(productId)
+  const remove = useDeleteImage(productId)
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  const MAX_IMAGES = 7
+  const atCap = images.length >= MAX_IMAGES
+
+  function pick(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    // Reset first: picking the same file twice in a row fires no change event
+    // otherwise, so a failed upload couldn't be retried with the same file.
+    e.target.value = ''
+    if (!file) {
+      return
+    }
+    // Position after the last existing image, so the first upload stays the
+    // thumbnail and new ones land at the end of the gallery.
+    const position = images.reduce((max, image) => Math.max(max, image.position + 1), 0)
+    upload.mutate({ file, position })
+  }
+
   return (
     <div className="flex flex-col gap-4 rounded-lg border p-6">
-      <div>
-        <h2 className="text-lg font-semibold">Images</h2>
-        <p className="text-sm text-muted-foreground">
-          {/* PENDING rows are shown rather than hidden: an upload that never
-              finished is the thing a seller most needs to notice here. */}
-          Adding and removing images isn&apos;t available yet — images are set when the product is
-          created.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Images</h2>
+          <p className="text-sm text-muted-foreground">
+            Up to {MAX_IMAGES}. The first one is the thumbnail buyers see in search.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={atCap || upload.isPending}
+            onClick={() => fileInput.current?.click()}
+          >
+            <Upload className="size-4" aria-hidden />
+            {upload.isPending ? 'Uploading…' : 'Add image'}
+          </Button>
+          {atCap && (
+            <span className="text-xs text-muted-foreground">
+              Remove one to add another
+            </span>
+          )}
+        </div>
       </div>
+
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        aria-label="Add image"
+        onChange={pick}
+      />
+
+      {(upload.isError || remove.isError) && (
+        <p role="alert" className="text-sm text-destructive">
+          {errorText(upload.error) ?? errorText(remove.error) ?? 'Something went wrong'}
+        </p>
+      )}
 
       {images.length === 0 && <p className="text-sm text-muted-foreground">No images uploaded.</p>}
 
@@ -285,18 +471,45 @@ function Images({
                 {image.status === 'STORED' ? (
                   <img src={image.url} alt="" className="size-full object-cover" />
                 ) : (
+                  // PENDING rows are shown rather than hidden: an upload that
+                  // never finished is the thing a seller most needs to notice.
                   <ImageOff className="size-5 text-muted-foreground" aria-hidden />
                 )}
               </div>
-              <span className="text-xs text-muted-foreground">
-                {image.status === 'STORED' ? `#${image.position + 1}` : 'Upload incomplete'}
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">
+                  {image.status === 'STORED' ? `#${image.position + 1}` : 'Incomplete'}
+                </span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-6"
+                  aria-label={`Remove image ${image.position + 1}`}
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate(image.id)}
+                >
+                  <Trash2 className="size-3" aria-hidden />
+                </Button>
+              </div>
             </li>
           ))}
         </ul>
       )}
     </div>
   )
+}
+
+/**
+ * The upload path can fail two ways - the API refusing (a ProblemDetail) or the
+ * direct PUT to storage failing (a plain Error) - and both have to read as one
+ * message. `title` discriminates them: it's required on ProblemDetail and absent
+ * on Error, unlike `detail`, which is optional and narrows nothing.
+ */
+function errorText(error: ProblemDetail | Error | null): string | undefined {
+  if (!error) {
+    return undefined
+  }
+  return 'title' in error ? (error.detail ?? error.title) : error.message
 }
 
 function Field({

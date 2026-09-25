@@ -35,8 +35,8 @@ import java.util.List;
  *   buyer only    - GET /orders/**, POST /reviews
  *   seller only   - every method under /sellers/me/** (own product list,
  *                    product create, orders, ship), plus product/variant/image
- *                    writes under /products/**, order-line updates, and
- *                    DELETE /auth/seller/session
+ *                    writes under /products/**, /variants/** and /images/**,
+ *                    order-line updates, and DELETE /auth/seller/session
  *
  * The /auth/seller/* trio is the seller-portal-specific magic-link flow
  * (SellerAuthController) - see that class's own note on why it's a separate
@@ -93,6 +93,10 @@ public class SecurityConfig {
                 // seller-only from the moment it exists.
                 .requestMatchers("/sellers/me/**").hasRole("SELLER")
                 .requestMatchers(HttpMethod.DELETE, "/products/*").hasRole("SELLER")
+                // Removing a variant or an image is a seller write like any other;
+                // the service resolves which product they belong to and 404s if it
+                // isn't the caller's.
+                .requestMatchers(HttpMethod.DELETE, "/variants/*", "/images/*").hasRole("SELLER")
                 .requestMatchers(HttpMethod.PATCH, "/products/**").hasRole("SELLER")
                 .requestMatchers(HttpMethod.POST,
                         "/products/*/variants", "/products/*/images", "/variants/*/images",

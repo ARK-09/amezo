@@ -2,7 +2,7 @@ import { ImageOff, ShoppingCart } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { RatingBadge } from '@/components/RatingBadge'
-import { useAddToCartFromProduct } from '@/features/cart/api/useAddToCartFromProduct'
+import { useAddToCart } from '@/features/catalog/api/useAddToCart'
 import type { ProductSummary } from '@/features/search/schema/types'
 import { formatPrice } from '@/lib/formatPrice'
 
@@ -24,7 +24,12 @@ export function ProductTile({
   subtitle?: string
   compareAt?: number
 }) {
-  const { addDefaultVariant, isPending } = useAddToCartFromProduct()
+  const { addToCart } = useAddToCart()
+  // The summary carries the variant to add, so this button does no work beyond a
+  // reducer dispatch - no request, nothing to wait for. It used to fetch the
+  // whole product on click just to learn a variant id, which on a cold backend
+  // meant the cart sat empty for as long as that took.
+  const addable = product.inStock && product.defaultVariantId != null
   const href = `/products/${product.id}`
   const discount =
     compareAt && compareAt > product.priceFrom
@@ -79,9 +84,19 @@ export function ProductTile({
           <button
             type="button"
             className="ml-auto inline-flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
-            disabled={!product.inStock || isPending}
+            disabled={!addable}
             aria-label={product.inStock ? 'Add to cart' : 'Out of stock'}
-            onClick={() => addDefaultVariant(product.id)}
+            onClick={() =>
+              addable &&
+              addToCart(
+                product.defaultVariantId!,
+                1,
+                // The default variant's own price, not priceFrom: the cheapest
+                // offer can be the sold-out one, and the cart stores what was
+                // actually added so the drawer's price-change check stays honest.
+                product.defaultVariantPrice ?? product.priceFrom,
+              )
+            }
           >
             <ShoppingCart className="size-4" aria-hidden />
           </button>

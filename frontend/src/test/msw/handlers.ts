@@ -4,7 +4,10 @@ import { consumeMagicLinkToken, issueMagicLinkToken } from './fixtures/sellerAut
 import { findSellerOrder, listSellerOrders, summaryOf, updateSellerOrder } from './fixtures/sellerOrders'
 import {
   addSellerProduct,
+  addSellerVariant,
   findSellerProductDetail,
+  removeSellerImage,
+  removeSellerVariant,
   listSellerProducts,
   removeSellerProduct,
   TAKEN_SKU,
@@ -152,6 +155,54 @@ export const handlers = [
       shippedAt: new Date().toISOString(),
     })!
     return HttpResponse.json({ ...updated, total: summaryOf(updated).total })
+  }),
+
+  http.post('http://localhost:8080/products/:productId/variants', async ({ params, request }) => {
+    const body = (await request.json()) as Record<string, unknown>
+    if (body.sku === TAKEN_SKU) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/sku-taken',
+          title: 'SKU already in use',
+          status: 409,
+          detail: `SKU ${TAKEN_SKU} belongs to another variant`,
+        },
+        { status: 409 },
+      )
+    }
+    const created = addSellerVariant(params.productId as string, {
+      id: `variant-${String(body.sku)}`,
+      label: String(body.label),
+      sku: String(body.sku),
+      price: Number(body.price),
+      stockQty: Number(body.stockQty),
+    })
+    return created ? HttpResponse.json(created, { status: 201 }) : notFound()
+  }),
+
+  http.delete('http://localhost:8080/variants/:variantId', ({ params }) => {
+    const outcome = removeSellerVariant(params.variantId as string)
+    if (outcome === 'not-found') {
+      return notFound()
+    }
+    if (outcome === 'last-variant') {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/last-variant',
+          title: 'Last variant',
+          status: 409,
+          detail: 'A product needs at least one variant.',
+        },
+        { status: 409 },
+      )
+    }
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.delete('http://localhost:8080/images/:imageId', ({ params }) => {
+    return removeSellerImage(params.imageId as string)
+      ? new HttpResponse(null, { status: 204 })
+      : notFound()
   }),
 
   http.get('http://localhost:8080/sellers/me/products/:productId', ({ params }) => {
