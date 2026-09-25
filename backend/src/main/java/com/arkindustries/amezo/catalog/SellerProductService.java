@@ -10,12 +10,16 @@ import com.arkindustries.amezo.catalog.dto.ImageUploadUrlResponse;
 import com.arkindustries.amezo.catalog.dto.SellerProductSummaryResponse;
 import com.arkindustries.amezo.common.exception.ConflictException;
 import com.arkindustries.amezo.common.exception.NotFoundException;
+import com.arkindustries.amezo.common.exception.PayloadTooLargeException;
+import com.arkindustries.amezo.common.exception.StorageCapReachedException;
+import com.arkindustries.amezo.common.exception.StorageUnavailableException;
 import com.arkindustries.amezo.identity.api.CurrentSeller;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
@@ -47,6 +51,8 @@ public class SellerProductService {
     private final S3Presigner s3Presigner;
     private final String s3Bucket;
     private final ImageUrlResolver imageUrls;
+    private final long maxUploadBytes;
+    private final long maxTotalBytes;
 
     public SellerProductService(
             ProductRepository productRepository,
@@ -56,7 +62,9 @@ public class SellerProductService {
             CurrentSeller currentSeller,
             S3Presigner s3Presigner,
             @Value("${app.s3.bucket}") String s3Bucket,
-            ImageUrlResolver imageUrls) {
+            ImageUrlResolver imageUrls,
+            @Value("${app.s3.max-upload-bytes}") long maxUploadBytes,
+            @Value("${app.s3.max-total-bytes}") long maxTotalBytes) {
         this.productRepository = productRepository;
         this.variantRepository = variantRepository;
         this.offerRepository = offerRepository;
@@ -65,6 +73,8 @@ public class SellerProductService {
         this.s3Presigner = s3Presigner;
         this.s3Bucket = s3Bucket;
         this.imageUrls = imageUrls;
+        this.maxUploadBytes = maxUploadBytes;
+        this.maxTotalBytes = maxTotalBytes;
     }
 
     public Page<SellerProductSummaryResponse> listMine(Pageable pageable) {
@@ -129,25 +139,51 @@ public class SellerProductService {
         productRepository.delete(product);
     }
 
+    /**
+     * Transactional so the reserved row and the URL it reserves for live or die
+     * together: the image row is written before presigning (its id is what the
+     * confirm step quotes), and without a rollback a failed presign would leave a
+     * PENDING row holding quota against a cap for an upload that can never happen.
+     */
+    @Transactional
     public ImageUploadUrlResponse createUploadUrl(UUID productId, ImageUploadUrlRequest request) {
         Product product = ownedProduct(productId);
+        long sizeBytes = request.fileSizeBytes();
+        checkStorageBudget(sizeBytes);
 
         Image image = imageRepository.save(Image.builder()
                 .productId(product.getId())
                 .s3Key("products/" + product.getId() + "/" + UUID.randomUUID())
                 .position(request.position())
                 .status(ImageStatus.PENDING)
+                .sizeBytes(sizeBytes)
                 .build());
 
         PutObjectRequest.Builder putObjectRequest = PutObjectRequest.builder()
                 .bucket(s3Bucket)
                 .key(image.getS3Key())
+                // Signing the length is what makes the declared size binding rather
+                // than a claim: Content-Length is part of the signature, so a client
+                // that presigns for 1 MB and then PUTs 5 GB gets a 403 from the
+                // bucket, not a surprise line on the storage bill.
+                .contentLength(sizeBytes)
                 .contentType(request.contentType());
 
-        PresignedPutObjectRequest presigned = s3Presigner.presignPutObject(PutObjectPresignRequest.builder()
-                .signatureDuration(UPLOAD_URL_TTL)
-                .putObjectRequest(putObjectRequest.build())
-                .build());
+        PresignedPutObjectRequest presigned;
+        try {
+            presigned = s3Presigner.presignPutObject(PutObjectPresignRequest.builder()
+                    .signatureDuration(UPLOAD_URL_TTL)
+                    .putObjectRequest(putObjectRequest.build())
+                    .build());
+        } catch (SdkException ex) {
+            // Overwhelmingly this is "no credentials in the chain" on a deployment
+            // that skipped the object-storage vars, which everything except image
+            // upload runs fine without. A 503 naming that beats a 500 whose only
+            // clue is a stack trace in the server log the seller can't see.
+            throw new StorageUnavailableException(
+                    "Image upload isn't configured on this deployment: object storage rejected the "
+                            + "request to sign an upload URL. See backend/.env.example (AWS_*/S3_* vars).", ex);
+        }
 
         return new ImageUploadUrlResponse(
                 image.getId(),
@@ -178,6 +214,45 @@ public class SellerProductService {
         imageRepository.save(image);
 
         return new ImageResponse(image.getId(), imageUrls.forKey(image.getS3Key()), image.getPosition());
+    }
+
+    /**
+     * Two ceilings, both configurable (app.s3.max-upload-bytes /
+     * max-total-bytes): one file's size, and everything this deployment has
+     * stored. The second is the one that costs money - object storage is billed
+     * per GB and the free tiers this deploys on stop being free past 10 GB, so
+     * past the cap the endpoint stops handing out URLs instead of letting the
+     * bill run. Checked before presigning, because a URL, once issued, is a
+     * capability the bucket will honour for the whole TTL whatever we later think
+     * of it.
+     */
+    private void checkStorageBudget(long sizeBytes) {
+        if (sizeBytes > maxUploadBytes) {
+            throw new PayloadTooLargeException("Image is %s, over the %s per-file limit"
+                    .formatted(humanBytes(sizeBytes), humanBytes(maxUploadBytes)));
+        }
+
+        long used = imageRepository.sumStoredAndReservedBytes(Instant.now().minus(UPLOAD_URL_TTL));
+        if (used + sizeBytes > maxTotalBytes) {
+            throw new StorageCapReachedException(
+                    "Image storage is full: %s of %s used, and this upload needs %s. Delete images or raise the cap."
+                            .formatted(humanBytes(used), humanBytes(maxTotalBytes), humanBytes(sizeBytes)));
+        }
+    }
+
+    /** Binary units, matching how the caps are written in application.yml. */
+    private static String humanBytes(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        String[] units = {"KiB", "MiB", "GiB", "TiB"};
+        double value = bytes;
+        int unit = -1;
+        while (value >= 1024 && unit < units.length - 1) {
+            value /= 1024;
+            unit++;
+        }
+        return "%.1f %s".formatted(value, units[unit]);
     }
 
     private Product ownedProduct(UUID productId) {

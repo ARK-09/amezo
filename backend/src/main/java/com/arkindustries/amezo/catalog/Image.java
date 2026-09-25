@@ -47,6 +47,11 @@ public class Image {
     @Column(nullable = false, length = 10)
     private ImageStatus status;
 
+    // Null only for rows predating V13 - see that migration on why they aren't
+    // backfilled and count as 0 against the storage cap.
+    @Column(name = "size_bytes")
+    private Long sizeBytes;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

@@ -88,6 +88,14 @@ app:
     # (R2: https://<account-id>.r2.cloudflarestorage.com, with region auto) and
     # config/S3Config.java switches the client and presigner over.
     endpoint: ${S3_ENDPOINT:}
+    # Storage budget. The total is the one that costs money: object storage bills
+    # per GB and the free tiers this deploys on (R2's 10 GB, B2's 10 GB) stop being
+    # free past their allowance, so past the cap POST /products/{id}/images/upload-url
+    # answers 507 instead of issuing more URLs. Counts stored objects plus
+    # not-yet-expired presigned URLs, so a burst can't collectively overshoot.
+    # 10 GiB total, 10 MiB per file.
+    max-total-bytes: ${S3_MAX_TOTAL_BYTES:10737418240}
+    max-upload-bytes: ${S3_MAX_UPLOAD_BYTES:10485760}
     # Where buyers' browsers load the images from, which on a non-AWS provider
     # is a different host than the API endpoint above (R2's pub-*.r2.dev
     # subdomain, or a custom domain in front of the bucket). Empty falls back to

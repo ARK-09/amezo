@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -19,6 +20,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.security.MessageDigest;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
@@ -41,6 +43,15 @@ class SellerProductApiTest {
     @ServiceConnection
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
+    static {
+        // Presigning resolves credentials through the SDK's default chain the first
+        // time it signs, and CI has none. These two system properties are a link in
+        // that chain, so the signing math has a key to work with; nothing ever
+        // leaves the JVM - a presigned URL is computed locally, not requested.
+        System.setProperty("aws.accessKeyId", "test-access-key");
+        System.setProperty("aws.secretAccessKey", "test-secret-key");
+    }
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -61,6 +72,12 @@ class SellerProductApiTest {
 
     @Autowired
     private OfferRepository offerRepository;
+
+    @Autowired
+    private ImageRepository imageRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void listMineOnlyReturnsTheCallingSellersProducts() throws Exception {
@@ -189,5 +206,108 @@ class SellerProductApiTest {
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+    }
+    @Test
+    void uploadUrlIsRefusedForAFileOverThePerFileLimit() throws Exception {
+        Seller me = seller("bigfile@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Has images").category("outdoor").build());
+
+        // 20 MiB against the 10 MiB default in application.yml.
+        mockMvc.perform(post("/products/" + product.getId() + "/images/upload-url")
+                        .cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"contentType":"image/jpeg","fileSizeBytes":20971520,"position":0}"""))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.type").value("https://api/errors/file-too-large"));
+    }
+
+    @Test
+    void uploadUrlRequiresADeclaredSize() throws Exception {
+        Seller me = seller("nosize@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("No size").category("outdoor").build());
+
+        mockMvc.perform(post("/products/" + product.getId() + "/images/upload-url")
+                        .cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"contentType":"image/jpeg","position":0}"""))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    /**
+     * The cap is about the deployment's whole bucket, not one seller's: object
+     * storage is billed to whoever owns the bucket, so a second seller doesn't get
+     * a fresh 10 GiB. Stored bytes here are written straight to the image table -
+     * there is no way to actually put 10 GiB into a test bucket, and the sum is
+     * what the check reads.
+     */
+    @Test
+    void uploadUrlIsRefusedOnceTheDeploymentsStorageCapIsReached() throws Exception {
+        Seller hog = seller("hog@example.com");
+        Product hogged = productRepository.save(Product.builder()
+                .sellerId(hog.getId()).title("Already full").category("outdoor").build());
+        imageRepository.save(Image.builder()
+                .productId(hogged.getId())
+                .s3Key("products/" + hogged.getId() + "/filler")
+                .position(0)
+                .status(ImageStatus.STORED)
+                .sizeBytes(10L * 1024 * 1024 * 1024)   // the whole 10 GiB default cap
+                .build());
+
+        Seller other = seller("other-seller@example.com");
+        Product theirs = productRepository.save(Product.builder()
+                .sellerId(other.getId()).title("Wants one pixel").category("outdoor").build());
+
+        mockMvc.perform(post("/products/" + theirs.getId() + "/images/upload-url")
+                        .cookie(sessionCookieFor(other))
+                        .contentType("application/json")
+                        .content("""
+                                {"contentType":"image/jpeg","fileSizeBytes":1024,"position":0}"""))
+                .andExpect(status().isInsufficientStorage())
+                .andExpect(jsonPath("$.type").value("https://api/errors/storage-cap-reached"));
+    }
+
+    /**
+     * Pending uploads count while their URL is live, so concurrent requests can't
+     * each see the same headroom and collectively overshoot - but an abandoned one
+     * must stop holding quota once the URL it reserved for has expired.
+     */
+    @Test
+    void anExpiredPendingUploadStopsCountingAgainstTheCap() throws Exception {
+        Seller me = seller("expired-pending@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Abandoned upload").category("outdoor").build());
+
+        Image abandoned = imageRepository.save(Image.builder()
+                .productId(product.getId())
+                .s3Key("products/" + product.getId() + "/abandoned")
+                .position(0)
+                .status(ImageStatus.PENDING)
+                .sizeBytes(10L * 1024 * 1024 * 1024)
+                .build());
+
+        mockMvc.perform(post("/products/" + product.getId() + "/images/upload-url")
+                        .cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"contentType":"image/jpeg","fileSizeBytes":1024,"position":1}"""))
+                .andExpect(status().isInsufficientStorage());
+
+        // Older than the 15-minute upload-URL TTL: the reservation is void, and so
+        // is its hold on the cap. Aged in SQL because created_at is
+        // @CreationTimestamp + updatable = false - JPA silently drops a change to
+        // it, so a save() here would assert nothing.
+        jdbcTemplate.update("UPDATE image SET created_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)), abandoned.getId());
+
+        mockMvc.perform(post("/products/" + product.getId() + "/images/upload-url")
+                        .cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"contentType":"image/jpeg","fileSizeBytes":1024,"position":1}"""))
+                .andExpect(status().isCreated());
     }
 }

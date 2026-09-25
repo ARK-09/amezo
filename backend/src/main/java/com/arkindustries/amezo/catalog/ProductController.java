@@ -10,13 +10,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * GET /products?q= (search) and GET /products/{id} (detail) - the
- * category/price/warranty/stock filters and sort on search, from
- * docs/api-design.md, are still deferred business logic for a later pass.
- * Both are already public under SecurityConfig's GET /products/** rule.
+ * GET /products (search + filters) and GET /products/{id} (detail), both public
+ * under SecurityConfig's GET /products/** rule. Warranty filtering is still
+ * deferred - it belongs to the offer-level warranty model in docs/next-build.md,
+ * which isn't built.
  */
 @RestController
 @RequestMapping("/products")
@@ -31,8 +32,16 @@ public class ProductController {
     @GetMapping
     public Page<ProductSummaryResponse> search(
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) BigDecimal priceMin,
+            @RequestParam(required = false) BigDecimal priceMax,
+            @RequestParam(required = false, defaultValue = "false") boolean inStockOnly,
+            // Not an enum parameter: an unrecognised value falls through the
+            // ORDER BY's CASE arms to the created_at tiebreak, so a stale
+            // bookmarked URL sorts oddly instead of 400ing at the buyer.
+            @RequestParam(required = false, defaultValue = "relevance") String sort,
             Pageable pageable) {
-        return productService.search(q, pageable);
+        return productService.search(q, category, priceMin, priceMax, inStockOnly, sort, pageable);
     }
 
     @GetMapping("/{id}")

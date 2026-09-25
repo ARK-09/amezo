@@ -70,6 +70,8 @@ still runs locally; this table is what a *deployment* cares about.
 | `AWS_REGION` | `us-east-1` | Image upload only — `auto` for R2 |
 | `S3_ENDPOINT` | empty (AWS) | Image upload only — R2/MinIO endpoint |
 | `S3_PUBLIC_BASE_URL` | empty (AWS URL) | Image upload only — the public bucket URL |
+| `S3_MAX_TOTAL_BYTES` | `10737418240` (10 GiB) | Match your provider's free allowance |
+| `S3_MAX_UPLOAD_BYTES` | `10485760` (10 MiB) | Per-file ceiling |
 | `SQL_LOG_LEVEL` | `debug` | Recommended — `warn` |
 | `HIBERNATE_FORMAT_SQL` | `true` | Recommended — `false` |
 | `API_DOCS_ENABLED` / `API_DOCS_PATH` | `true` / `/v3/api-docs` | No |
@@ -105,18 +107,17 @@ itself.
    Each Vercel preview deployment gets its own origin, so add any preview URL you
    want to test against to `APP_CORS_ALLOWED_ORIGINS` as a comma-separated entry.
 
-3. **Frontend (Vercel).** The deployed frontend currently mocks the API in the
-   browser with MSW — that's `frontend/.env.production`. Once the backend answers:
-   - set `VITE_API_URL=https://<your-render-service>.onrender.com`
-   - set `VITE_USE_MSW=false`
-   - set `VITE_DEMO_SELLER_AUTH=false` to use the real magic-link flow. Leave it
-     `true` unless email delivery is wired up: `LoggingEmailSender` only writes
-     the magic link to the server log, so a real sign-in means reading the link
-     out of Render's log stream.
+3. **Frontend (Vercel).** Already pointed at the live backend —
+   `frontend/.env.production` now sets `VITE_API_URL=https://amezo.onrender.com`,
+   `VITE_USE_MSW=false` and `VITE_DEMO_SELLER_AUTH=false`. Vercel rebuilds from
+   the repo, so nothing to set in its dashboard unless you'd rather manage the URL
+   there — in which case delete that file so there's no ambiguity about which wins.
 
-   Set these in Vercel's project env vars (they're build-time inlined by Vite, so
-   redeploy after changing them), and delete `.env.production`'s overrides so the
-   dashboard values win.
+   Seller sign-in is the one rough edge of turning the mock off:
+   `LoggingEmailSender` writes the magic link to the server log instead of sending
+   it, so signing in means copying the token out of Render's log stream. Wiring a
+   real sender (Resend, Brevo — both free at this volume) is what makes it a normal
+   sign-in.
 
 4. **Verify.** `GET https://<service>/v3/api-docs` returns the OpenAPI JSON
    without a session cookie — it's the cheapest public endpoint to prove the app
@@ -166,6 +167,24 @@ itself.
   virtual-hosted form. Everything except image upload works with none of this
   configured.
 
+- **Storage cap.** `POST /products/{id}/images/upload-url` refuses to issue a URL
+  once stored-plus-reserved bytes reach `S3_MAX_TOTAL_BYTES` (507), and refuses any
+  single file over `S3_MAX_UPLOAD_BYTES` (413). The declared size is signed into the
+  URL as `Content-Length`, so a client can't presign for 1 MB and then PUT 5 GB.
+  Set the total to whatever your provider gives away free — 10 GiB matches R2 and
+  B2 — and remember it's the whole deployment's budget, not per seller.
+- **Image upload without credentials.** Skipping the `AWS_*`/`S3_*` vars is
+  supported: everything except image upload works, and upload answers 503 naming
+  the missing configuration rather than 500ing.
+- **What the live API still doesn't do.** `ProductSummary.avgRating` is in the
+  frontend contract but not returned — reviews' query interface answers one product
+  at a time, so a page of 16 cards would be 16 extra queries; it needs a batch
+  method first. Warranty filtering belongs to the unbuilt offer-warranty model in
+  next-build.md. `GET /sessions/current` has no controller, which is by design —
+  `useSession` treats any failure as "not signed in" and only loses the checkout
+  email pre-fill. And the page envelope is Spring's (`number`), while the contract
+  names `page`; nothing reads either field, so it's drift to fix when the contract
+  is next touched, not a break.
 - **Memory.** `-XX:MaxRAMPercentage=70` in the Dockerfile keeps the heap inside
   a 512 MB container; the JVM would otherwise size the heap against the host's
   RAM and get OOM-killed. If the service dies on boot with exit 137, that's

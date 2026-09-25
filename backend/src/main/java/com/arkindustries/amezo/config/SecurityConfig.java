@@ -26,7 +26,8 @@ import java.util.List;
  * cookie-authenticated APIs.
  *
  * Route table (see docs/api-design.md for the full endpoint list):
- *   public        - GET /products/**, POST /magic-links, POST /sessions,
+ *   public        - GET /products/**, GET /variants, POST /magic-links,
+ *                    POST /sessions,
  *                    POST /orders (guest checkout), the OpenAPI spec path
  *                    (springdoc.api-docs.path, wherever that points),
  *                    POST /auth/seller/magic-link, POST /auth/seller/verify
@@ -61,6 +62,9 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.GET, "/products/**").permitAll()
+                // The cart's batch lookup. Public for the same reason the rest of the
+                // catalog read surface is: a cart exists before anyone signs in.
+                .requestMatchers(HttpMethod.GET, "/variants").permitAll()
                 .requestMatchers(HttpMethod.POST, "/magic-links").permitAll()
                 .requestMatchers(HttpMethod.POST, "/sessions").permitAll()
                 .requestMatchers(HttpMethod.POST, "/orders").permitAll()
