@@ -188,6 +188,16 @@ itself.
   swallowed: that endpoint sends for every address it is given without checking
   whether an account exists, so failing loudly reveals nothing about who has one,
   and the alternative is a seller waiting on a link that was never sent.
+- **How an image gets in, end to end.** The seller's browser never sends bytes to
+  this API: `POST /products/{id}/images/upload-url` creates a `pending` image row
+  and returns a presigned PUT (path-style, against `S3_ENDPOINT`) → the browser
+  PUTs the file straight to R2 → `POST /products/{id}/images/confirm` HEADs the
+  object, and only then is the row `stored` and the image rendered. Confirm answers
+  `409 upload-not-found` if nothing landed, so a broken image can't become
+  permanent. Deleting a product deletes its objects from the bucket too. Because
+  the browser PUTs directly, **the bucket needs CORS** allowing `PUT` from your
+  Vercel origin with `Content-Type` in the allowed headers — that is dashboard
+  config, not code, and it is the one step nothing in the app can do for you.
 - **Storage cap.** `POST /products/{id}/images/upload-url` refuses to issue a URL
   once stored-plus-reserved bytes reach `S3_MAX_TOTAL_BYTES` (507), and refuses any
   single file over `S3_MAX_UPLOAD_BYTES` (413). The declared size is signed into the

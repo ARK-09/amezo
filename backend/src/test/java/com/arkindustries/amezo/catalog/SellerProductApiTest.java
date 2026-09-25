@@ -8,11 +8,19 @@ import com.arkindustries.amezo.identity.SessionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -28,6 +36,10 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -78,6 +90,14 @@ class SellerProductApiTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    /**
+     * Mocked, not real: confirm HEADs the bucket and delete removes from it, and
+     * neither belongs in a test's reach. Stubbing it also makes "the object isn't
+     * there" a case that can be asserted rather than waited for.
+     */
+    @MockitoBean
+    private S3Client s3Client;
 
     @Test
     void listMineOnlyReturnsTheCallingSellersProducts() throws Exception {
@@ -309,5 +329,118 @@ class SellerProductApiTest {
                         .content("""
                                 {"contentType":"image/jpeg","fileSizeBytes":1024,"position":1}"""))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    void confirmRecordsTheSizeTheBucketReportsNotTheOneTheClientDeclared() throws Exception {
+        Seller me = seller("confirm-size@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Sized").category("outdoor").build());
+        Cookie cookie = sessionCookieFor(me);
+
+        // Declared 8 KiB at presign; the object that actually landed is 4242 bytes.
+        String uploadResponse = mockMvc.perform(post("/products/" + product.getId() + "/images/upload-url")
+                        .cookie(cookie)
+                        .contentType("application/json")
+                        .content("""
+                                {"contentType":"image/jpeg","fileSizeBytes":8192,"position":0}"""))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID imageId = UUID.fromString(objectMapper.readTree(uploadResponse).get("id").asText());
+
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenReturn(HeadObjectResponse.builder().contentLength(4242L).build());
+
+        mockMvc.perform(post("/products/" + product.getId() + "/images/confirm")
+                        .cookie(cookie)
+                        .contentType("application/json")
+                        .content("{\"imageId\":\"" + imageId + "\"}"))
+                .andExpect(status().isOk());
+
+        Image stored = imageRepository.findById(imageId).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(ImageStatus.STORED);
+        // The storage cap sums this column, so it has to be the bucket's number.
+        assertThat(stored.getSizeBytes()).isEqualTo(4242L);
+    }
+
+    @Test
+    void confirmIsRefusedWhenNothingWasEverUploaded() throws Exception {
+        Seller me = seller("confirm-missing@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Never uploaded").category("outdoor").build());
+        Cookie cookie = sessionCookieFor(me);
+
+        String uploadResponse = mockMvc.perform(post("/products/" + product.getId() + "/images/upload-url")
+                        .cookie(cookie)
+                        .contentType("application/json")
+                        .content("""
+                                {"contentType":"image/jpeg","fileSizeBytes":1024,"position":0}"""))
+                .andReturn().getResponse().getContentAsString();
+        UUID imageId = UUID.fromString(objectMapper.readTree(uploadResponse).get("id").asText());
+
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(NoSuchKeyException.builder().message("not found").build());
+
+        mockMvc.perform(post("/products/" + product.getId() + "/images/confirm")
+                        .cookie(cookie)
+                        .contentType("application/json")
+                        .content("{\"imageId\":\"" + imageId + "\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://api/errors/upload-not-found"));
+
+        // Still PENDING: a failed confirm must not leave a row claiming an object
+        // that isn't there, or the product page renders a permanent broken image.
+        assertThat(imageRepository.findById(imageId).orElseThrow().getStatus())
+                .isEqualTo(ImageStatus.PENDING);
+    }
+
+    /**
+     * The leak this closes: deleting a product used to drop the image rows and
+     * leave the objects in the bucket - billed forever, and invisible to the
+     * storage cap, which counts rows.
+     */
+    @Test
+    void deletingAProductRemovesItsObjectsFromTheBucket() throws Exception {
+        Seller me = seller("delete-objects@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("With images").category("outdoor").build());
+        imageRepository.save(Image.builder()
+                .productId(product.getId())
+                .s3Key("products/" + product.getId() + "/first")
+                .position(0).status(ImageStatus.STORED).sizeBytes(1024L).build());
+        imageRepository.save(Image.builder()
+                .productId(product.getId())
+                .s3Key("products/" + product.getId() + "/second")
+                .position(1).status(ImageStatus.PENDING).sizeBytes(2048L).build());
+
+        mockMvc.perform(delete("/products/" + product.getId()).cookie(sessionCookieFor(me)))
+                .andExpect(status().isNoContent());
+
+        ArgumentCaptor<DeleteObjectRequest> deleted = ArgumentCaptor.forClass(DeleteObjectRequest.class);
+        verify(s3Client, times(2)).deleteObject(deleted.capture());
+        assertThat(deleted.getAllValues()).extracting(DeleteObjectRequest::key)
+                .containsExactlyInAnyOrder(
+                        "products/" + product.getId() + "/first",
+                        "products/" + product.getId() + "/second");
+    }
+
+    /** A delete the bucket refuses must not fail a delete the database already committed. */
+    @Test
+    void aBucketFailureDoesNotFailTheProductDelete() throws Exception {
+        Seller me = seller("delete-objects-fail@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Stubborn bucket").category("outdoor").build());
+        imageRepository.save(Image.builder()
+                .productId(product.getId())
+                .s3Key("products/" + product.getId() + "/only")
+                .position(0).status(ImageStatus.STORED).sizeBytes(512L).build());
+
+        when(s3Client.deleteObject(any(DeleteObjectRequest.class)))
+                .thenThrow(SdkClientException.create("bucket unreachable"));
+
+        mockMvc.perform(delete("/products/" + product.getId()).cookie(sessionCookieFor(me)))
+                .andExpect(status().isNoContent());
+
+        assertThat(productRepository.findById(product.getId())).isEmpty();
     }
 }
