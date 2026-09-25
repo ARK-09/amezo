@@ -12,6 +12,7 @@ import type { ProductTab } from '@/features/catalog/components/ProductTabs'
 import { ProductTabs } from '@/features/catalog/components/ProductTabs'
 import { ReviewsPanel } from '@/features/catalog/components/ReviewsPanel'
 import { VariantSelector } from '@/features/catalog/components/VariantSelector'
+import { apiErrorMessage } from '@/lib/api/transient'
 
 export function ProductDetail() {
   const { productId } = useParams<{ productId: string }>()
@@ -41,7 +42,7 @@ export function ProductDetail() {
         <div className="flex flex-col items-center gap-3 py-16 text-center">
           <p className="font-medium">Couldn't load this product</p>
           <p className="text-sm text-muted-foreground">
-            {query.error?.detail ?? 'Something went wrong. Try again.'}
+            {apiErrorMessage(query.error)}
           </p>
           <Button variant="outline" onClick={() => query.refetch()}>
             Retry

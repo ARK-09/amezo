@@ -1,6 +1,7 @@
 import { ProductTile } from '@/features/catalog/components/ProductTile'
 import { ProductCardSkeleton } from '@/features/search/components/ProductCardSkeleton'
 import type { ProductSummary } from '@/features/search/schema/types'
+import { apiErrorMessage } from '@/lib/api/transient'
 
 import { SectionHeading } from './SectionHeading'
 
@@ -11,6 +12,7 @@ export function DealRail({
   products,
   isLoading,
   isError,
+  error,
   onRetry,
 }: {
   id: string
@@ -19,6 +21,10 @@ export function DealRail({
   products: ProductSummary[]
   isLoading: boolean
   isError: boolean
+  // The landing page is the front door, so it is where a cold start is most
+  // often met. "Couldn't load these products" described that as a failure of
+  // the products; apiErrorMessage says the server is still starting.
+  error?: unknown
   onRetry: () => void
 }) {
   // A rail that came back empty is merchandising noise, not an error - drop it
@@ -31,7 +37,7 @@ export function DealRail({
 
       {isError ? (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-5 py-6">
-          <p className="text-sm text-muted-foreground">Couldn't load these products.</p>
+          <p className="text-sm text-muted-foreground">{apiErrorMessage(error)}</p>
           <button
             type="button"
             onClick={onRetry}

@@ -217,11 +217,34 @@ itself.
   frontend contract but not returned — reviews' query interface answers one product
   at a time, so a page of 16 cards would be 16 extra queries; it needs a batch
   method first. Warranty filtering belongs to the unbuilt offer-warranty model in
-  next-build.md. `GET /sessions/current` has no controller, which is by design —
-  `useSession` treats any failure as "not signed in" and only loses the checkout
-  email pre-fill. And the page envelope is Spring's (`number`), while the contract
+  next-build.md. And the page envelope is Spring's (`number`), while the contract
   names `page`; nothing reads either field, so it's drift to fix when the contract
   is next touched, not a break.
+- **`GET /sessions/current`.** Implemented (`identity/SessionController`). It
+  answers 200 with `{ identityType, identityId, email, fullName, expiresAt }` for
+  whichever identity the `mp_session` cookie names, and 401 for a visitor with no
+  cookie or an expired one — so a 401 here is normal traffic, not an incident.
+  It used to have SecurityConfig rules and no controller, which meant an
+  authenticated caller got a **404** and the deployed frontend logged one on every
+  page load. `DELETE /sessions/current` had the same dead rule; it is gone rather
+  than implemented, because `DELETE /auth/seller/session` already revokes the
+  session row and expires the cookie.
+- **Cold starts are handled in the frontend, not papered over.** A free instance
+  sleeps after 15 minutes idle, so the first request after a quiet spell can take
+  up to a minute or come back as a gateway error. `src/lib/api/transient.ts` holds
+  the whole policy: each attempt gets 20s (`fetchWithTimeout` in
+  `lib/api/client.ts`), and a failure is retried up to 3 times with 1s/2s/4s
+  backoff **only** if it is infrastructure — a network-level fetch failure, that
+  deadline, or 408/425/429/502/503/504. A 4xx is never retried, and neither is a
+  500: a 500 carries a ProblemDetail, which means the application answered and
+  retrying would just hide the bug. Worst case for a backend that is genuinely
+  down is about 90 seconds, then an error. While retries are in flight the app
+  shows `BackendWakingBanner` ("Waking the server up…") instead of an error panel,
+  and `apiErrorMessage` gives exhausted transient failures the "may still be
+  starting up" wording rather than a raw 502. Mutations deliberately do **not**
+  retry (`createAppQueryClient`): a checkout POST that timed out may already have
+  been committed, and a retry would place a second order — those surface the
+  failure and let the user press the button again.
 - **Memory.** `-XX:MaxRAMPercentage=70` in the Dockerfile keeps the heap inside
   a 512 MB container; the JVM would otherwise size the heap against the host's
   RAM and get OOM-killed. If the service dies on boot with exit 137, that's

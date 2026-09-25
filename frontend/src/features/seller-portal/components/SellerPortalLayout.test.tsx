@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 
 import { SellerPortalLayout } from './SellerPortalLayout'
 
@@ -36,6 +37,7 @@ describe('SellerPortalLayout', () => {
 
   it('renders the sidebar and the active page when signed in', async () => {
     localStorage.setItem('seller:session', JSON.stringify({ sellerId: 's1', email: 'seller@example.com' }))
+    signInSellerSession({ sellerId: 's1', email: 'seller@example.com' })
 
     renderLayout('/seller/products')
 

@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { afterAll, afterEach, beforeAll } from 'vitest'
 
 import { server } from './msw/server'
+import { clearSellerSession } from './msw/fixtures/sellerAuth'
 import { resetSellerOrders } from './msw/fixtures/sellerOrders'
 import { resetSellerProducts } from './msw/fixtures/sellerProducts'
 
@@ -23,4 +24,7 @@ afterEach(() => server.resetHandlers())
 afterEach(() => localStorage.clear())
 afterEach(() => resetSellerProducts())
 afterEach(() => resetSellerOrders())
+// The mock session cookie is module state like the rest; a test that signs in
+// must not leave the next one signed in.
+afterEach(() => clearSellerSession())
 afterAll(() => server.close())

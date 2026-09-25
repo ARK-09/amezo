@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router'
 import { Button } from '@/components/ui/button'
 import type { ProblemDetail } from '@/lib/api/client'
 import { Input } from '@/components/ui/input'
+import { apiErrorMessage } from '@/lib/api/transient'
 import {
   Table,
   TableBody,
@@ -51,7 +52,7 @@ export function SellerProductDetail() {
       {query.isError && (
         <div className="flex flex-col items-start gap-3 rounded-lg border p-6">
           <p className="font-medium">Couldn&apos;t load this product</p>
-          <p className="text-sm text-muted-foreground">{query.error.detail ?? query.error.title}</p>
+          <p className="text-sm text-muted-foreground">{apiErrorMessage(query.error)}</p>
           <Button variant="outline" onClick={() => query.refetch()}>
             Try again
           </Button>
@@ -509,7 +510,10 @@ function errorText(error: ProblemDetail | Error | null): string | undefined {
   if (!error) {
     return undefined
   }
-  return 'title' in error ? (error.detail ?? error.title) : error.message
+  // apiErrorMessage handles the ProblemDetail side and the cold-start wording;
+  // a plain Error from the direct-to-storage PUT carries its own message, which
+  // apiErrorMessage has no field to read.
+  return 'title' in error ? apiErrorMessage(error) : error.message
 }
 
 function Field({

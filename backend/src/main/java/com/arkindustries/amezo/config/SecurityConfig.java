@@ -31,7 +31,7 @@ import java.util.List;
  *                    POST /orders (guest checkout), the OpenAPI spec path
  *                    (springdoc.api-docs.path, wherever that points),
  *                    POST /auth/seller/magic-link, POST /auth/seller/verify
- *   either role   - GET/DELETE /sessions/current
+ *   either role   - GET /sessions/current (SessionController)
  *   buyer only    - GET /orders/**, POST /reviews
  *   seller only   - every method under /sellers/me/** (own product list,
  *                    product create, orders, ship), plus product/variant/image
@@ -77,8 +77,16 @@ public class SecurityConfig {
                 // instead of the real ProblemDetail from ApiExceptionHandler.
                 .requestMatchers("/error").permitAll()
 
+                // Buyers and sellers alike - the only route either role reaches.
+                // A missing or expired cookie gets the 401 from
+                // ProblemDetailAuthenticationEntryPoint, which is the frontend's
+                // "not signed in" signal, not an error to show.
+                //
+                // DELETE /sessions/current had a rule here too and no controller
+                // behind it, so it answered 404 to an authenticated caller - the
+                // same dead-rule bug as the GET. Sign-out is
+                // DELETE /auth/seller/session; nothing calls a second one.
                 .requestMatchers(HttpMethod.GET, "/sessions/current").authenticated()
-                .requestMatchers(HttpMethod.DELETE, "/sessions/current").authenticated()
 
                 .requestMatchers(HttpMethod.GET, "/orders/**").hasRole("BUYER")
                 .requestMatchers(HttpMethod.POST, "/reviews").hasRole("BUYER")

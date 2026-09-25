@@ -228,6 +228,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /sessions/current:
+    get:
+      operationId: getCurrentSession
+      description: >
+        Who the session cookie belongs to, buyer or seller. 401 (not 404, not an
+        empty 200) is the documented answer for "nobody is signed in" - see
+        SessionController on the backend and useSession on the frontend, which
+        reads that 401 as data rather than as a failure.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionIdentity'
+        '401':
+          description: No session, or an expired/revoked one
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /sellers/me/products:
     get:
       operationId: sellerListProducts
@@ -609,6 +636,17 @@ components:
       properties:
         sellerId: { type: string, format: uuid }
         email: { type: string }
+    SessionIdentity:
+      type: object
+      required: [identityType, identityId, email, expiresAt]
+      properties:
+        identityType: { type: string, enum: [BUYER, SELLER] }
+        identityId: { type: string, format: uuid }
+        email: { type: string }
+        # Nullable in practice: a seller created by magic-link sign-in has only
+        # supplied an email, and seller.full_name is nullable to match.
+        fullName: { type: string, nullable: true }
+        expiresAt: { type: string, format: date-time }
     SellerProductSummary:
       type: object
       required: [id, title, category, variantCount, createdAt]

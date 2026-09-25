@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 import { server } from '@/test/msw/server'
 
 import { SellerSignIn } from './SellerSignIn'
@@ -36,11 +37,25 @@ describe('SellerSignIn', () => {
     expect(screen.getByText(/seller@example\.com/)).toBeInTheDocument()
   })
 
+  /**
+   * An application failure: the API reached its own code and answered. Its
+   * ProblemDetail detail is more specific than any wording this page could
+   * invent, so that is what the seller reads.
+   */
   it('shows an error and stays on the form when the request fails', async () => {
     server.use(
       http.post(
         'http://localhost:8080/auth/seller/magic-link',
-        () => HttpResponse.json({ type: 'about:blank', title: 'Error', status: 500 }, { status: 500 }),
+        () =>
+          HttpResponse.json(
+            {
+              type: 'https://api/errors/email-delivery',
+              title: 'Bad Gateway',
+              status: 500,
+              detail: "Couldn't send the sign-in email",
+            },
+            { status: 500 },
+          ),
         { once: true },
       ),
     )
@@ -49,7 +64,31 @@ describe('SellerSignIn', () => {
     await userEvent.type(screen.getByLabelText('Email'), 'seller@example.com')
     await userEvent.click(screen.getByRole('button', { name: 'Send magic link' }))
 
-    expect(await screen.findByText('Something went wrong. Try again.')).toBeInTheDocument()
+    expect(await screen.findByText("Couldn't send the sign-in email")).toBeInTheDocument()
+    expect(screen.queryByText('Check your email')).not.toBeInTheDocument()
+  })
+
+  /**
+   * The same form against a sleeping Render instance. Mutations deliberately
+   * don't retry (a resent magic link is a second email), so the page has to say
+   * what happened well enough that pressing the button again is the obvious next
+   * move - not "Something went wrong", and not a raw 502.
+   */
+  it('explains a cold start rather than reporting a generic failure', async () => {
+    server.use(
+      http.post(
+        'http://localhost:8080/auth/seller/magic-link',
+        () => new HttpResponse('<html>Bad gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
+        { once: true },
+      ),
+    )
+    renderPage()
+
+    await userEvent.type(screen.getByLabelText('Email'), 'seller@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Send magic link' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/still be starting up/)
+    expect(screen.getByLabelText('Email')).toHaveValue('seller@example.com')
     expect(screen.queryByText('Check your email')).not.toBeInTheDocument()
   })
   /**
@@ -61,6 +100,9 @@ describe('SellerSignIn', () => {
       'seller:session',
       JSON.stringify({ sellerId: 'seller-1', email: 'seller@example.com' }),
     )
+    // The cookie behind the flag, so the boot-time check confirms the session
+    // instead of answering 401 and signing this seller out again.
+    signInSellerSession({ sellerId: 'seller-1', email: 'seller@example.com' })
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useRequestMagicLink } from '@/features/seller-portal/api/useSellerAuth'
 import { useSellerAuth } from '@/features/seller-portal/context/SellerAuthContext'
+import { apiErrorMessage } from '@/lib/api/transient'
 
 // The Vercel demo has no real backend to send/verify a magic-link email, so
 // this flag (only set in .env.production) skips straight to a mocked
@@ -16,7 +17,7 @@ const DEMO_AUTH = import.meta.env.VITE_DEMO_SELLER_AUTH === 'true'
 export function SellerSignIn() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
-  const { mutate, isPending, isError } = useRequestMagicLink()
+  const { mutate, isPending, isError, error } = useRequestMagicLink()
   const { seller, signIn } = useSellerAuth()
   const navigate = useNavigate()
 
@@ -74,8 +75,14 @@ export function SellerSignIn() {
                   placeholder="you@example.com"
                 />
               </div>
+              {/* Often the first request of the visit, so it is the one most
+                  likely to hit a sleeping instance. Mutations don't retry (see
+                  createAppQueryClient), so the message has to say what happened
+                  and that pressing the button again is the right move. */}
               {isError && (
-                <p className="text-sm text-destructive">Something went wrong. Try again.</p>
+                <p role="alert" className="text-sm text-destructive">
+                  {apiErrorMessage(error)}
+                </p>
               )}
               <Button type="submit" disabled={isPending} className="w-full">
                 {isPending ? 'Sending…' : 'Send magic link'}

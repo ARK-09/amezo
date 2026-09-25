@@ -1,6 +1,7 @@
 import { LogOut, Package, ShoppingBag, ShoppingCart } from 'lucide-react'
 import { Navigate, NavLink, Outlet } from 'react-router'
 
+import { BackendWakingBanner } from '@/components/layout/BackendWakingBanner'
 import { Button } from '@/components/ui/button'
 import { useSellerSignOut } from '@/features/seller-portal/api/useSellerAuth'
 import { useSellerAuth } from '@/features/seller-portal/context/SellerAuthContext'
@@ -67,6 +68,7 @@ export function SellerPortalLayout() {
       </aside>
 
       <main className="min-w-0 flex-1">
+        <BackendWakingBanner />
         {DEMO_AUTH && (
           <div
             role="status"

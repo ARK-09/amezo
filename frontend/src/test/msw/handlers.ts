@@ -1,6 +1,11 @@
 import { http, HttpResponse } from 'msw'
 
-import { consumeMagicLinkToken, issueMagicLinkToken } from './fixtures/sellerAuth'
+import {
+  clearSellerSession,
+  consumeMagicLinkToken,
+  currentSessionIdentity,
+  issueMagicLinkToken,
+} from './fixtures/sellerAuth'
 import { findSellerOrder, listSellerOrders, summaryOf, updateSellerOrder } from './fixtures/sellerOrders'
 import {
   addSellerProduct,
@@ -36,11 +41,24 @@ function notFound() {
 }
 
 export const handlers = [
-  // No magic-link auth is built (frontend or backend) - 401 is the only
-  // realistic default, matching "guest, no session" as the normal case.
-  http.get('http://localhost:8080/sessions/current', () =>
-    HttpResponse.json({ type: 'about:blank', title: 'Unauthorized', status: 401 }, { status: 401 }),
-  ),
+  // Answers from the same mock "cookie" the verify and sign-out handlers below
+  // maintain. No session is a 401, matching the backend's SessionController -
+  // which the frontend reads as "nobody is signed in", not as an error.
+  http.get('http://localhost:8080/sessions/current', () => {
+    const identity = currentSessionIdentity()
+    if (!identity) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/unauthorized',
+          title: 'Unauthorized',
+          status: 401,
+          detail: 'Session is missing, expired, or invalid',
+        },
+        { status: 401 },
+      )
+    }
+    return HttpResponse.json(identity)
+  }),
 
   // Happy path, stock failure, and price drift all fall out of comparing
   // the submitted lines against the SAME variantOffers fixture /variants
@@ -300,7 +318,12 @@ export const handlers = [
     return HttpResponse.json(session)
   }),
 
-  http.delete('http://localhost:8080/auth/seller/session', () => new HttpResponse(null, { status: 204 })),
+  http.delete('http://localhost:8080/auth/seller/session', () => {
+    // Revokes the mock "cookie" too, so a GET /sessions/current after sign-out
+    // answers 401 the way the backend's deleted session row makes it.
+    clearSellerSession()
+    return new HttpResponse(null, { status: 204 })
+  }),
 
   http.get('http://localhost:8080/variants', ({ request }) => {
     const url = new URL(request.url)

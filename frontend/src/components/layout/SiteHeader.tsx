@@ -5,7 +5,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 
 import { DeliveryLocation } from '@/components/layout/DeliveryLocation'
 import { CartTrigger } from '@/features/cart/components/CartTrigger'
-import { useSession } from '@/features/checkout/api/useSession'
+import { useSession } from '@/features/session/api/useSession'
 import { useCategoryOptions } from '@/features/search/api/useSearchProducts'
 import { cn } from '@/lib/utils'
 
