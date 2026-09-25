@@ -1,6 +1,6 @@
 import { ShoppingBag } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Navigate, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +17,7 @@ export function SellerSignIn() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const { mutate, isPending, isError } = useRequestMagicLink()
-  const { signIn } = useSellerAuth()
+  const { seller, signIn } = useSellerAuth()
   const navigate = useNavigate()
 
   function submit(e: FormEvent) {
@@ -32,6 +32,12 @@ export function SellerSignIn() {
         setSent(true)
       },
     })
+  }
+
+  // Already signed in: nobody needs to be asked for an email they've already
+  // used. replace, not push, so Back doesn't land them here again.
+  if (seller) {
+    return <Navigate to="/seller/products" replace />
   }
 
   return (

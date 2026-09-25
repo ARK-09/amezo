@@ -275,6 +275,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /products/{productId}/variants:
+    post:
+      operationId: sellerAddVariant
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVariantRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerVariant'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /images/{imageId}:
+    delete:
+      operationId: sellerDeleteImage
+      description: Removes the image row and the object behind it.
+      parameters:
+        - name: imageId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Deleted
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /products/{productId}/images/upload-url:
     post:
       operationId: sellerCreateImageUploadUrl
@@ -366,6 +411,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
   /variants/{variantId}:
+    delete:
+      operationId: sellerDeleteVariant
+      description: >-
+        Refused with 409 when the variant has been ordered, or when it is the
+        product's last one.
+      parameters:
+        - name: variantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Deleted
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     patch:
       operationId: sellerUpdateVariant
       description: Partial update, flattened across variant (label, sku) and offer (price, stockQty).
@@ -508,6 +572,11 @@ components:
         thumbnailUrl: { type: string, nullable: true }
         avgRating: { type: number, nullable: true }
         inStock: { type: boolean }
+        # What a card's Add-to-cart button puts in the cart, so it needs no
+        # request of its own: the cheapest buyable offer, with its own price
+        # (priceFrom can belong to a sold-out variant).
+        defaultVariantId: { type: string, format: uuid, nullable: true }
+        defaultVariantPrice: { type: number, nullable: true }
     ProductSummaryPage:
       type: object
       required: [content, page, totalElements, totalPages]

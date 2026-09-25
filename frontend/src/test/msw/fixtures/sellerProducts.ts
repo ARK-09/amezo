@@ -147,3 +147,36 @@ export function updateSellerVariant(
   }
   return undefined
 }
+
+export function addSellerVariant(productId: string, variant: SellerVariant): SellerVariant | undefined {
+  const detail = findSellerProductDetail(productId)
+  if (!detail) {
+    return undefined
+  }
+  detail.variants = [...detail.variants, variant]
+  return variant
+}
+
+/** Mirrors the API's two refusals so the page's error paths are reachable. */
+export function removeSellerVariant(variantId: string): 'ok' | 'not-found' | 'last-variant' {
+  for (const detail of Object.values(details)) {
+    if (detail.variants.some((v) => v.id === variantId)) {
+      if (detail.variants.length <= 1) {
+        return 'last-variant'
+      }
+      detail.variants = detail.variants.filter((v) => v.id !== variantId)
+      return 'ok'
+    }
+  }
+  return 'not-found'
+}
+
+export function removeSellerImage(imageId: string): boolean {
+  for (const detail of Object.values(details)) {
+    if (detail.images.some((i) => i.id === imageId)) {
+      detail.images = detail.images.filter((i) => i.id !== imageId)
+      return true
+    }
+  }
+  return false
+}

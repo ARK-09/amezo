@@ -2,7 +2,7 @@ import type { components } from '@/lib/api/schema'
 
 type ProductSummary = components['schemas']['ProductSummary']
 
-export const seedProducts: ProductSummary[] = [
+const BASE_PRODUCTS: ProductSummary[] = [
   {
     id: '11111111-1111-1111-1111-111111111111',
     title: 'Wireless Noise-Cancelling Headphones',
@@ -64,3 +64,15 @@ export const seedProducts: ProductSummary[] = [
     inStock: true,
   },
 ]
+
+/**
+ * defaultVariantId / defaultVariantPrice, the fields a tile adds to the cart
+ * from. productDetails builds '<id>-v1' as each product's first variant, priced
+ * at priceFrom, so that is the default - spelled out here rather than imported
+ * from that fixture, which derives itself from this one.
+ */
+export const seedProducts: ProductSummary[] = BASE_PRODUCTS.map((product) => ({
+  ...product,
+  defaultVariantId: `${product.id}-v1`,
+  defaultVariantPrice: product.priceFrom,
+}))

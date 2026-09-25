@@ -6,6 +6,7 @@ import com.arkindustries.amezo.catalog.dto.ImageConfirmRequest;
 import com.arkindustries.amezo.catalog.dto.ImageResponse;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlRequest;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlResponse;
+import com.arkindustries.amezo.catalog.dto.CreateVariantRequest;
 import com.arkindustries.amezo.catalog.dto.SellerProductDetailResponse;
 import com.arkindustries.amezo.catalog.dto.SellerProductSummaryResponse;
 import com.arkindustries.amezo.catalog.dto.SellerVariantResponse;
@@ -55,6 +56,25 @@ public class SellerProductController {
     public SellerProductDetailResponse update(
             @PathVariable UUID id, @Valid @RequestBody UpdateProductRequest request) {
         return sellerProductService.update(id, request);
+    }
+
+    @PostMapping("/products/{id}/variants")
+    public ResponseEntity<SellerVariantResponse> addVariant(
+            @PathVariable UUID id, @Valid @RequestBody CreateVariantRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(sellerProductService.addVariant(id, request));
+    }
+
+    @DeleteMapping("/variants/{variantId}")
+    public ResponseEntity<Void> deleteVariant(@PathVariable UUID variantId) {
+        sellerProductService.deleteVariant(variantId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/images/{imageId}")
+    public ResponseEntity<Void> deleteImage(@PathVariable UUID imageId) {
+        sellerProductService.deleteImage(imageId);
+        return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/variants/{variantId}")

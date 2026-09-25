@@ -11,6 +11,7 @@ import {
   TAKEN_SKU,
 } from '@/test/msw/fixtures/sellerProducts'
 
+
 import { SellerProductDetail } from './SellerProductDetail'
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111'
@@ -135,5 +136,94 @@ describe('SellerProductDetail', () => {
 
     expect(await screen.findByText("Couldn't load this product")).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  })
+  it('adds a variant and keeps the existing rows', async () => {
+    renderPage()
+    const before = (await screen.findAllByRole('button', { name: 'Save' })).length
+
+    await userEvent.click(screen.getByRole('button', { name: /Add variant/ }))
+    await userEvent.type(screen.getByLabelText('New variant label'), 'XL')
+    await userEvent.type(screen.getByLabelText('New variant SKU'), 'TB-XL')
+    await userEvent.type(screen.getByLabelText('New variant price'), '59.99')
+    await userEvent.type(screen.getByLabelText('New variant stock'), '3')
+    await userEvent.click(screen.getByRole('button', { name: 'Add variant' }))
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.variants.map((v) => v.sku)).toContain('TB-XL')
+    })
+    expect(await screen.findByDisplayValue('TB-XL')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Save' }).length).toBe(before + 1)
+  })
+
+  it('shows the error inline when the new variant reuses a SKU', async () => {
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: /Add variant/ }))
+    await userEvent.type(screen.getByLabelText('New variant label'), 'Clash')
+    await userEvent.type(screen.getByLabelText('New variant SKU'), TAKEN_SKU)
+    await userEvent.type(screen.getByLabelText('New variant price'), '1')
+    await userEvent.type(screen.getByLabelText('New variant stock'), '1')
+    await userEvent.click(screen.getByRole('button', { name: 'Add variant' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(TAKEN_SKU)
+  })
+
+  it('removes a variant', async () => {
+    renderPage()
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    const doomed = detail.variants[1]
+
+    await userEvent.click(await screen.findByRole('button', { name: `Remove ${doomed.sku}` }))
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.variants.map((v) => v.id)).not.toContain(doomed.id)
+    })
+  })
+
+  /** The API refuses it, so the button shouldn't offer it in the first place. */
+  it('disables removal when only one variant is left', async () => {
+    resetSellerProducts([
+      {
+        id: PRODUCT_ID,
+        title: 'Single Variant',
+        thumbnailUrl: null,
+        category: 'Outdoor',
+        variantCount: 1,
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+    ])
+    resetSellerProductDetails()
+    renderPage()
+
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    expect(await screen.findByRole('button', { name: `Remove ${detail.variants[0].sku}` })).toBeDisabled()
+  })
+
+  it('removes an image', async () => {
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    detail.images = [
+      { id: 'image-1', url: 'https://cdn.example/1.jpg', position: 0, status: 'STORED' },
+      { id: 'image-2', url: 'https://cdn.example/2.jpg', position: 1, status: 'STORED' },
+    ]
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove image 1' }))
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.images.map((i) => i.id)).toEqual(['image-2'])
+    })
+  })
+
+  it('stops offering uploads at the image cap', async () => {
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    detail.images = Array.from({ length: 7 }, (_, i) => ({
+      id: `image-${i}`,
+      url: `https://cdn.example/${i}.jpg`,
+      position: i,
+      status: 'STORED' as const,
+    }))
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: /Add image/ })).toBeDisabled()
+    expect(screen.getByText('Remove one to add another')).toBeInTheDocument()
   })
 })

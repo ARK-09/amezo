@@ -9,6 +9,7 @@ export type SellerProductDetail = components['schemas']['SellerProductDetail']
 export type SellerVariant = components['schemas']['SellerVariant']
 type UpdateProductRequest = components['schemas']['UpdateProductRequest']
 type UpdateVariantRequest = components['schemas']['UpdateVariantRequest']
+type CreateVariantRequest = components['schemas']['CreateVariantRequest']
 
 export const sellerProductKeys = {
   all: ['seller', 'products'] as const,
@@ -143,6 +144,83 @@ export function useUpdateVariant(productId: string) {
           ? { ...current, variants: current.variants.map((v) => (v.id === updated.id ? updated : v)) }
           : current,
       )
+      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
+    },
+  })
+}
+
+export function useAddVariant(productId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<SellerVariant, ProblemDetail, CreateVariantRequest>({
+    mutationFn: async (body) => {
+      const { data, error } = await apiClient.POST('/products/{productId}/variants', {
+        params: { path: { productId } },
+        body,
+      })
+      if (error) throw error
+      return data
+    },
+    // Append rather than refetch, so the other rows' unsaved edits survive.
+    onSuccess: (created) => {
+      queryClient.setQueryData<SellerProductDetail>(sellerProductKeys.detail(productId), (current) =>
+        current ? { ...current, variants: [...current.variants, created] } : current,
+      )
+      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
+    },
+  })
+}
+
+export function useDeleteVariant(productId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<void, ProblemDetail, string>({
+    mutationFn: async (variantId) => {
+      const { error } = await apiClient.DELETE('/variants/{variantId}', {
+        params: { path: { variantId } },
+      })
+      if (error) throw error
+    },
+    onSuccess: (_void, variantId) => {
+      queryClient.setQueryData<SellerProductDetail>(sellerProductKeys.detail(productId), (current) =>
+        current ? { ...current, variants: current.variants.filter((v) => v.id !== variantId) } : current,
+      )
+      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
+    },
+  })
+}
+
+export function useDeleteImage(productId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<void, ProblemDetail, string>({
+    mutationFn: async (imageId) => {
+      const { error } = await apiClient.DELETE('/images/{imageId}', {
+        params: { path: { imageId } },
+      })
+      if (error) throw error
+    },
+    onSuccess: (_void, imageId) => {
+      queryClient.setQueryData<SellerProductDetail>(sellerProductKeys.detail(productId), (current) =>
+        current ? { ...current, images: current.images.filter((i) => i.id !== imageId) } : current,
+      )
+      // The list's thumbnail is the product's first image, so removing one can
+      // change the row too.
+      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
+    },
+  })
+}
+
+/**
+ * Upload one image to an existing product. Same three steps as the create page's
+ * upload - presign, PUT straight to storage, confirm - and the detail query is
+ * refetched afterwards because only the server knows the row the confirm created.
+ */
+export function useUploadImage(productId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<void, ProblemDetail | Error, { file: File; position: number }>({
+    mutationFn: async ({ file, position }) => {
+      await uploadProductImage(productId, { file, position })
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.detail(productId) })
       void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
     },
   })

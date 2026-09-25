@@ -198,6 +198,12 @@ itself.
   the browser PUTs directly, **the bucket needs CORS** allowing `PUT` from your
   Vercel origin with `Content-Type` in the allowed headers — that is dashboard
   config, not code, and it is the one step nothing in the app can do for you.
+- **Add to cart makes no request.** `GET /products` returns each card's
+  `defaultVariantId` and `defaultVariantPrice`, derived from offers the search
+  query already loaded, so a card's Add-to-cart button is a reducer dispatch
+  against the localStorage cart. It used to fetch the whole product on click just
+  to learn a variant id — which on a sleeping free instance meant the cart sat
+  empty for the length of a cold start.
 - **Storage cap.** `POST /products/{id}/images/upload-url` refuses to issue a URL
   once stored-plus-reserved bytes reach `S3_MAX_TOTAL_BYTES` (507), and refuses any
   single file over `S3_MAX_UPLOAD_BYTES` (413). The declared size is signed into the

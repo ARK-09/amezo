@@ -104,6 +104,8 @@ Deleting a product deletes its objects from the bucket as well as its rows — a
 
 **Deleting a sold product** is `409 product-has-orders`, not a delete. `order_line.offer_id` is a real foreign key on purpose — an order stays traceable to the offer it was placed against — so the row physically can't go, and the endpoint says so instead of returning the constraint violation as a 500. The seller's alternative, named in the message, is setting the variants' stock to 0. Archiving (a `deleted_at` that hides a product from the catalog while keeping its order history) is the real answer and isn't built.
 
+**As built, the seller's variant and image management**: `POST /products/{id}/variants` adds one (SKU collision → `409 sku-taken`); `DELETE /variants/{id}` removes one, refused with `409 variant-has-orders` when it has been bought and `409 last-variant` when it's the product's only one, since create requires at least one and a product with none has no price to show; `DELETE /images/{id}` removes an image row and its object. Upload now also refuses an eighth image (`409 too-many-images`) — the read path renders at most 7, so beyond that an upload would cost storage and never appear.
+
 **Variant-level images** are modeled (`image.variant_id`, with the table's `product_id IS NOT NULL OR variant_id IS NOT NULL` check) but nothing writes them — no endpoint accepts a variant id, `VariantDetail` carries no images, and the product page's gallery is product-level. Product deletion clears variant-linked rows anyway, so wiring them later can't trip `image.variant_id`'s foreign key.
 
 ### Seller read of one product
@@ -195,6 +197,9 @@ Reaching it from the email link: the confirmation/history email contains a magic
 | `POST /sellers/me/products` | flat — seller creates from their own session, `sellerId` taken from auth not body. Under `/sellers/me/` rather than `/products` so the whole namespace is seller-only in one security rule |
 | `PATCH /products/{id}` | must own it (`404` if not). Built: partial update, an omitted field is left as it is, and a blank title or category is `422` rather than stored |
 | `POST /products/{id}/variants` | nested — variant can't exist without its product. Body accepts **flattened** `{ label, sku, price, stockQty }`; server writes `variant` + `offer` in one transaction |
+| `POST /products/{id}/variants` | nested — a variant can't exist without its product. Built: flattened body, written to `variant` + `offer` in one transaction |
+| `DELETE /variants/{id}` | must own the product. Built: `409` if sold or last |
+| `DELETE /images/{id}` | must own the product. Built: row and object both |
 | `PATCH /variants/{id}` | same flattening, writes to both tables. Built: label/sku on the variant, price/stockQty on its offer; a SKU another variant already holds is `409 sku-taken`, checked before the unique index so the seller learns which field collided |
 | `POST /products/{id}/images`, `POST /variants/{id}/images` | as above |
 | `GET /sellers/me/order-lines` | nested, real ownership — a seller only ever lists **their own** lines, never whole orders (an order may contain another seller's lines too) |

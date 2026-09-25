@@ -62,6 +62,9 @@ public class SellerProductService {
 
     private static final Duration UPLOAD_URL_TTL = Duration.ofMinutes(15);
 
+    /** Matches the read path's cap (ImageRepository.findTop7ByProductId...). */
+    private static final int MAX_IMAGES_PER_PRODUCT = 7;
+
     private final ProductRepository productRepository;
     private final VariantRepository variantRepository;
     private final OfferRepository offerRepository;
@@ -235,16 +238,9 @@ public class SellerProductService {
             variant.setLabel(request.label());
         }
         if (request.sku() != null && !request.sku().equals(variant.getSku())) {
-            // Checked here rather than left to the unique index: a caught
-            // constraint violation would reach the seller as a 500, and the useful
-            // answer is which field collided.
-            variantRepository.findBySku(request.sku()).ifPresent(clash -> {
-                throw new ConflictException(
-                        java.net.URI.create("https://api/errors/sku-taken"),
-                        "SKU already in use",
-                        "SKU " + request.sku() + " belongs to another variant",
-                        List.of(new ConflictException.FieldError("sku", "already in use")));
-            });
+            // Checked rather than left to the unique index: a caught constraint
+            // violation would reach the seller as a 500 naming nothing useful.
+            requireSkuFree(request.sku(), variant.getId());
             variant.setSku(request.sku());
         }
         variantRepository.save(variant);
@@ -261,6 +257,117 @@ public class SellerProductService {
 
         return new SellerVariantResponse(
                 variant.getId(), variant.getLabel(), variant.getSku(), offer.getPrice(), offer.getStockQty());
+    }
+
+    /**
+     * Adds a variant to an existing product, same flattening as create: the
+     * variant row and its offer are written together, because a variant with no
+     * offer has no price and can't be bought.
+     */
+    @Transactional
+    public SellerVariantResponse addVariant(UUID productId, CreateVariantRequest request) {
+        Product product = ownedProduct(productId);
+        requireSkuFree(request.sku(), null);
+
+        Variant variant = variantRepository.save(Variant.builder()
+                .productId(product.getId())
+                .label(request.label())
+                .sku(request.sku())
+                .build());
+        Offer offer = offerRepository.save(Offer.builder()
+                .variantId(variant.getId())
+                .price(request.price())
+                .stockQty(request.stockQty())
+                .build());
+
+        return new SellerVariantResponse(
+                variant.getId(), variant.getLabel(), variant.getSku(), offer.getPrice(), offer.getStockQty());
+    }
+
+    /**
+     * Two refusals, both 409, both about something the seller can't undo by
+     * retrying: a variant that has been ordered can't go (order_line.offer_id is
+     * a foreign key), and the last variant can't go either, because create
+     * requires at least one and a product with none has no price to show and
+     * nothing to add to a cart.
+     */
+    @Transactional
+    public void deleteVariant(UUID variantId) {
+        Variant variant = variantRepository.findById(variantId)
+                .orElseThrow(() -> new NotFoundException("Variant " + variantId + " not found"));
+        Product product = ownedProduct(variant.getProductId());
+
+        List<Variant> siblings = variantRepository.findByProductId(product.getId());
+        if (siblings.size() <= 1) {
+            throw new ConflictException(
+                    java.net.URI.create("https://api/errors/last-variant"),
+                    "Last variant",
+                    "A product needs at least one variant. Delete the product instead, "
+                            + "or add another variant first.",
+                    List.of());
+        }
+
+        Offer offer = offerRepository.findByVariantId(variant.getId()).orElse(null);
+        if (offer != null && offerOrderHistory.anySoldOffer(List.of(offer.getId()))) {
+            throw new ConflictException(
+                    java.net.URI.create("https://api/errors/variant-has-orders"),
+                    "Variant has orders",
+                    "Variant " + variant.getId() + " has been ordered and can't be deleted. "
+                            + "Set its stock to 0 to stop selling it.",
+                    List.of());
+        }
+
+        // Images can hang off a variant rather than a product, so its own images
+        // go with it - rows and objects both, or image.variant_id's foreign key
+        // blocks the delete below.
+        List<Image> variantImages = imageRepository.findByVariantIdIn(List.of(variant.getId()));
+        List<String> keys = variantImages.stream().map(Image::getS3Key).toList();
+        if (!variantImages.isEmpty()) {
+            imageRepository.deleteByVariantIdIn(List.of(variant.getId()));
+        }
+
+        if (offer != null) {
+            offerRepository.delete(offer);
+        }
+        variantRepository.delete(variant);
+
+        deleteObjectsAfterCommit(keys);
+    }
+
+    /** Removes one image: the row, and the object it points at. */
+    @Transactional
+    public void deleteImage(UUID imageId) {
+        Image image = imageRepository.findById(imageId)
+                .orElseThrow(() -> new NotFoundException("Image " + imageId + " not found"));
+
+        // Ownership runs through whichever parent the row has - the image table
+        // allows either, so a variant-linked image resolves through its variant.
+        UUID productId = image.getProductId();
+        if (productId == null) {
+            productId = variantRepository.findById(image.getVariantId())
+                    .map(Variant::getProductId)
+                    .orElseThrow(() -> new NotFoundException("Image " + imageId + " not found"));
+        }
+        ownedProduct(productId);
+
+        imageRepository.delete(image);
+        deleteObjectsAfterCommit(List.of(image.getS3Key()));
+    }
+
+    /**
+     * Shared by add-variant and the SKU half of updateVariant. excludeVariantId
+     * lets an edit re-submit a variant's own SKU without colliding with itself.
+     */
+    private void requireSkuFree(String sku, UUID excludeVariantId) {
+        variantRepository.findBySku(sku)
+                .filter(existing -> !existing.getId().equals(excludeVariantId))
+                .ifPresent(clash -> {
+                    throw new ConflictException(
+                            java.net.URI.create("https://api/errors/sku-taken"),
+                            "SKU already in use",
+                            "SKU " + sku + " belongs to another variant",
+                            List.of(new ConflictException.FieldError("sku", "already in use")));
+                });
     }
 
     @Transactional
@@ -362,6 +469,19 @@ public class SellerProductService {
         Product product = ownedProduct(productId);
         long sizeBytes = request.fileSizeBytes();
         checkStorageBudget(sizeBytes);
+
+        // Enforced here now that images can be added after creation, not just in
+        // one shot at create time: the read path already caps at 7
+        // (findTop7ByProductId...), so an eighth would upload, cost storage, and
+        // never render.
+        if (imageRepository.findByProductId(product.getId()).size() >= MAX_IMAGES_PER_PRODUCT) {
+            throw new ConflictException(
+                    java.net.URI.create("https://api/errors/too-many-images"),
+                    "Too many images",
+                    "A product can hold at most " + MAX_IMAGES_PER_PRODUCT
+                            + " images. Remove one before adding another.",
+                    List.of());
+        }
 
         Image image = imageRepository.save(Image.builder()
                 .productId(product.getId())

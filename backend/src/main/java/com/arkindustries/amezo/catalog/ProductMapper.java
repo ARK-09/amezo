@@ -17,7 +17,12 @@ import java.util.UUID;
 class ProductMapper {
 
     static ProductSummaryResponse toSummary(
-            Product product, BigDecimal priceFrom, String thumbnailUrl, boolean inStock) {
+            Product product,
+            BigDecimal priceFrom,
+            String thumbnailUrl,
+            boolean inStock,
+            Offer defaultOffer,
+            UUID defaultVariantId) {
         return new ProductSummaryResponse(
                 product.getId(),
                 product.getTitle(),
@@ -29,7 +34,9 @@ class ProductMapper {
                 // unbuyable instead of as free.
                 priceFrom != null ? priceFrom : BigDecimal.ZERO,
                 thumbnailUrl,
-                inStock
+                inStock,
+                defaultVariantId,
+                defaultOffer != null ? defaultOffer.getPrice() : null
         );
     }
 

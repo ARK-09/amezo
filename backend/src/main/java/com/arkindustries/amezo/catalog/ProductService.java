@@ -68,7 +68,7 @@ public class ProductService implements ProductExistenceQuery, ProductVariantSumm
 
         List<UUID> productIds = products.getContent().stream().map(Product::getId).toList();
         if (productIds.isEmpty()) {
-            return products.map(product -> ProductMapper.toSummary(product, null, null, false));
+            return products.map(product -> ProductMapper.toSummary(product, null, null, false, null, null));
         }
 
         // Three batched lookups for the whole page, not per card: variants to reach
@@ -82,18 +82,45 @@ public class ProductService implements ProductExistenceQuery, ProductVariantSumm
 
         Map<UUID, BigDecimal> priceFromByProductId = new HashMap<>();
         Map<UUID, Boolean> inStockByProductId = new HashMap<>();
+        // What a card's Add-to-cart button will put in the cart: the cheapest
+        // offer that can actually be bought, falling back to the cheapest of any
+        // so the field is still populated for a sold-out product (whose button is
+        // disabled anyway). Picked here because this loop already has every offer
+        // in hand - the alternative was the browser fetching the whole product on
+        // click, which is the round trip this removes.
+        Map<UUID, Offer> defaultOfferByProductId = new HashMap<>();
         for (Offer offer : offers) {
             UUID productId = productIdByVariantId.get(offer.getVariantId());
             priceFromByProductId.merge(productId, offer.getPrice(), BigDecimal::min);
             inStockByProductId.merge(productId, offer.getStockQty() > 0, Boolean::logicalOr);
+            defaultOfferByProductId.merge(productId, offer, ProductService::preferredOffer);
         }
         Map<UUID, String> thumbnailsByProductId = thumbnailUrlsByProductId(productIds);
 
-        return products.map(product -> ProductMapper.toSummary(
-                product,
-                priceFromByProductId.get(product.getId()),
-                thumbnailsByProductId.get(product.getId()),
-                inStockByProductId.getOrDefault(product.getId(), false)));
+        return products.map(product -> {
+            Offer defaultOffer = defaultOfferByProductId.get(product.getId());
+            return ProductMapper.toSummary(
+                    product,
+                    priceFromByProductId.get(product.getId()),
+                    thumbnailsByProductId.get(product.getId()),
+                    inStockByProductId.getOrDefault(product.getId(), false),
+                    defaultOffer,
+                    defaultOffer != null ? defaultOffer.getVariantId() : null);
+        });
+    }
+
+    /**
+     * In-stock beats out-of-stock; between two of the same kind, cheaper wins.
+     * Ties go to the incumbent, so a page's default variant doesn't depend on the
+     * order rows came back in.
+     */
+    private static Offer preferredOffer(Offer current, Offer candidate) {
+        boolean currentInStock = current.getStockQty() > 0;
+        boolean candidateInStock = candidate.getStockQty() > 0;
+        if (currentInStock != candidateInStock) {
+            return currentInStock ? current : candidate;
+        }
+        return candidate.getPrice().compareTo(current.getPrice()) < 0 ? candidate : current;
     }
 
     /**

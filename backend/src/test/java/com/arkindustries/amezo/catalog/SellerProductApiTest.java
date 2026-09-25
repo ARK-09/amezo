@@ -607,4 +607,166 @@ class SellerProductApiTest {
 
         assertThat(productRepository.findById(product.getId())).isPresent();
     }
+    @Test
+    void addsAVariantToAnExistingProduct() throws Exception {
+        Seller me = seller("add-variant@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Growing").category("outdoor").build());
+        Variant first = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("One").sku("GROW-1").build());
+        offerRepository.save(Offer.builder()
+                .variantId(first.getId()).price(new BigDecimal("5.00")).stockQty(1).build());
+
+        mockMvc.perform(post("/products/" + product.getId() + "/variants").cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"label":"Two","sku":"GROW-2","price":7.25,"stockQty":4}"""))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sku").value("GROW-2"))
+                .andExpect(jsonPath("$.price").value(7.25))
+                .andExpect(jsonPath("$.stockQty").value(4));
+
+        assertThat(variantRepository.findByProductId(product.getId())).hasSize(2);
+    }
+
+    @Test
+    void addingAVariantWithATakenSkuIsRefused() throws Exception {
+        Seller me = seller("add-variant-clash@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Clashing").category("outdoor").build());
+        Variant first = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("One").sku("TAKEN-SKU").build());
+        offerRepository.save(Offer.builder()
+                .variantId(first.getId()).price(new BigDecimal("5.00")).stockQty(1).build());
+
+        mockMvc.perform(post("/products/" + product.getId() + "/variants").cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"label":"Two","sku":"TAKEN-SKU","price":1,"stockQty":1}"""))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://api/errors/sku-taken"));
+
+        assertThat(variantRepository.findByProductId(product.getId())).hasSize(1);
+    }
+
+    @Test
+    void deletesAVariantAndItsOffer() throws Exception {
+        Seller me = seller("delete-variant@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Two variants").category("outdoor").build());
+        Variant keep = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("Keep").sku("DV-KEEP").build());
+        offerRepository.save(Offer.builder()
+                .variantId(keep.getId()).price(new BigDecimal("5.00")).stockQty(1).build());
+        Variant doomed = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("Doomed").sku("DV-GONE").build());
+        Offer doomedOffer = offerRepository.save(Offer.builder()
+                .variantId(doomed.getId()).price(new BigDecimal("6.00")).stockQty(1).build());
+
+        mockMvc.perform(delete("/variants/" + doomed.getId()).cookie(sessionCookieFor(me)))
+                .andExpect(status().isNoContent());
+
+        assertThat(variantRepository.findById(doomed.getId())).isEmpty();
+        assertThat(offerRepository.findById(doomedOffer.getId())).isEmpty();
+        assertThat(variantRepository.findById(keep.getId())).isPresent();
+    }
+
+    /** A product with no variants has no price and nothing to add to a cart. */
+    @Test
+    void theLastVariantCannotBeDeleted() throws Exception {
+        Seller me = seller("last-variant@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Only one").category("outdoor").build());
+        Variant only = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("Only").sku("LV-1").build());
+        offerRepository.save(Offer.builder()
+                .variantId(only.getId()).price(new BigDecimal("5.00")).stockQty(1).build());
+
+        mockMvc.perform(delete("/variants/" + only.getId()).cookie(sessionCookieFor(me)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://api/errors/last-variant"));
+
+        assertThat(variantRepository.findById(only.getId())).isPresent();
+    }
+
+    @Test
+    void aSoldVariantCannotBeDeleted() throws Exception {
+        Seller me = seller("sold-variant@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Sold one").category("outdoor").build());
+        Variant sold = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("Sold").sku("SV-1").build());
+        offerRepository.save(Offer.builder()
+                .variantId(sold.getId()).price(new BigDecimal("5.00")).stockQty(1).build());
+        Variant other = variantRepository.save(Variant.builder()
+                .productId(product.getId()).label("Other").sku("SV-2").build());
+        offerRepository.save(Offer.builder()
+                .variantId(other.getId()).price(new BigDecimal("6.00")).stockQty(1).build());
+
+        when(offerOrderHistory.anySoldOffer(any())).thenReturn(true);
+
+        mockMvc.perform(delete("/variants/" + sold.getId()).cookie(sessionCookieFor(me)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://api/errors/variant-has-orders"));
+
+        assertThat(variantRepository.findById(sold.getId())).isPresent();
+    }
+
+    @Test
+    void deletingAnImageRemovesTheRowAndTheObject() throws Exception {
+        Seller me = seller("delete-image@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Has an image").category("outdoor").build());
+        Image image = imageRepository.save(Image.builder()
+                .productId(product.getId())
+                .s3Key("products/" + product.getId() + "/only")
+                .position(0).status(ImageStatus.STORED).sizeBytes(1024L).build());
+
+        mockMvc.perform(delete("/images/" + image.getId()).cookie(sessionCookieFor(me)))
+                .andExpect(status().isNoContent());
+
+        assertThat(imageRepository.findById(image.getId())).isEmpty();
+        ArgumentCaptor<DeleteObjectRequest> deleted = ArgumentCaptor.forClass(DeleteObjectRequest.class);
+        verify(s3Client).deleteObject(deleted.capture());
+        assertThat(deleted.getValue().key()).isEqualTo("products/" + product.getId() + "/only");
+    }
+
+    @Test
+    void anotherSellersImageIsNotFound() throws Exception {
+        Seller other = seller("image-owner@example.com");
+        Seller me = seller("image-intruder@example.com");
+        Product theirs = productRepository.save(Product.builder()
+                .sellerId(other.getId()).title("Not yours").category("outdoor").build());
+        Image image = imageRepository.save(Image.builder()
+                .productId(theirs.getId())
+                .s3Key("products/" + theirs.getId() + "/theirs")
+                .position(0).status(ImageStatus.STORED).sizeBytes(1L).build());
+
+        mockMvc.perform(delete("/images/" + image.getId()).cookie(sessionCookieFor(me)))
+                .andExpect(status().isNotFound());
+
+        assertThat(imageRepository.findById(image.getId())).isPresent();
+    }
+
+    /** The read path renders at most 7, so an eighth would cost storage and never show. */
+    @Test
+    void anEighthImageIsRefused() throws Exception {
+        Seller me = seller("image-cap@example.com");
+        Product product = productRepository.save(Product.builder()
+                .sellerId(me.getId()).title("Full gallery").category("outdoor").build());
+        for (int i = 0; i < 7; i++) {
+            imageRepository.save(Image.builder()
+                    .productId(product.getId())
+                    .s3Key("products/" + product.getId() + "/" + i)
+                    .position(i).status(ImageStatus.STORED).sizeBytes(10L).build());
+        }
+
+        mockMvc.perform(post("/products/" + product.getId() + "/images/upload-url")
+                        .cookie(sessionCookieFor(me))
+                        .contentType("application/json")
+                        .content("""
+                                {"contentType":"image/jpeg","fileSizeBytes":1024,"position":7}"""))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://api/errors/too-many-images"));
+    }
 }
