@@ -36,8 +36,8 @@ Every 4xx/5xx from every endpoint below returns this. `errors[]` is omitted when
 |---|---|---|---|
 | Request link | `POST /magic-links` | none | Body: `{ email, role: "buyer"\|"seller" }`. Always `202 Accepted`, never reveals whether the email/account exists. Creates `magic_link_token` (hash stored, 15 min TTL), emails the raw token in a link. |
 | Consume | `POST /sessions` | none | Body: `{ token }`. **POST, not GET** — the emailed link opens a static confirmation page with a button; the button fires this call. Reason: corporate mail scanners pre-fetch GET links and burn single-use tokens before the real user clicks. Marks `magic_link_token.consumed_at`, creates `session`, sets an httpOnly/Secure/SameSite=Lax cookie. `201` with body `{ identityType, identityId, email, fullName, expiresAt }`. `410 Gone` if the token is expired or already consumed. |
-| Check session | `GET /sessions/current` | cookie | `200` with the same identity body, or `401`. This is also how the frontend gets "logged in as X" without a separate `/buyers/me`. |
-| Logout | `DELETE /sessions/current` | cookie | `204`. Deletes the `session` row server-side (revocable, not just cookie-clearing). |
+| Check session | `GET /sessions/current` | cookie | **Built** (`identity/SessionController`). `200` with the same identity body, or `401`. This is also how the frontend gets "logged in as X" without a separate `/buyers/me`, and how the seller portal finds out on boot whether its cookie is still good. |
+| Logout | `DELETE /sessions/current` | cookie | **Not built.** `204`, deleting the `session` row server-side. The seller-only build ships `DELETE /auth/seller/session` instead, which does exactly this; a second logout path would have nothing to add. |
 
 Session cookie TTL: 30 days, no refresh/rotation for MVP. Buyer sessions and seller sessions are the same mechanism (`identity_type` distinguishes them) — no separate seller auth endpoints needed.
 

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetClose, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { formatPrice } from '@/lib/formatPrice'
+import { apiErrorMessage } from '@/lib/api/transient'
 
 import { useCartOffers } from '../api/useCartOffers'
 import { useCart } from '../context/CartContext'
@@ -44,7 +45,7 @@ export function CartDrawer() {
 
           {query.isError && (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
-              <p className="text-sm text-muted-foreground">Couldn't load your cart items.</p>
+              <p className="text-sm text-muted-foreground">{apiErrorMessage(query.error)}</p>
               <Button variant="outline" size="sm" onClick={() => query.refetch()}>
                 Retry
               </Button>

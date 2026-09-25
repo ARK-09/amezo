@@ -1,6 +1,7 @@
 import { ImageOff } from 'lucide-react'
 
 import { Card, CardContent } from '@/components/ui/card'
+import { apiErrorMessage } from '@/lib/api/transient'
 import { formatPrice } from '@/lib/formatPrice'
 
 import type { EnrichedCartLine } from '../api/useCheckoutCart'
@@ -10,11 +11,13 @@ export function OrderSummary({
   total,
   isLoading,
   isError,
+  error,
 }: {
   lines: EnrichedCartLine[]
   total: number
   isLoading: boolean
   isError: boolean
+  error?: unknown
 }) {
   return (
     <Card>
@@ -36,7 +39,7 @@ export function OrderSummary({
         )}
 
         {!isLoading && isError && (
-          <p className="text-sm text-muted-foreground">Couldn't load your cart items.</p>
+          <p className="text-sm text-muted-foreground">{apiErrorMessage(error)}</p>
         )}
 
         {!isLoading && !isError && (

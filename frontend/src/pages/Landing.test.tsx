@@ -127,13 +127,37 @@ describe('Landing', () => {
     server.use(
       http.get('http://localhost:8080/products', () =>
         HttpResponse.json(
-          { type: 'about:blank', title: 'Internal error', status: 500 },
+          { type: 'about:blank', title: 'Internal error', status: 500, detail: 'Query blew up' },
           { status: 500 },
         ),
       ),
     )
     renderPage()
 
-    expect((await screen.findAllByText("Couldn't load these products.")).length).toBeGreaterThan(0)
+    // The API's own words, not a fixed "Couldn't load these products" that would
+    // describe a sleeping instance just as confidently as a broken query.
+    expect((await screen.findAllByText('Query blew up')).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: 'Retry' }).length).toBeGreaterThan(0)
+  })
+
+  /**
+   * The same rails against a Render instance that is still booting. The landing
+   * page is where a cold start is usually met, so it is the one place this
+   * wording matters most.
+   */
+  it('says the server is starting up when a rail fails on a cold start', async () => {
+    server.use(
+      http.get(
+        'http://localhost:8080/products',
+        () =>
+          new HttpResponse('<html>Bad gateway</html>', {
+            status: 502,
+            headers: { 'content-type': 'text/html' },
+          }),
+      ),
+    )
+    renderPage()
+
+    expect((await screen.findAllByText(/still be starting up/)).length).toBeGreaterThan(0)
   })
 })

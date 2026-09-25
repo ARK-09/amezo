@@ -6,6 +6,7 @@ import { ProductGrid } from '@/features/search/components/ProductGrid'
 import { ResultsHeader } from '@/features/search/components/ResultsHeader'
 import { useSearchFilters } from '@/features/search/hooks/useSearchFilters'
 import { useCategoryOptions, useSearchProducts } from '@/features/search/api/useSearchProducts'
+import { apiErrorMessage } from '@/lib/api/transient'
 
 export function SearchResults() {
   const { filters, update, setPage, removeFilter, clearAll } = useSearchFilters()
@@ -44,7 +45,7 @@ export function SearchResults() {
           <div className="flex flex-col items-center gap-3 py-16 text-center">
             <p className="font-medium">Couldn't load products</p>
             <p className="text-sm text-muted-foreground">
-              {query.error?.detail ?? 'Something went wrong. Try again.'}
+              {apiErrorMessage(query.error)}
             </p>
             <Button variant="outline" onClick={() => query.refetch()}>
               Retry

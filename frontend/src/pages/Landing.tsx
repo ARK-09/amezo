@@ -59,6 +59,7 @@ export function Landing() {
         products={deals.data?.content ?? []}
         isLoading={deals.isLoading}
         isError={deals.isError}
+        error={deals.error}
         onRetry={() => deals.refetch()}
       />
 
@@ -71,6 +72,7 @@ export function Landing() {
         products={fresh.data?.content ?? []}
         isLoading={fresh.isLoading}
         isError={fresh.isError}
+        error={fresh.error}
         onRetry={() => fresh.refetch()}
       />
 
@@ -84,6 +86,7 @@ export function Landing() {
           products={categoryOne.data?.content ?? []}
           isLoading={categoryOne.isLoading}
           isError={categoryOne.isError}
+        error={categoryOne.error}
           onRetry={() => categoryOne.refetch()}
         />
       )}
@@ -96,6 +99,7 @@ export function Landing() {
           products={categoryTwo.data?.content ?? []}
           isLoading={categoryTwo.isLoading}
           isError={categoryTwo.isError}
+        error={categoryTwo.error}
           onRetry={() => categoryTwo.refetch()}
         />
       )}

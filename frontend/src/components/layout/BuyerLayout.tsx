@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router'
 
+import { BackendWakingBanner } from '@/components/layout/BackendWakingBanner'
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { SiteHeader } from '@/components/layout/SiteHeader'
 import { CartDrawer } from '@/features/cart/components/CartDrawer'
@@ -11,6 +12,7 @@ import { CartDrawer } from '@/features/cart/components/CartDrawer'
 export function BuyerLayout() {
   return (
     <div className="flex min-h-screen flex-col">
+      <BackendWakingBanner />
       <SiteHeader />
       <main className="flex flex-1 flex-col">
         <Outlet />

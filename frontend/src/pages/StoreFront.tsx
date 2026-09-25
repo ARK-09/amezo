@@ -9,6 +9,7 @@ import { ProductCardSkeleton } from '@/features/search/components/ProductCardSke
 import type { ProductSummary } from '@/features/search/schema/types'
 import { useStoreProducts } from '@/features/store/api/useStoreProducts'
 import { cn } from '@/lib/utils'
+import { apiErrorMessage } from '@/lib/api/transient'
 
 type StoreSort = 'relevance' | 'priceAsc' | 'priceDesc' | 'rating'
 
@@ -74,7 +75,7 @@ export function StoreFront() {
         <div className="flex flex-col items-center gap-3 py-16 text-center">
           <p className="font-medium">Couldn't load this store</p>
           <p className="text-sm text-muted-foreground">
-            {query.error?.detail ?? 'Something went wrong. Try again.'}
+            {apiErrorMessage(query.error)}
           </p>
           <Button variant="outline" onClick={() => query.refetch()}>
             Retry

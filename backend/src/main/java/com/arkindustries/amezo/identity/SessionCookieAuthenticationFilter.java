@@ -16,6 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -49,7 +50,8 @@ public class SessionCookieAuthenticationFilter extends OncePerRequestFilter {
         readCookie(request).flatMap(this::resolveSession).ifPresent(session -> {
             GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + session.getIdentityType());
             var authentication = new UsernamePasswordAuthenticationToken(
-                    new AuthenticatedIdentity(session.getIdentityType(), session.getIdentityId()),
+                    new AuthenticatedIdentity(
+                            session.getIdentityType(), session.getIdentityId(), session.getExpiresAt()),
                     null,
                     List.of(authority));
             SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -83,6 +85,12 @@ public class SessionCookieAuthenticationFilter extends OncePerRequestFilter {
         }
     }
 
-    public record AuthenticatedIdentity(IdentityType type, UUID id) {
+    /**
+     * Carries expiresAt as well as the identity because GET /sessions/current
+     * reports it, and this filter already holds the Session row it came from -
+     * re-reading the session by cookie in the controller would hash and query
+     * for a row the request has resolved once already.
+     */
+    public record AuthenticatedIdentity(IdentityType type, UUID id, Instant expiresAt) {
     }
 }

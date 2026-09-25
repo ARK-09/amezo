@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useCheckout } from '@/features/checkout/api/useCheckout'
 import { useCheckoutCart } from '@/features/checkout/api/useCheckoutCart'
-import { useSession } from '@/features/checkout/api/useSession'
+import { useSession } from '@/features/session/api/useSession'
 import { AddressFieldset } from '@/features/checkout/components/AddressFieldset'
 import { OrderSummary } from '@/features/checkout/components/OrderSummary'
 import { EMPTY_ADDRESS } from '@/features/checkout/schema/types'
@@ -18,7 +18,7 @@ import { validateCheckout } from '@/features/checkout/schema/validation'
 export function Checkout() {
   const navigate = useNavigate()
   const session = useSession()
-  const { rawLines, enrichedLines, total, isLoading, isError, clearCart } = useCheckoutCart()
+  const { rawLines, enrichedLines, total, isLoading, isError, error, clearCart } = useCheckoutCart()
   const checkout = useCheckout()
 
   const [values, setValues] = useState<CheckoutFormValues>({
@@ -194,7 +194,13 @@ export function Checkout() {
         </form>
 
         <div className="w-full lg:w-[380px] lg:shrink-0">
-          <OrderSummary lines={enrichedLines} total={total} isLoading={isLoading} isError={isError} />
+          <OrderSummary
+            lines={enrichedLines}
+            total={total}
+            isLoading={isLoading}
+            isError={isError}
+            error={error}
+          />
         </div>
       </div>
     </div>

@@ -1,11 +1,19 @@
 import { http, HttpResponse } from 'msw'
 
-import { consumeMagicLinkToken, issueMagicLinkToken } from './fixtures/sellerAuth'
+import {
+  clearSellerSession,
+  consumeMagicLinkToken,
+  currentSessionIdentity,
+  issueMagicLinkToken,
+} from './fixtures/sellerAuth'
 import { findSellerOrder, listSellerOrders, summaryOf, updateSellerOrder } from './fixtures/sellerOrders'
 import {
   addSellerProduct,
   addSellerVariant,
+  confirmSellerImage,
   findSellerProductDetail,
+  MAX_IMAGES_PER_PRODUCT,
+  reserveSellerImage,
   removeSellerImage,
   removeSellerVariant,
   listSellerProducts,
@@ -36,11 +44,24 @@ function notFound() {
 }
 
 export const handlers = [
-  // No magic-link auth is built (frontend or backend) - 401 is the only
-  // realistic default, matching "guest, no session" as the normal case.
-  http.get('http://localhost:8080/sessions/current', () =>
-    HttpResponse.json({ type: 'about:blank', title: 'Unauthorized', status: 401 }, { status: 401 }),
-  ),
+  // Answers from the same mock "cookie" the verify and sign-out handlers below
+  // maintain. No session is a 401, matching the backend's SessionController -
+  // which the frontend reads as "nobody is signed in", not as an error.
+  http.get('http://localhost:8080/sessions/current', () => {
+    const identity = currentSessionIdentity()
+    if (!identity) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/unauthorized',
+          title: 'Unauthorized',
+          status: 401,
+          detail: 'Session is missing, expired, or invalid',
+        },
+        { status: 401 },
+      )
+    }
+    return HttpResponse.json(identity)
+  }),
 
   // Happy path, stock failure, and price drift all fall out of comparing
   // the submitted lines against the SAME variantOffers fixture /variants
@@ -263,13 +284,29 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  http.post('http://localhost:8080/products/:productId/images/upload-url', () => {
-    const id = crypto.randomUUID()
+  // Reserves a row against the product's image cap, as the backend's presign does,
+  // so uploading a batch fills the gallery here too instead of leaving the detail
+  // query to answer with whatever it started with.
+  http.post('http://localhost:8080/products/:productId/images/upload-url', async ({ params, request }) => {
+    const { position } = (await request.json()) as { position: number }
+    const reserved = reserveSellerImage(String(params.productId), position)
+    if (reserved === 'not-found') return notFound()
+    if (reserved === 'too-many-images') {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/too-many-images',
+          title: 'Too many images',
+          status: 409,
+          detail: `A product can hold at most ${MAX_IMAGES_PER_PRODUCT} images. Remove one before adding another.`,
+        },
+        { status: 409 },
+      )
+    }
     return HttpResponse.json(
       {
-        id,
+        id: reserved.id,
         status: 'PENDING',
-        uploadUrl: `https://mock-s3.local/upload/${id}`,
+        uploadUrl: `https://mock-s3.local/upload/${reserved.id}`,
         expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
       },
       { status: 201 },
@@ -280,6 +317,7 @@ export const handlers = [
 
   http.post('http://localhost:8080/products/:productId/images/confirm', async ({ request }) => {
     const { imageId } = (await request.json()) as { imageId: string }
+    if (!confirmSellerImage(imageId)) return notFound()
     return HttpResponse.json({ id: imageId, url: `https://mock-s3.local/stored/${imageId}`, position: 0 })
   }),
   http.post('http://localhost:8080/auth/seller/magic-link', async ({ request }) => {
@@ -300,7 +338,12 @@ export const handlers = [
     return HttpResponse.json(session)
   }),
 
-  http.delete('http://localhost:8080/auth/seller/session', () => new HttpResponse(null, { status: 204 })),
+  http.delete('http://localhost:8080/auth/seller/session', () => {
+    // Revokes the mock "cookie" too, so a GET /sessions/current after sign-out
+    // answers 401 the way the backend's deleted session row makes it.
+    clearSellerSession()
+    return new HttpResponse(null, { status: 204 })
+  }),
 
   http.get('http://localhost:8080/variants', ({ request }) => {
     const url = new URL(request.url)

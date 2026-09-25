@@ -1,11 +1,12 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router'
 
 import { CartProvider } from '@/features/cart/context/CartContext'
 import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { createAppQueryClient } from '@/lib/api/queryClient'
 import { router } from '@/router'
 
-const queryClient = new QueryClient()
+const queryClient = createAppQueryClient()
 
 function App() {
   return (

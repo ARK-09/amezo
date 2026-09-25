@@ -142,7 +142,7 @@ describe('CartDrawer', () => {
         'http://localhost:8080/variants',
         () =>
           HttpResponse.json(
-            { type: 'about:blank', title: 'Internal error', status: 500 },
+            { type: 'about:blank', title: 'Internal error', status: 500, detail: 'Lookup blew up' },
             { status: 500 },
           ),
         { once: true },
@@ -151,7 +151,7 @@ describe('CartDrawer', () => {
     renderDrawer()
     await openDrawer()
 
-    expect(await screen.findByText("Couldn't load your cart items.")).toBeInTheDocument()
+    expect(await screen.findByText('Lookup blew up')).toBeInTheDocument()
     expect(screen.queryByText('No longer available')).not.toBeInTheDocument()
   })
 

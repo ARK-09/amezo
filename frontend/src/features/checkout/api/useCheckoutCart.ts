@@ -32,6 +32,9 @@ export function useCheckoutCart() {
     total,
     isLoading: query.isLoading,
     isError: query.isError,
+    // Passed on so the summary can describe a cold start instead of blaming
+    // the cart items - see OrderSummary.
+    error: query.error,
     clearCart: clear,
   }
 }

@@ -1,8 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { server } from '@/test/msw/server'
 
 import {
   findSellerProductDetail,
@@ -215,15 +218,233 @@ describe('SellerProductDetail', () => {
 
   it('stops offering uploads at the image cap', async () => {
     const detail = findSellerProductDetail(PRODUCT_ID)!
-    detail.images = Array.from({ length: 7 }, (_, i) => ({
-      id: `image-${i}`,
-      url: `https://cdn.example/${i}.jpg`,
-      position: i,
-      status: 'STORED' as const,
-    }))
+    detail.images = storedImages(7)
     renderPage()
 
     expect(await screen.findByRole('button', { name: /Add image/ })).toBeDisabled()
     expect(screen.getByText('Remove one to add another')).toBeInTheDocument()
   })
 })
+
+/**
+ * Editing a product is where a seller with a phone full of photos actually adds
+ * them, so the picker takes a whole selection at once rather than one file per
+ * trip through the file dialog.
+ */
+describe('SellerProductDetail images', () => {
+  beforeEach(() => {
+    resetSellerProducts([
+      {
+        id: PRODUCT_ID,
+        title: 'Trail Backpack',
+        thumbnailUrl: null,
+        category: 'Outdoor',
+        variantCount: 2,
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+    ])
+    resetSellerProductDetails()
+    stubStoragePut()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    storagePutStatus = () => 200
+  })
+
+  it('uploads every file in one selection', async () => {
+    renderPage()
+    const input = await screen.findByLabelText('Add images')
+
+    await userEvent.upload(input, [
+      fakeImage('front.jpg'),
+      fakeImage('back.jpg'),
+      fakeImage('detail.jpg'),
+    ])
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.images).toHaveLength(3)
+    })
+    const images = findSellerProductDetail(PRODUCT_ID)!.images
+    // All the way through the three-step flow, not left PENDING at the presign.
+    expect(images.every((i) => i.status === 'STORED')).toBe(true)
+    expect(await screen.findByRole('button', { name: 'Remove image 1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove image 3' })).toBeInTheDocument()
+  })
+
+  it('accepts a multiple selection at all', async () => {
+    renderPage()
+    expect(await screen.findByLabelText('Add images')).toHaveAttribute('multiple')
+  })
+
+  /** New files go after the existing ones, so the thumbnail buyers see is stable. */
+  it('positions new images after the ones already there', async () => {
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    detail.images = storedImages(2)
+    renderPage()
+
+    await userEvent.upload(await screen.findByLabelText('Add images'), [
+      fakeImage('third.jpg'),
+      fakeImage('fourth.jpg'),
+    ])
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.images).toHaveLength(4)
+    })
+    expect(findSellerProductDetail(PRODUCT_ID)!.images.map((i) => i.position)).toEqual([0, 1, 2, 3])
+  })
+
+  it('shows how many slots are left', async () => {
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    detail.images = storedImages(5)
+    renderPage()
+
+    expect(await screen.findByText('2 slots left')).toBeInTheDocument()
+  })
+
+  /**
+   * Picking more than fits: the ones that fit are uploaded and the seller is told
+   * the rest were left out, rather than each extra file presigning its way to a
+   * separate 409.
+   */
+  it('takes only as many as fit and says so', async () => {
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    detail.images = storedImages(5)
+    renderPage()
+
+    await userEvent.upload(await screen.findByLabelText('Add images'), [
+      fakeImage('a.jpg'),
+      fakeImage('b.jpg'),
+      fakeImage('c.jpg'),
+      fakeImage('d.jpg'),
+    ])
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.images).toHaveLength(7)
+    })
+    expect(await screen.findByText(/2 files were left out/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Add image/ })).toBeDisabled()
+  })
+
+  /**
+   * A half-successful batch is the interesting failure: one bad file must not cost
+   * the seller the other two, and they need to know which one to replace.
+   */
+  it('keeps the files that uploaded and names the one that did not', async () => {
+    let call = 0
+    server.use(
+      http.post('http://localhost:8080/products/:productId/images/upload-url', () => {
+        call++
+        if (call === 2) {
+          return HttpResponse.json(
+            {
+              type: 'https://api/errors/payload-too-large',
+              title: 'Payload Too Large',
+              status: 413,
+              detail: 'That image is larger than the 10 MB limit',
+            },
+            { status: 413 },
+          )
+        }
+        return undefined // fall through to the default handler
+      }),
+    )
+    renderPage()
+
+    await userEvent.upload(await screen.findByLabelText('Add images'), [
+      fakeImage('good-1.jpg'),
+      fakeImage('enormous.jpg'),
+      fakeImage('good-2.jpg'),
+    ])
+
+    const alert = await screen.findByText(/1 of 3 images didn't upload/)
+    expect(alert).toBeInTheDocument()
+    expect(screen.getByText(/enormous\.jpg/)).toHaveTextContent('larger than the 10 MB limit')
+    // The other two still landed, and their positions are contiguous - the failed
+    // file doesn't leave a hole.
+    const images = findSellerProductDetail(PRODUCT_ID)!.images
+    expect(images).toHaveLength(2)
+    expect(images.map((i) => i.position)).toEqual([0, 1])
+  })
+
+  /**
+   * The upload can also fail at the bucket rather than at the API - a presigned
+   * URL that expired, or storage refusing the object. That is a plain Error, not a
+   * ProblemDetail, and still has to name the file.
+   */
+  it('reports a file the storage bucket rejects', async () => {
+    let put = 0
+    storagePutStatus = () => (++put === 1 ? 403 : 200)
+
+    renderPage()
+    await userEvent.upload(await screen.findByLabelText('Add images'), [
+      fakeImage('expired.jpg'),
+      fakeImage('fine.jpg'),
+    ])
+
+    expect(await screen.findByText(/1 of 2 images didn't upload/)).toBeInTheDocument()
+    expect(screen.getByText(/expired\.jpg/)).toHaveTextContent('403')
+  })
+
+  it('reports a whole batch that fails', async () => {
+    server.use(
+      http.post('http://localhost:8080/products/:productId/images/upload-url', () =>
+        HttpResponse.json(
+          {
+            type: 'https://api/errors/storage-unavailable',
+            title: 'Service Unavailable',
+            status: 503,
+            detail: 'Image storage is not configured',
+          },
+          { status: 503 },
+        ),
+      ),
+    )
+    renderPage()
+
+    await userEvent.upload(await screen.findByLabelText('Add images'), [
+      fakeImage('a.jpg'),
+      fakeImage('b.jpg'),
+    ])
+
+    expect(await screen.findByText(/2 of 2 images didn't upload/)).toBeInTheDocument()
+    expect(findSellerProductDetail(PRODUCT_ID)!.images).toHaveLength(0)
+  })
+})
+
+function fakeImage(name: string): File {
+  return new File(['x'], name, { type: 'image/jpeg' })
+}
+
+const STORAGE_PREFIX = 'https://mock-s3.local/upload/'
+
+/** Per-test override, reset in afterEach. */
+let storagePutStatus: (url: string) => number = () => 200
+
+/**
+ * Answers the presigned PUT without letting the File reach fetch. Not a choice
+ * about coverage: vitest's jsdom Blob compat shim throws on any Blob or File used
+ * as a fetch body in this environment, so the direct-to-storage step cannot run
+ * here at all. Everything either side of it - presign, confirm, the batching,
+ * positions, the cap, and the per-file failure reporting - is the real code.
+ */
+function stubStoragePut() {
+  const realFetch = globalThis.fetch
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input)
+    if (url.startsWith(STORAGE_PREFIX)) {
+      const status = storagePutStatus(url)
+      return Promise.resolve(new Response(null, { status }))
+    }
+    return realFetch(input, init)
+  })
+}
+
+function storedImages(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `image-${i}`,
+    url: `https://cdn.example/${i}.jpg`,
+    position: i,
+    status: 'STORED' as const,
+  }))
+}
