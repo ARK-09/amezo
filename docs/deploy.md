@@ -19,7 +19,7 @@ page before committing to one.
 | ~~Fly.io~~ | 2 VM-hours trial, then metered | The free allowance is gone for new accounts. |
 | ~~Koyeb~~ | — | Free tier closed to new users after the Mistral acquisition. |
 | **Supabase free** | 500 MB Postgres + 1 GB file storage | Storage tier is a usable S3 replacement, but projects pause after a week idle, so it's a worse fit than Neon for the database. |
-| **Cloudflare R2 free** | 10 GB storage, S3-compatible API | What to use for product images instead of AWS S3 when that feature gets built (see below). |
+| **[Cloudflare R2](https://developers.cloudflare.com/r2/) free** | 10 GB storage, 1M writes + 10M reads/month, zero egress charges | **Recommended** for product images. S3-compatible, so the presigned-upload flow already in the code works unchanged. AWS S3's own free 5 GB lasts 12 months and then bills; R2's 10 GB doesn't expire. |
 
 **Recommended combination: Render (web service) + Neon (Postgres).** Both are
 free with no card, and the only real cost is the cold start on the first request
@@ -40,6 +40,8 @@ your local Postgres behaves exactly as before — deployments override via env.
   optional: with the browser on `*.vercel.app` and the API on another domain,
   every API call is cross-site, and a `SameSite=Lax` cookie is simply not sent
   back — seller sign-in would appear to succeed and then 401 on the next call.
+- `S3_ENDPOINT` / `S3_PUBLIC_BASE_URL` — point object storage at any
+  S3-compatible provider instead of AWS (see **Images** below).
 - `render.yaml` — Render blueprint for the backend service.
 
 ## Steps
@@ -90,13 +92,42 @@ your local Postgres behaves exactly as before — deployments override via env.
   in the app fixes that; the paid instance or Northflank's always-on sandbox
   does. Don't "solve" it with an external pinger — that burns the 750
   instance-hours the free plan allots.
-- **Images.** `S3Config` wires an `S3Client`/`S3Presigner` and
-  `SellerProductService` uses them for presigned uploads, so image upload needs
-  real credentials (`AWS_*`, see `backend/.env.example`). AWS S3 has no
-  perpetual free tier; Cloudflare R2's free 10 GB is S3-compatible, which means
-  the same SDK works but needs an endpoint override added to `S3Config`
-  (`.endpointOverride(URI.create("https://<account>.r2.cloudflarestorage.com"))`
-  with region `auto`). Everything except image upload works without any of it.
+- **Images.** Object storage is a separate decision from the two above, because
+  the seller portal uploads straight from the browser: the API presigns a PUT,
+  the browser PUTs the file to storage, then confirms
+  (`SellerProductService.createUploadUrl` / `uploadProductImage`). **Use
+  Cloudflare R2**, not AWS S3 — S3's free tier is 5 GB for 12 months and then
+  charges, including for egress, while R2's 10 GB and zero-egress pricing have no
+  expiry, and R2 speaks enough of the S3 API that the existing flow is unchanged.
+  Backblaze B2 (10 GB free, S3-compatible) is the equivalent second choice;
+  Supabase Storage (1 GB) works but pauses with the project; Cloudinary and
+  ImageKit are image-specific CDNs that would mean replacing the upload flow, not
+  configuring it.
+
+  Four env vars, no code change (`S3Config` switches itself over when
+  `S3_ENDPOINT` is set, including to path-style addressing, which R2 needs):
+  - `S3_ENDPOINT=https://<cloudflare-account-id>.r2.cloudflarestorage.com`
+  - `AWS_REGION=auto` (R2 wants exactly that), `AWS_S3_BUCKET=<bucket>`
+  - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — an R2 API token with object
+    read+write, not a Cloudflare global key
+  - `S3_PUBLIC_BASE_URL=https://pub-<hash>.r2.dev` — the bucket's public URL,
+    which is *not* the API endpoint. Buyers' `<img>` tags load from here, so the
+    bucket needs public read enabled (R2 dashboard → Settings → Public
+    Development URL, or a custom domain in front of it).
+
+  Two things bite if skipped: **bucket CORS**, since the browser PUTs directly to
+  R2 — allow `PUT` from the Vercel origin with `Content-Type` in the allowed
+  headers, or the upload fails preflight while the API looks fine; and the
+  **signed `Content-Type`**, already handled — the presign signs the content type
+  the client declared, and the browser sends the same one, so don't change one
+  side without the other.
+
+  Verified locally against the SDK: with `S3_ENDPOINT` set, the presigned URL
+  comes out as `https://<account>.r2.cloudflarestorage.com/<bucket>/<key>` with
+  `content-type` among the signed headers; unset, it stays on the AWS
+  virtual-hosted form. Everything except image upload works with none of this
+  configured.
+
 - **Memory.** `-XX:MaxRAMPercentage=70` in the Dockerfile keeps the heap inside
   a 512 MB container; the JVM would otherwise size the heap against the host's
   RAM and get OOM-killed. If the service dies on boot with exit 137, that's

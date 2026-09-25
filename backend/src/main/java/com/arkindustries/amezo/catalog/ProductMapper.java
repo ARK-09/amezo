@@ -31,11 +31,10 @@ class ProductMapper {
             List<Variant> variants,
             Map<UUID, Offer> offersByVariantId,
             ReviewSummaryView summary,
-            String s3Bucket,
-            String s3Region) {
+            ImageUrlResolver imageUrls) {
 
         List<ImageResponse> imageResponses = images.stream()
-                .map(image -> new ImageResponse(image.getId(), imageUrl(image.getS3Key(), s3Bucket, s3Region),
+                .map(image -> new ImageResponse(image.getId(), imageUrls.forKey(image.getS3Key()),
                         image.getPosition()))
                 .toList();
 
@@ -67,13 +66,5 @@ class ProductMapper {
         int stockQty = offer != null ? offer.getStockQty() : 0;
         return new VariantDetailResponse(variant.getId(), variant.getLabel(), variant.getSku(), price, stockQty,
                 stockQty > 0);
-    }
-
-    // Assumes a public-read bucket, same as every other product image on
-    // the page - no presigning here, unlike the private evidence photos in
-    // the deferred returns/warranty work (next-build.md), which is a
-    // different privacy requirement entirely.
-    private static String imageUrl(String s3Key, String bucket, String region) {
-        return "https://%s.s3.%s.amazonaws.com/%s".formatted(bucket, region, s3Key);
     }
 }

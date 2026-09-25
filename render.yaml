@@ -38,3 +38,19 @@ services:
       # compute is shared - keep the pool small enough to survive a cold start.
       - key: DATABASE_POOL_SIZE
         value: "3"
+      # Image upload only (docs/deploy.md). Cloudflare R2 rather than AWS S3:
+      # 10 GB free with no egress charge, and S3-compatible enough that the
+      # existing presigned-PUT flow works unchanged. Drop these five and image
+      # upload is the only thing that breaks.
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_S3_BUCKET
+        sync: false
+      - key: S3_ENDPOINT              # https://<account-id>.r2.cloudflarestorage.com
+        sync: false
+      - key: S3_PUBLIC_BASE_URL       # https://pub-<hash>.r2.dev, or your own domain
+        sync: false
+      - key: AWS_REGION
+        value: auto

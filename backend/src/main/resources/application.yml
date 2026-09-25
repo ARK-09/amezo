@@ -71,6 +71,15 @@ app:
   s3:
     bucket: ${AWS_S3_BUCKET:amezo-dev}
     region: ${AWS_REGION:us-east-1}
+    # Empty = real AWS S3. Set it to an S3-compatible provider's API endpoint
+    # (R2: https://<account-id>.r2.cloudflarestorage.com, with region auto) and
+    # config/S3Config.java switches the client and presigner over.
+    endpoint: ${S3_ENDPOINT:}
+    # Where buyers' browsers load the images from, which on a non-AWS provider
+    # is a different host than the API endpoint above (R2's pub-*.r2.dev
+    # subdomain, or a custom domain in front of the bucket). Empty falls back to
+    # the AWS virtual-hosted URL built from bucket + region.
+    public-base-url: ${S3_PUBLIC_BASE_URL:}
 
 logging:
   level:
