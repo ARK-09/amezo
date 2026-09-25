@@ -29,14 +29,27 @@ spring:
     open-in-view: false
     properties:
       hibernate:
-        format_sql: true
+        # Pretty-printing every statement is for reading logs by hand; a hosted
+        # instance pays for the extra lines and reads nothing.
+        format_sql: ${HIBERNATE_FORMAT_SQL:true}
   flyway:
-    enabled: true
+    # Off only when migrations are being applied out-of-band (a shared database
+    # someone else migrates, or a read replica). On by default, which is what
+    # makes a fresh hosted database create its own schema on first boot.
+    enabled: ${FLYWAY_ENABLED:true}
+    # Not env: the migrations ship inside the jar, so this is a build-time fact
+    # about the artifact, not an environment's choice.
     locations: classpath:db/migration
 
 springdoc:
   api-docs:
-    path: /v3/api-docs
+    # The spec is public (SecurityConfig reads the path below to allow it), which
+    # is fine for this project - it documents an API whose endpoints are already
+    # public or cookie-guarded. Set false to stop serving it at all; note that
+    # the deploy guide uses this path as the "did it boot" probe, so a disabled
+    # spec means picking a different probe.
+    enabled: ${API_DOCS_ENABLED:true}
+    path: ${API_DOCS_PATH:/v3/api-docs}
   default-flat-param-object: true   # Pageable already binds page/size/sort as flat query
                                      # params at runtime; without this springdoc documents
                                      # it as one opaque nested object, which misrepresents
@@ -56,8 +69,8 @@ app:
     # be exact: allowCredentials(true) means a wildcard is rejected outright.
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,https://amezo-frontend.localhost}
   session:
-    cookie-name: mp_session
-    ttl-days: 30
+    cookie-name: ${APP_SESSION_COOKIE_NAME:mp_session}
+    ttl-days: ${APP_SESSION_TTL_DAYS:30}
     # Local dev is same-site over plain http, so Lax + no Secure flag. Hosted,
     # the frontend (Vercel) and API (anywhere else) are different registrable
     # domains, which makes every API call cross-site: the cookie is then only
@@ -67,7 +80,7 @@ app:
     cookie-same-site: ${APP_SESSION_COOKIE_SAME_SITE:Lax}
     cookie-secure: ${APP_SESSION_COOKIE_SECURE:false}
   magic-link:
-    ttl-minutes: 15
+    ttl-minutes: ${APP_MAGIC_LINK_TTL_MINUTES:15}
   s3:
     bucket: ${AWS_S3_BUCKET:amezo-dev}
     region: ${AWS_REGION:us-east-1}

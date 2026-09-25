@@ -44,6 +44,44 @@ your local Postgres behaves exactly as before — deployments override via env.
   S3-compatible provider instead of AWS (see **Images** below).
 - `render.yaml` — Render blueprint for the backend service.
 
+## Environment variables
+
+`backend/.env.example` is the authoritative copy, with a comment per variable.
+Every one has a local-dev default in `application.yml`, so an empty environment
+still runs locally; this table is what a *deployment* cares about.
+
+| Variable | Default | Set it when deploying? |
+| --- | --- | --- |
+| `PORT` | `8080` | Host-injected — don't set it yourself |
+| `JDBC_DATABASE_URL` | local Postgres | **Yes** — JDBC form, `?sslmode=require` |
+| `DATABASE_USERNAME` / `DATABASE_PASSWORD` | `postgres` / `root` | **Yes** |
+| `DATABASE_POOL_SIZE` | `5` | Recommended — `3` on a 512 MB instance |
+| `FLYWAY_ENABLED` | `true` | No — leave on, it creates the schema |
+| `APP_FRONTEND_URL` | `localhost:5173` | **Yes** — magic-link emails point here |
+| `APP_CORS_ALLOWED_ORIGINS` | localhost origins | **Yes** — exact origins, comma-separated |
+| `APP_SESSION_COOKIE_SAME_SITE` | `Lax` | **Yes — `None`**, or seller sign-in 401s |
+| `APP_SESSION_COOKIE_SECURE` | `false` | **Yes — `true`** (required by `SameSite=None`) |
+| `APP_SESSION_COOKIE_NAME` | `mp_session` | No |
+| `APP_SESSION_TTL_DAYS` | `30` | No |
+| `APP_MAGIC_LINK_TTL_MINUTES` | `15` | No |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | — | Image upload only |
+| `AWS_SESSION_TOKEN` | — | Only for temporary credentials |
+| `AWS_S3_BUCKET` | `amezo-dev` | Image upload only |
+| `AWS_REGION` | `us-east-1` | Image upload only — `auto` for R2 |
+| `S3_ENDPOINT` | empty (AWS) | Image upload only — R2/MinIO endpoint |
+| `S3_PUBLIC_BASE_URL` | empty (AWS URL) | Image upload only — the public bucket URL |
+| `SQL_LOG_LEVEL` | `debug` | Recommended — `warn` |
+| `HIBERNATE_FORMAT_SQL` | `true` | Recommended — `false` |
+| `API_DOCS_ENABLED` / `API_DOCS_PATH` | `true` / `/v3/api-docs` | No |
+
+Anything under `spring.*` is additionally overridable through Spring Boot's own
+`SPRING_*` env names without being listed here. Two values stay hardcoded on
+purpose, being facts about the artifact rather than the environment:
+`spring.jpa.hibernate.ddl-auto=validate` (Flyway owns the schema; Hibernate only
+checks the entities match it) and `spring.flyway.locations` (the migrations ship
+inside the jar). An env override for either would only let a deploy break
+itself.
+
 ## Steps
 
 1. **Database (Neon).** Create a project, copy the connection string, and split

@@ -27,7 +27,8 @@ import java.util.List;
  *
  * Route table (see docs/api-design.md for the full endpoint list):
  *   public        - GET /products/**, POST /magic-links, POST /sessions,
- *                    POST /orders (guest checkout), the OpenAPI spec path,
+ *                    POST /orders (guest checkout), the OpenAPI spec path
+ *                    (springdoc.api-docs.path, wherever that points),
  *                    POST /auth/seller/magic-link, POST /auth/seller/verify
  *   either role   - GET/DELETE /sessions/current
  *   buyer only    - GET /orders/**, POST /reviews
@@ -48,7 +49,11 @@ public class SecurityConfig {
             SessionCookieAuthenticationFilter sessionCookieAuthenticationFilter,
             ProblemDetailAuthenticationEntryPoint authenticationEntryPoint,
             ProblemDetailAccessDeniedHandler accessDeniedHandler,
-            CorsConfigurationSource corsConfigurationSource) throws Exception {
+            CorsConfigurationSource corsConfigurationSource,
+            // Read from springdoc's own property rather than repeating the literal:
+            // the spec path is configurable (API_DOCS_PATH), and a matcher that
+            // didn't follow it would 403 the spec at its new path instead.
+            @Value("${springdoc.api-docs.path}") String apiDocsPath) throws Exception {
 
         http
             .csrf(csrf -> csrf.disable())
@@ -60,7 +65,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/sessions").permitAll()
                 .requestMatchers(HttpMethod.POST, "/orders").permitAll()
                 .requestMatchers(HttpMethod.POST, "/auth/seller/magic-link", "/auth/seller/verify").permitAll()
-                .requestMatchers("/v3/api-docs/**").permitAll()
+                .requestMatchers(apiDocsPath + "/**").permitAll()
                 // Spring's internal error dispatch, not a real route - without this,
                 // anyRequest().denyAll() masks every unhandled exception behind a 403
                 // instead of the real ProblemDetail from ApiExceptionHandler.
