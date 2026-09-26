@@ -6,10 +6,10 @@ import { cn } from '@/lib/utils'
  * The signed-in identity, and a reviewer's, shown as an avatar rather than as an
  * email address.
  *
- * A thin wrapper over shadcn's Avatar rather than a hand-built circle: the primitive
- * already handles the part that is actually fiddly, which is showing the fallback
- * only once the image has genuinely failed or is still loading, instead of flashing
- * initials under every avatar on first paint.
+ * A thin wrapper over the registry's Avatar rather than a hand-built circle: the
+ * primitive already handles the part that is actually fiddly, which is showing the
+ * fallback only once the image has genuinely failed or is still loading, instead of
+ * flashing initials under every avatar on first paint.
  *
  * What stays local is the only thing shadcn has no opinion about: which initials to
  * show and which colour to use. There is no avatar upload in this system yet, so
@@ -57,7 +57,10 @@ export function Avatar({
       // decoration; title gives it back on hover where the name is not shown.
       aria-hidden
       title={label}
-      className={cn(sizes, className)}
+      // after:border-0 drops the registry's 1px ring overlay, which this avatar has
+      // never had. Sizes are set here rather than through its size prop because ours
+      // (28px/32px) are not the registry's (24px/32px/40px).
+      className={cn('after:border-0', sizes, className)}
     >
       {src && <AvatarImage src={src} alt={label} />}
       <AvatarFallback className={paletteFor(label)}>
