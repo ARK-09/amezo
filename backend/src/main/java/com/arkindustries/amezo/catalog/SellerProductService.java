@@ -8,6 +8,7 @@ import com.arkindustries.amezo.catalog.dto.ImageConfirmRequest;
 import com.arkindustries.amezo.catalog.dto.ImageResponse;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlRequest;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlResponse;
+import com.arkindustries.amezo.catalog.dto.LowestStockVariantResponse;
 import com.arkindustries.amezo.catalog.dto.ProductOpenOrdersResponse;
 import com.arkindustries.amezo.catalog.dto.SellerProductDetailResponse;
 import com.arkindustries.amezo.catalog.dto.SellerProductRowPageResponse;
@@ -235,6 +236,7 @@ public class SellerProductService {
                             product.getStatus(),
                             variants.size(),
                             totalStock,
+                            lowestStockVariant(variants, offersByVariant),
                             priceFrom,
                             priceTo,
                             product.getCreatedAt(),
@@ -244,6 +246,45 @@ public class SellerProductService {
 
         return new SellerProductRowPageResponse(
                 rows, products.getNumber(), products.getTotalElements(), products.getTotalPages());
+    }
+
+    /**
+     * The one variant a low-stock row names: the least-stocked one.
+     *
+     * Computed from the variants and offers listRows has already batch-loaded
+     * for the page, so it costs no extra round trip - no second query, and in
+     * particular no per-product lookup, which on a page of rows is exactly the
+     * N+1 the batched shape above exists to avoid.
+     *
+     * Only variants that actually have an offer are candidates. A variant with
+     * no offer has no stock number at all, and naming it would print a blank
+     * where the figure belongs; it is also consistent with totalStock, which is
+     * summed over offers for the same reason.
+     *
+     * The ordering is (stockQty ASC, sku ASC). The secondary key is not
+     * decoration: two variants on the same count is ordinary, and without a
+     * tiebreak the row would flip between them from one request to the next and
+     * look broken. sku carries a UNIQUE constraint across the whole variant
+     * table (V6__create_variant.sql), so that pair is a total order and the pick
+     * is genuinely stable rather than merely usually stable.
+     *
+     * Null when no variant is priced and stocked. Such a product still reaches a
+     * low-stock list - its totalStock is 0 - so "nothing to name" is a real
+     * answer the row has to be able to give.
+     */
+    private static LowestStockVariantResponse lowestStockVariant(
+            List<Variant> variants, Map<UUID, Offer> offersByVariant) {
+        return variants.stream()
+                .filter(variant -> offersByVariant.containsKey(variant.getId()))
+                .min(Comparator
+                        .comparingInt((Variant variant) -> offersByVariant.get(variant.getId()).getStockQty())
+                        .thenComparing(Variant::getSku))
+                .map(variant -> new LowestStockVariantResponse(
+                        variant.getId(),
+                        variant.getLabel(),
+                        variant.getSku(),
+                        offersByVariant.get(variant.getId()).getStockQty()))
+                .orElse(null);
     }
 
     /** The sort values the contract declares. */

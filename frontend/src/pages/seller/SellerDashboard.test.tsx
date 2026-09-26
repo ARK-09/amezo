@@ -44,6 +44,10 @@ const LOW_STOCK_ROW = {
   status: 'ACTIVE',
   variantCount: 1,
   totalStock: 0,
+  // Not "the product's SKU" - sku is a column on variant, so the API names the
+  // one variant that actually needs reordering. Null is a real answer for a
+  // product with nothing priced, and the widget has to survive it.
+  lowestStockVariant: { id: 'v0', label: 'Default', sku: 'AUR-BP-BLK', stockQty: 0 },
   priceFrom: 10,
   priceTo: 10,
   createdAt: '2026-01-01T00:00:00Z',
@@ -521,6 +525,94 @@ describe('SellerDashboard', () => {
     // four more could be either kind - the tile says what it knows.
     await within(tile).findByText('at least 5 out of stock')
     expect(within(tile).queryByText(/below 10 units/)).not.toBeInTheDocument()
+  })
+
+  it('names the variant to restock under each low-stock product, not the product alone', async () => {
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/products', () =>
+        HttpResponse.json({
+          content: [
+            {
+              ...LOW_STOCK_ROW,
+              id: 'p1',
+              title: 'Aurora Buds Pro',
+              totalStock: 0,
+              lowestStockVariant: { id: 'v1', label: 'Black', sku: 'AUR-BP-BLK', stockQty: 0 },
+            },
+            {
+              ...LOW_STOCK_ROW,
+              id: 'p2',
+              title: 'Aurora Studio Monitor 5"',
+              totalStock: 9,
+              // The row's totalStock is the sum over every variant; the named
+              // one carries its own, smaller number. A widget that paired the
+              // sku with totalStock would tell the seller to order the wrong
+              // quantity.
+              lowestStockVariant: { id: 'v2', label: 'Pair', sku: 'AUR-SM5-PR', stockQty: 3 },
+            },
+          ],
+          page: 0,
+          totalElements: 2,
+          totalPages: 1,
+        }),
+      ),
+    )
+    renderPage()
+
+    const panel = (await screen.findByRole('heading', { name: 'Low stock', level: 2 })).closest(
+      'section',
+    )!
+    // selector: 'p' because the Restock link repeats the title in a sr-only
+    // span, which is deliberate and not the line under test.
+    const first = (
+      await within(panel).findByText('Aurora Buds Pro', { selector: 'p' })
+    ).closest('li')!
+    expect(within(first).getByText('AUR-BP-BLK')).toBeInTheDocument()
+
+    const second = within(panel)
+      .getByText('Aurora Studio Monitor 5"', { selector: 'p' })
+      .closest('li')!
+    expect(within(second).getByText('AUR-SM5-PR')).toBeInTheDocument()
+    // The stock pill still reports the product total, which is the alert the
+    // row is raising; the sku line is about which variant to reorder.
+    expect(within(second).getByText('9 left')).toBeInTheDocument()
+  })
+
+  it('leaves the second line off a product with no variant to name rather than inventing one', async () => {
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/products', () =>
+        HttpResponse.json({
+          content: [
+            {
+              ...LOW_STOCK_ROW,
+              id: 'p1',
+              title: 'Nothing priced yet',
+              totalStock: 0,
+              // No variant is priced and stocked, so there is no least-stocked
+              // one. It still reaches the low-stock list on a zero total.
+              lowestStockVariant: null,
+            },
+          ],
+          page: 0,
+          totalElements: 1,
+          totalPages: 1,
+        }),
+      ),
+    )
+    renderPage()
+
+    const panel = (await screen.findByRole('heading', { name: 'Low stock', level: 2 })).closest(
+      'section',
+    )!
+    const row = (
+      await within(panel).findByText('Nothing priced yet', { selector: 'p' })
+    ).closest('li')!
+    // The title, the alert and the action - and no placeholder dash standing in
+    // for a SKU this product does not have.
+    expect(within(row).getByText('Out of stock')).toBeInTheDocument()
+    expect(within(row).getByRole('link', { name: /Restock/ })).toBeInTheDocument()
+    expect(within(row).queryByText('—')).not.toBeInTheDocument()
+    expect(within(row).queryByText('AUR-BP-BLK')).not.toBeInTheDocument()
   })
 
   it('moves a panel one place, and remembers it for the next visit', async () => {

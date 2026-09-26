@@ -21,6 +21,11 @@ import java.util.UUID;
  * priceFrom/priceTo are null - not 0 - for a product with no priced offer.
  * Zero is a real price, and a row that says "$0.00" for "we don't know" is a
  * worse answer than a row that says nothing.
+ *
+ * lowestStockVariant names one variant rather than exposing a product-level
+ * "sku", which this schema has no such thing as - see
+ * LowestStockVariantResponse. Null when nothing of the product is priced and
+ * stocked.
  */
 public record SellerProductRowResponse(
         UUID id,
@@ -33,6 +38,7 @@ public record SellerProductRowResponse(
         ProductStatus status,
         int variantCount,
         int totalStock,
+        LowestStockVariantResponse lowestStockVariant,
         BigDecimal priceFrom,
         BigDecimal priceTo,
         Instant createdAt,

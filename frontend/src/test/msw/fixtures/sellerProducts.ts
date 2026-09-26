@@ -270,6 +270,20 @@ export function listSellerProductRows(): SellerProductRow[] {
     const prices = variants.map((v) => v.price).filter((p): p is number => p != null)
     const totalStock = variants.reduce((sum, v) => sum + v.stockQty, 0)
 
+    // The same pick the API makes: least stock first, sku ascending to break a
+    // tie, and only variants that are actually priced - an unpriced variant has
+    // no offer behind it on the backend and so no stock figure to name. Done
+    // here rather than left off the mock because a row that quietly loses its
+    // second line against the real API is worse than one that never had it.
+    // < / > on the sku rather than localeCompare, so the tie falls the same way
+    // here as it does in Java's String.compareTo: both order by code unit, and a
+    // locale-aware collation would disagree with the API on exactly the rows
+    // this field exists to make stable.
+    const named = variants
+      .filter((v) => v.price != null)
+      .sort((a, b) => a.stockQty - b.stockQty || (a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0))
+      .at(0)
+
     return {
       id: summary.id,
       productRef: summary.slug,
@@ -281,6 +295,9 @@ export function listSellerProductRows(): SellerProductRow[] {
       status: detail?.status ?? 'ACTIVE',
       variantCount: summary.variantCount,
       totalStock,
+      lowestStockVariant: named
+        ? { id: named.id, label: named.label, sku: named.sku, stockQty: named.stockQty }
+        : null,
       priceFrom: prices.length ? Math.min(...prices) : undefined,
       priceTo: prices.length ? Math.max(...prices) : undefined,
       createdAt: summary.createdAt,

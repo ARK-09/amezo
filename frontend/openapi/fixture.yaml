@@ -2545,6 +2545,34 @@ components:
         # who is not following it and cannot be asked to.
         following: { type: boolean, nullable: true }
 
+    # The single variant a low-stock row is actually about.
+    #
+    # Deliberately not called "sku" and deliberately not a bare string on the
+    # product row: sku is a column on VARIANT, so a product with three variants
+    # has three SKUs and "the product's SKU" does not exist in this schema. A
+    # `sku` field on SellerProductRow would be null for every product past its
+    # first variant, and the rows where it happened to be set would be lying
+    # about what they named.
+    #
+    # It is the LEAST-stocked variant because that is the question the
+    # dashboard's Low stock widget asks. "Restock this product" is not an
+    # actionable instruction when four of its five variants are fine; the seller
+    # needs the one line they have to reorder.
+    #
+    # Pick rule: lowest stockQty, ties broken by sku ascending. sku carries a
+    # UNIQUE constraint across the whole variant table (V6__create_variant.sql),
+    # so (stockQty, sku) is a total order - two requests a second apart name the
+    # same variant instead of flipping between equally-stocked siblings and
+    # making the widget look like it is glitching.
+    LowestStockVariant:
+      type: object
+      required: [id, label, sku, stockQty]
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        sku: { type: string }
+        stockQty: { type: integer }
+
     SellerProductRow:
       type: object
       required: [id, productRef, title, category, status, variantCount, totalStock, createdAt, updatedAt]
@@ -2559,6 +2587,13 @@ components:
         status: { $ref: '#/components/schemas/ProductStatus' }
         variantCount: { type: integer }
         totalStock: { type: integer }
+        # Null when nothing of this product is priced and stocked - it has no
+        # variants at all, or none of them has an offer. Such a product still
+        # reaches a low-stock list (its totalStock is 0), so the row has to be
+        # able to say "there is no line to name" rather than invent one.
+        lowestStockVariant:
+          allOf: [{ $ref: '#/components/schemas/LowestStockVariant' }]
+          nullable: true
         priceFrom: { type: number }
         priceTo: { type: number }
         createdAt: { type: string, format: date-time }

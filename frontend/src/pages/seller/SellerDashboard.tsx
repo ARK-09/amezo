@@ -499,11 +499,24 @@ export function SellerDashboard() {
             isError={lowStock.isError}
             isLoading={lowStock.isLoading}
             onRetry={() => lowStock.refetch()}
-            rowClass="h-8"
+            rowClass="h-9"
           >
             {(product) => (
               <>
-                <p className="min-w-0 truncate text-sm font-medium">{product.title}</p>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{product.title}</p>
+                  {/* The design's second line. Not "the product's SKU" - there is
+                      no such thing here, sku lives on variant - but the variant
+                      the seller actually has to reorder, which the API picks as
+                      the least-stocked one. Dropped entirely when the product has
+                      no priced variant to name, rather than printing a dash: a
+                      blank line is a smaller lie than a fake SKU. */}
+                  {product.lowestStockVariant ? (
+                    <p className="mt-0.5 truncate text-xs tabular-nums text-muted-foreground">
+                      {product.lowestStockVariant.sku}
+                    </p>
+                  ) : null}
+                </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <span
                     className={

@@ -227,6 +227,105 @@ class SellerProductV1ApiTest {
                 .andExpect(jsonPath("$.type").value("https://api/errors/unknown-sort"));
     }
 
+    // --------------------------------------------- lowest-stock variant
+
+    /**
+     * The row names ONE variant, and it is the one that needs reordering.
+     *
+     * There is no such thing as "the product's SKU" here - sku is a column on
+     * variant - so the only honest thing a single-SKU line can carry is a
+     * specific variant, and the useful one for a low-stock widget is the
+     * emptiest. The stockQty it carries is that variant's, deliberately not the
+     * row's totalStock: a seller told "AUR-SM5-PR, 9 left" when that line
+     * actually has 3 would order the wrong quantity.
+     */
+    @Test
+    void listRowsNamesTheLeastStockedVariant() throws Exception {
+        Seller me = seller("v1-lowest@example.com");
+        Product product = product(me, "Three variants", "electronics", ProductStatus.ACTIVE);
+        variantWithOfferSku(product, "Plenty", "LOWEST-PLENTY", new BigDecimal("10.00"), 40);
+        variantWithOfferSku(product, "Scarce", "LOWEST-SCARCE", new BigDecimal("10.00"), 2);
+        variantWithOfferSku(product, "Some", "LOWEST-SOME", new BigDecimal("10.00"), 7);
+
+        mockMvc.perform(get("/api/v1/sellers/me/products").cookie(cookieFor(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].totalStock").value(49))
+                .andExpect(jsonPath("$.content[0].lowestStockVariant.sku").value("LOWEST-SCARCE"))
+                .andExpect(jsonPath("$.content[0].lowestStockVariant.label").value("Scarce"))
+                .andExpect(jsonPath("$.content[0].lowestStockVariant.stockQty").value(2));
+    }
+
+    /**
+     * Two variants on the same count is ordinary, not a corner case, and without
+     * a secondary key the row would flip between them from one request to the
+     * next - the widget would look broken to the only person watching it.
+     *
+     * sku ascending decides it, and sku is UNIQUE across the whole variant table
+     * (V6), so the pair is a total order. Inserted in the losing order on
+     * purpose: passing on insertion order rather than on the rule is exactly the
+     * failure this guards.
+     */
+    @Test
+    void listRowsBreaksALowestStockTieOnSkuAscending() throws Exception {
+        Seller me = seller("v1-tie@example.com");
+        Product product = product(me, "Tied variants", "electronics", ProductStatus.ACTIVE);
+        variantWithOfferSku(product, "Second", "TIE-B", new BigDecimal("10.00"), 3);
+        variantWithOfferSku(product, "First", "TIE-A", new BigDecimal("10.00"), 3);
+        variantWithOfferSku(product, "Third", "TIE-C", new BigDecimal("10.00"), 3);
+
+        for (int attempt = 0; attempt < 3; attempt++) {
+            mockMvc.perform(get("/api/v1/sellers/me/products").cookie(cookieFor(me)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content[0].lowestStockVariant.sku").value("TIE-A"))
+                    .andExpect(jsonPath("$.content[0].lowestStockVariant.label").value("First"));
+        }
+    }
+
+    /**
+     * Null, not an empty object and not an invented SKU. Both shapes of
+     * "nothing to name" reach a low-stock list, because both total zero: a
+     * product with no variants at all, and one whose variants exist but carry no
+     * offer and so have no stock figure behind them.
+     */
+    @Test
+    void listRowsLeavesTheLowestStockVariantNullWhenNothingIsStocked() throws Exception {
+        Seller me = seller("v1-lowest-null@example.com");
+        product(me, "No variants at all", "electronics", ProductStatus.ACTIVE);
+        Product unpriced = product(me, "Variants but no offers", "electronics", ProductStatus.ACTIVE);
+        variantWithoutOffer(unpriced, "Unpriced");
+
+        mockMvc.perform(get("/api/v1/sellers/me/products?sort=title_asc").cookie(cookieFor(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].title").value("No variants at all"))
+                .andExpect(jsonPath("$.content[0].totalStock").value(0))
+                .andExpect(jsonPath("$.content[0].lowestStockVariant").doesNotExist())
+                .andExpect(jsonPath("$.content[1].title").value("Variants but no offers"))
+                .andExpect(jsonPath("$.content[1].variantCount").value(1))
+                .andExpect(jsonPath("$.content[1].totalStock").value(0))
+                .andExpect(jsonPath("$.content[1].lowestStockVariant").doesNotExist());
+    }
+
+    /**
+     * The pick is drawn from the caller's own catalogue only. Another seller's
+     * variant sitting at a lower count must not be named here - that would leak
+     * their SKU and their stock position into a competitor's dashboard.
+     */
+    @Test
+    void listRowsNeverNamesAnotherSellersVariant() throws Exception {
+        Seller me = seller("v1-lowest-mine@example.com");
+        Seller other = seller("v1-lowest-theirs@example.com");
+        Product mine = product(me, "Mine", "electronics", ProductStatus.ACTIVE);
+        variantWithOfferSku(mine, "Mine only", "SCOPE-MINE", new BigDecimal("10.00"), 5);
+        Product theirs = product(other, "Theirs", "electronics", ProductStatus.ACTIVE);
+        variantWithOfferSku(theirs, "Theirs only", "SCOPE-THEIRS", new BigDecimal("10.00"), 1);
+
+        mockMvc.perform(get("/api/v1/sellers/me/products").cookie(cookieFor(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].lowestStockVariant.sku").value("SCOPE-MINE"))
+                .andExpect(jsonPath("$.content[0].lowestStockVariant.stockQty").value(5));
+    }
+
     // ----------------------------------------------------------------- status
 
     @Test
@@ -512,6 +611,12 @@ class SellerProductV1ApiTest {
         offerRepository.save(Offer.builder()
                 .variantId(variant.getId()).price(price).stockQty(stockQty).build());
         return variant;
+    }
+
+    /** A variant with no offer behind it - priced by nobody, so stocked by nobody. */
+    private Variant variantWithoutOffer(Product product, String label) {
+        return variantRepository.save(Variant.builder()
+                .productId(product.getId()).label(label).sku("SKU-" + UUID.randomUUID()).build());
     }
 
     private Image storedImage(Product product, int position) {
