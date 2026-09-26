@@ -1,12 +1,14 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { Account } from '@/pages/Account'
 import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
 import { createAppQueryClient } from '@/lib/api/queryClient'
+import { server } from '@/test/msw/server'
 import { currentSessionIdentity, signInBuyerSession, signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 
 function LocationProbe() {
@@ -85,5 +87,33 @@ describe('buyer sign-out', () => {
 
     await waitFor(() => expect(location()).toBe('/'))
     expect(location()).not.toBe('/sign-in')
+  })
+
+  // The page used to print "Loading…" at the top of an empty screen. The spinner
+  // sits in the middle of the space the account will fill, so nothing jumps.
+  it('shows a centred spinner while the session is still resolving', async () => {
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get('http://localhost:8080/sessions/current', async () => {
+        await held
+        return HttpResponse.json({ identityType: 'BUYER', email: 'ada@example.com' })
+      }),
+    )
+    signInBuyerSession({ buyerIdentityId: 'buyer-1', email: 'ada@example.com' })
+    renderAccount()
+
+    const spinner = await screen.findByRole('status', { name: 'Loading' })
+    // Centred both ways, in a box that fills the height the layout gives it.
+    const box = spinner.parentElement!
+    expect(box.className).toContain('items-center')
+    expect(box.className).toContain('justify-center')
+    expect(box.className).toContain('flex-1')
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+
+    release()
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'Loading' })).not.toBeInTheDocument())
   })
 })
