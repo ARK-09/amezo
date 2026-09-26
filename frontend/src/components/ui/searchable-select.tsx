@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useId, useState } from 'react'
 
@@ -16,18 +16,21 @@ import { cn } from '@/lib/utils'
  * A select you can type into - shadcn's Combobox pattern (Popover + Command), with a
  * caller-supplied filter.
  *
- * It was a hand-rolled combobox: its own open/close state, its own outside-click
- * listener, its own arrow/Enter/Escape handling and its own active-index bookkeeping.
- * All of that is what Popover and cmdk already do, and do better - focus is trapped
- * and restored properly, the trigger gets aria-expanded/aria-controls without being
- * told, the list is virtualisable, and dismissal handles pointer, focus and Escape
- * rather than just pointerdown.
+ * Not a component the registry ships: shadcn documents the combobox as a pattern
+ * composed from Popover and Command, which is what this is. Everything underneath it
+ * is the official implementation, so focus handling, dismissal, roving selection,
+ * the ARIA wiring and the check mark on the chosen item all come from there rather
+ * than from a hand-written effect.
  *
  * Filtering stays here rather than using cmdk's built-in scorer, and that is
  * deliberate: the country list needs the short-query rule ("in" must not match
  * United K-in-gdom) that filterCountries implements, and categories match on slug as
  * well as name. cmdk's `shouldFilter={false}` is the documented way to keep its
  * keyboard and selection behaviour while owning which items are shown.
+ *
+ * The className overrides exist to hold the app's existing look - the registry's
+ * own padding, widths and alignment differ. They live here, at the call site,
+ * rather than in the registry files, so `shadcn add` can overwrite those cleanly.
  */
 export function SearchableSelect<T>({
   items,
@@ -139,22 +142,25 @@ export function SearchableSelect<T>({
       </PopoverTrigger>
 
       <PopoverContent
-        className={cn('p-0', panelClassName ?? 'w-[var(--radix-popover-trigger-width)]')}
+        align="start"
+        className={cn('gap-0 p-0', panelClassName ?? 'w-(--radix-popover-trigger-width)')}
       >
         {/* Our own filter runs above; cmdk keeps the keyboard and selection
-            behaviour but does not second-guess which items are shown. */}
-        {/* cmdk names its input from the Command's own `label`, and that wins over an
-            aria-label put on the input directly - so the search label belongs here.
-            The list takes cmdk's `label` prop too; its default is "Suggestions",
-            which tells a screen-reader user nothing about what is being suggested. */}
+            behaviour but does not second-guess which items are shown. cmdk names
+            its input from the Command's own label, which is why the search label
+            sits here rather than on the input. */}
         <Command shouldFilter={false} label={`Search ${label.toLowerCase()}`} loop>
           <CommandInput
             value={query}
             onValueChange={setQuery}
             placeholder={searchPlaceholder}
           />
-          <CommandList label={label}>
-            <CommandEmpty>{emptyMessage}</CommandEmpty>
+          {/* The registry's list is max-h-72; this keeps the app's existing height. */}
+          <CommandList label={label} className="max-h-60 p-1">
+            {/* Left-aligned like every other row in the panel, not centred. */}
+            <CommandEmpty className="px-2.5 py-2 text-left text-muted-foreground">
+              {emptyMessage}
+            </CommandEmpty>
             {matches.map((item) => {
               const key = getKey(item)
               const isSelected = key === value
@@ -163,10 +169,23 @@ export function SearchableSelect<T>({
                   key={key}
                   value={key}
                   onSelect={choose}
-                  className={cn(isSelected && 'font-semibold')}
+                  // The check mark is CommandItem's own, driven by this attribute -
+                  // there is no second tick rendered here.
+                  data-checked={isSelected}
+                  // data-[selected=false]:bg-transparent is a fix, not a style
+                  // preference. The registry's CommandItem highlights on
+                  // `data-selected:bg-muted`, which Tailwind compiles to attribute
+                  // PRESENCE - and cmdk writes data-selected="false" on every
+                  // unhighlighted row, so all of them render highlighted and the
+                  // active one cannot be told apart. Corrected here rather than in
+                  // the registry file so `shadcn add` can still overwrite that
+                  // cleanly.
+                  className={cn(
+                    'rounded-md px-2.5 data-[selected=false]:bg-transparent',
+                    isSelected && 'font-semibold',
+                  )}
                 >
                   <span className="truncate">{getLabel(item)}</span>
-                  {isSelected && <Check className="size-3.5 shrink-0 text-primary" aria-hidden />}
                 </CommandItem>
               )
             })}

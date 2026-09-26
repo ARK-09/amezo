@@ -47,7 +47,9 @@ export function AllCategoriesMenu({ activeCategory }: { activeCategory: string |
         <ChevronDown className="size-[11px] transition-transform" aria-hidden />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent className="w-[320px]">
+      {/* The registry locks content to the trigger's width and uses p-1 with a 4px
+          offset; this holds the panel's existing 320px, padding and 8px gap. */}
+      <DropdownMenuContent sideOffset={8} className="w-[320px] p-1.5">
         {categories.isPending && (
           <p className="px-2.5 py-2 text-sm text-muted-foreground">Loading categories…</p>
         )}
@@ -64,8 +66,10 @@ export function AllCategoriesMenu({ activeCategory }: { activeCategory: string |
                   <DropdownMenuItem key={category.slug} asChild>
                     <Link
                       to={`/search?category=${encodeURIComponent(category.slug)}`}
+                      // The registry's item is gap-1.5/px-1.5/py-1; these hold the
+                      // spacing this menu already had.
                       className={cn(
-                        'text-[13px]',
+                        'gap-2.5 px-2.5 py-1.5 text-[13px]',
                         activeCategory === category.slug && 'font-semibold text-primary',
                       )}
                     >
@@ -86,7 +90,7 @@ export function AllCategoriesMenu({ activeCategory }: { activeCategory: string |
             </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link to="/search" className="text-[13px] font-semibold">
+              <Link to="/search" className="px-2.5 py-1.5 text-[13px] font-semibold">
                 Browse everything
               </Link>
             </DropdownMenuItem>

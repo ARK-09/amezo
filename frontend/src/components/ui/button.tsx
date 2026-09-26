@@ -24,6 +24,11 @@ const buttonVariants = cva(
         sm: 'h-8 rounded-md px-3 text-xs',
         lg: 'h-10 rounded-md px-6',
         icon: 'size-9',
+        // Additive, for the official shadcn dialog's close button, which asks for
+        // this size. Nothing else uses it, so existing buttons are untouched -
+        // adding it here beats either editing the official dialog or adopting
+        // shadcn's button wholesale and restyling every button in the app.
+        'icon-sm': 'size-8',
       },
     },
     defaultVariants: {
