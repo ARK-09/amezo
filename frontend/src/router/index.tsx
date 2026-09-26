@@ -21,6 +21,7 @@ import { SellerProducts } from '@/pages/seller/SellerProducts'
 import { SellerRefundDetail } from '@/pages/seller/SellerRefundDetail'
 import { SellerRefunds } from '@/pages/seller/SellerRefunds'
 import { SellerSignIn } from '@/pages/seller/SellerSignIn'
+import { StoreSettings } from '@/pages/seller/StoreSettings'
 import { SellerVerify } from '@/pages/seller/SellerVerify'
 
 export const router = createBrowserRouter([
@@ -70,6 +71,7 @@ export const router = createBrowserRouter([
       { path: 'orders/:orderId', element: <SellerOrderDetail /> },
       { path: 'refunds', element: <SellerRefunds /> },
       { path: 'refunds/:refundRequestId', element: <SellerRefundDetail /> },
+      { path: 'store', element: <StoreSettings /> },
     ],
   },
 ])

@@ -13,6 +13,11 @@ import { currentLastCheckoutDetails } from './fixtures/checkoutDetails'
 import { mockCountries } from './fixtures/countries'
 import { productIdForPurchasedLine, purchasedLineFor } from './fixtures/purchases'
 import {
+  TAKEN_HANDLES,
+  getStoreProfile,
+  patchStoreProfile,
+} from './fixtures/storeProfile'
+import {
   canTransition,
   findRefundRequest,
   listRefundRequests,
@@ -81,6 +86,41 @@ export const handlers = [
   // --- /api/v1 --------------------------------------------------------------
   // These endpoints do not exist on the backend yet; see docs/backend-handoff.md.
   // They run only under VITE_USE_MSW and in vitest.
+
+  http.get('http://localhost:8080/api/v1/sellers/me/store', () =>
+    HttpResponse.json(getStoreProfile()),
+  ),
+
+  http.patch('http://localhost:8080/api/v1/sellers/me/store', async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>
+    const handle = body.handle as string | undefined
+
+    if (handle && TAKEN_HANDLES.includes(handle)) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/handle-taken',
+          title: 'Handle taken',
+          status: 409,
+          detail: `${handle} is already in use`,
+          errors: [{ field: 'handle', reason: 'already taken' }],
+        },
+        { status: 409 },
+      )
+    }
+    if (handle && !/^[a-z0-9][a-z0-9-]{1,38}$/.test(handle)) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/validation',
+          title: 'Validation failed',
+          status: 422,
+          errors: [{ field: 'handle', reason: 'lowercase letters, numbers and dashes only' }],
+        },
+        { status: 422 },
+      )
+    }
+
+    return HttpResponse.json(patchStoreProfile(body))
+  }),
 
   http.get('http://localhost:8080/api/v1/sellers/me/orders', ({ request }) => {
     const url = new URL(request.url)
