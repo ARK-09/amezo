@@ -175,8 +175,9 @@ function pageWindow(page: number, totalPages: number): PageSlot[] {
  * control rather than five.
  *
  * `page` is 0-based, like the API and the ?page= param; the buttons are
- * labelled from 1. Leave `range` out where the page prints its own count and
- * its size is fixed - the search grid does.
+ * labelled from 1. Leave `range` out where a list has no page size to offer;
+ * every list in the app passes one, so the bar normally carries the range label
+ * and the Per page select together.
  */
 function PaginationBar({
   page,
@@ -206,8 +207,8 @@ function PaginationBar({
     <div
       className={cn(
         'flex flex-wrap items-center gap-3',
-        // Nothing on the left to balance against, so the pager keeps the
-        // centred position it has always had on the search grid.
+        // Without a range there is nothing on the left to balance against, so
+        // the buttons centre rather than sitting against the right edge.
         range ? 'justify-between' : 'justify-center',
         className,
       )}

@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { Skeleton } from '@/components/ui/skeleton'
@@ -10,16 +11,57 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type { TopProduct } from '@/features/seller-metrics/api/useSellerMetrics'
+import { changeVsPrevious } from '@/features/seller-metrics/changeVsPrevious'
 import { formatPrice } from '@/lib/formatPrice'
+import { cn } from '@/lib/utils'
+
+/**
+ * One product against itself in the window before, in the same words and
+ * arrows the KPI tiles use. Direction is never colour alone.
+ */
+function VsPrevious({ product }: { product: TopProduct }) {
+  const change = changeVsPrevious(product.revenue, product.previousRevenue)
+
+  // A null `previousRevenue` means the product did not sell in the previous
+  // window, which is not the same as having sold nothing there: no figure was
+  // measured, so there is no change to report. "+100%" or "New" would both
+  // dress that absence up as something we worked out. The column is 74px wide
+  // and "No prior data" does not fit, so the dash carries it on screen and the
+  // tiles' own wording is kept for a screen reader.
+  if (change.kind === 'unknown') {
+    return (
+      <span className="text-[13px] text-muted-foreground">
+        <span aria-hidden>—</span>
+        <span className="sr-only">{change.label}</span>
+      </span>
+    )
+  }
+
+  const Arrow = change.kind === 'flat' ? Minus : change.up ? ArrowUp : ArrowDown
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center justify-end gap-0.5 text-[13px] font-bold tabular-nums',
+        change.kind === 'flat'
+          ? 'font-semibold text-muted-foreground'
+          : change.up
+            ? 'text-[#1f7a45]'
+            : 'text-[#b42318]',
+      )}
+    >
+      <Arrow className="size-2.5 shrink-0" strokeWidth={3.4} aria-hidden />
+      {change.label}
+    </span>
+  )
+}
 
 /**
  * The window's best sellers, ranked: position, product with its units and what
- * each one sold for, revenue, and share of the window.
+ * each one sold for, revenue, share of the window, and how each one moved
+ * against the window before.
  *
- * The design has a fifth column comparing each product with the previous
- * window. `TopProduct` carries no previous-window figure, and a delta is the
- * one number on a metrics screen that must never be guessed at, so the column
- * is left out rather than filled in.
+ * Fixed layout with deliberate widths: an auto layout let a long product title
+ * push the numeric columns out of the panel.
  */
 export function TopProductsTable({
   rows,
@@ -61,6 +103,9 @@ export function TopProductsTable({
             <TableHead className="h-8 px-2 text-xs font-semibold">Product</TableHead>
             <TableHead className="h-8 w-[92px] px-2 text-right text-xs font-semibold">Revenue</TableHead>
             <TableHead className="h-8 w-14 px-0 text-right text-xs font-semibold">Share</TableHead>
+            <TableHead className="h-8 w-[74px] pr-0 pl-2 text-right text-xs font-semibold">
+              vs prev
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -89,6 +134,9 @@ export function TopProductsTable({
               </TableCell>
               <TableCell className="px-0 py-3 text-right text-sm tabular-nums text-muted-foreground">
                 {Math.round(product.share * 100)}%
+              </TableCell>
+              <TableCell className="py-3 pr-0 pl-2 text-right">
+                <VsPrevious product={product} />
               </TableCell>
             </TableRow>
           ))}

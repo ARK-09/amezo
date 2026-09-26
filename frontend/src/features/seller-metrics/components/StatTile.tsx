@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, Minus, TriangleAlert } from 'lucide-react'
 
+import { changeVsPrevious } from '@/features/seller-metrics/changeVsPrevious'
 import { cn } from '@/lib/utils'
 
 /**
@@ -32,17 +33,11 @@ export function StatTile({
   /** One more line under the change, for what the headline number leaves out. */
   caption?: string
 }) {
-  // "There is no previous window" and "the previous window was zero" are
-  // different facts. Treating both as flat reported the biggest movement a
-  // seller can have - nothing to something - as no change at all.
-  const hasPrevious = previous != null
-  // A percentage against zero is a division by zero, so a move off zero shows
-  // its direction with a word rather than Infinity or an invented figure.
-  const fromZero = hasPrevious && previous === 0 && current !== 0
-  const change = hasPrevious && previous !== 0 ? ((current - previous) / previous) * 100 : 0
-  const flat = hasPrevious && !fromZero && Math.abs(change) < 0.05
-  const up = fromZero ? current > 0 : change > 0
-  const good = invertTone ? !up : up
+  // Shared with the Top products table's "vs prev" column, so the two places
+  // this dashboard compares windows cannot drift apart.
+  const change = changeVsPrevious(current, previous)
+  const muted = change.kind === 'unknown' || change.kind === 'flat'
+  const good = invertTone ? !change.up : change.up
 
   return (
     // A labelled group, so the number and its change read as one thing to a
@@ -59,29 +54,19 @@ export function StatTile({
         <p
           className={cn(
             'mt-1 inline-flex items-center gap-1 text-[13px] font-medium',
-            !hasPrevious || flat
-              ? 'text-muted-foreground'
-              : good
-                ? 'text-[#1f7a45]'
-                : 'text-[#b42318]',
+            muted ? 'text-muted-foreground' : good ? 'text-[#1f7a45]' : 'text-[#b42318]',
           )}
         >
-          {!hasPrevious ? null : flat ? (
+          {change.kind === 'unknown' ? null : change.kind === 'flat' ? (
             <Minus className="size-3.5" aria-hidden />
-          ) : up ? (
+          ) : change.up ? (
             <ArrowUp className="size-3.5" aria-hidden />
           ) : (
             <ArrowDown className="size-3.5" aria-hidden />
           )}
-          {!hasPrevious
-            ? 'No prior data'
-            : flat
-              ? 'Flat'
-              : fromZero
-                ? 'New'
-                : `${up ? '+' : ''}${change.toFixed(1)}%`}
+          {change.label}
           {/* Nothing to compare against means no "vs prev" to claim. */}
-          {hasPrevious && <span className="text-muted-foreground">vs prev</span>}
+          {change.kind !== 'unknown' && <span className="text-muted-foreground">vs prev</span>}
         </p>
       )}
       {caption && <p className="mt-1 text-xs text-muted-foreground">{caption}</p>}

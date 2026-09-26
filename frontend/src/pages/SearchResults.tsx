@@ -8,6 +8,7 @@ import { ResultsHeader } from '@/features/search/components/ResultsHeader'
 import { useSearchFilters } from '@/features/search/hooks/useSearchFilters'
 import { useCategories } from '@/features/reference/api/useCategories'
 import { useSearchProducts } from '@/features/search/api/useSearchProducts'
+import { PAGE_SIZES } from '@/features/search/schema/types'
 import { apiErrorMessage } from '@/lib/api/transient'
 
 export function SearchResults() {
@@ -27,9 +28,7 @@ export function SearchResults() {
       <main className="flex flex-1 flex-col gap-4">
         <ResultsHeader
           q={filters.q}
-          page={filters.page}
           totalElements={query.data?.totalElements ?? 0}
-          resultCount={query.data?.content.length ?? 0}
           sort={filters.sort}
           onSortChange={(sort) => update({ sort })}
         />
@@ -76,16 +75,24 @@ export function SearchResults() {
         {query.isSuccess && query.data.content.length > 0 && (
           <>
             <ProductGrid products={query.data.content} />
-            {/* No range label or Per page here: the header above the grid
-                already prints the range, and this list's size is fixed. */}
-            {query.data.totalPages > 1 && (
-              <PaginationBar
-                className="pt-4"
-                page={filters.page}
-                totalPages={query.data.totalPages}
-                onPageChange={setPage}
-              />
-            )}
+            {/* Shown whenever there are products, not only past page one: Per
+                page is how you get back from 50 to 5, and at 50 there is often
+                only one page. */}
+            <PaginationBar
+              className="pt-4"
+              page={filters.page}
+              totalPages={query.data.totalPages}
+              onPageChange={setPage}
+              range={{
+                totalElements: query.data.totalElements,
+                pageSize: filters.size,
+                sizes: PAGE_SIZES,
+                unit: 'products',
+                // A new page size makes the old offset meaningless, so update
+                // drops ?page= with it - as it does for any other filter.
+                onSizeChange: (size) => update({ size }),
+              }}
+            />
           </>
         )}
       </main>

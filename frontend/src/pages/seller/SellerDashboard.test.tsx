@@ -50,6 +50,24 @@ const LOW_STOCK_ROW = {
   updatedAt: '2026-01-01T00:00:00Z',
 }
 
+/** Five products, one per state the "vs prev" column has to tell apart. */
+const TOP_PRODUCT_DELTAS = [
+  { title: 'Rising Desk Lamp', units: 10, revenue: 1500, previousRevenue: 1000 },
+  { title: 'Falling Desk Fan', units: 6, revenue: 750, previousRevenue: 1000 },
+  // Null, not zero: it did not sell in the previous window, and nobody
+  // measured a zero for it.
+  { title: 'Brand New Mug', units: 4, revenue: 400, previousRevenue: null },
+  { title: 'Off Zero Kettle', units: 5, revenue: 250, previousRevenue: 0 },
+  { title: 'Steady Notebook', units: 3, revenue: 300, previousRevenue: 300 },
+  { title: 'Runaway Phone Case', units: 40, revenue: 999, previousRevenue: 8 },
+].map((row, index) => ({
+  productId: `dddddddd-0000-0000-0000-00000000000${index}`,
+  productRef: `delta-product-${index}`,
+  thumbnailUrl: null,
+  share: row.revenue / 3200,
+  ...row,
+}))
+
 describe('SellerDashboard', () => {
   beforeEach(() => resetSellerOrders())
 
@@ -95,6 +113,53 @@ describe('SellerDashboard', () => {
     // many it is actually showing rather than claiming a top five of four.
     expect(within(panel).getByText(/^Top 4 share of \$/)).toBeInTheDocument()
     expect(within(panel).getByText('$43,869.00')).toBeInTheDocument()
+  })
+
+  it('compares each top product with the same product in the window before', async () => {
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/metrics/top-products', () =>
+        HttpResponse.json(TOP_PRODUCT_DELTAS),
+      ),
+    )
+    renderPage()
+
+    const panel = (await screen.findByText('Top products')).closest('section')!
+    await within(panel).findByText('Rising Desk Lamp')
+    expect(within(panel).getByRole('columnheader', { name: 'vs prev' })).toBeInTheDocument()
+    // Row 0 is the header; the five products follow in the order sent.
+    const [, rising, falling, unsold, offZero, steady, runaway] =
+      within(panel).getAllByRole('row')
+
+    // A previous figure and a current one: a percentage, with an arrow so the
+    // direction is never colour alone.
+    const up = within(rising).getByText('+50.0%')
+    expect(up).toHaveClass('text-[#1f7a45]')
+    expect(up.querySelector('svg')).not.toBeNull()
+    const down = within(falling).getByText('-25.0%')
+    expect(down).toHaveClass('text-[#b42318]')
+    expect(down.querySelector('svg')).not.toBeNull()
+
+    // No previous figure at all: nothing was measured, so nothing is claimed -
+    // not "New", and certainly not a percentage worked out against nothing.
+    expect(within(unsold).getByText('No prior data')).toBeInTheDocument()
+    expect(within(unsold).queryByText('New')).not.toBeInTheDocument()
+    // The dash stands in for the words on screen, and no percentage is invented.
+    expect(within(unsold).getAllByRole('cell').at(-1)).toHaveTextContent('—No prior data')
+
+    // A measured zero is a different fact: a move off nothing, in the same
+    // word the KPI tiles use, because a percentage here divides by zero.
+    const off = within(offZero).getByText('New')
+    expect(off).toHaveClass('text-[#1f7a45]')
+    expect(off.querySelector('svg')).not.toBeNull()
+
+    // Unchanged is flat, and reads as flat rather than as +0.0%.
+    expect(within(steady).getByText('Flat')).toHaveClass('text-muted-foreground')
+
+    // A rise has no ceiling, but the column does: past 999% it states the
+    // bound rather than spilling a five-digit figure into the Share column.
+    expect(within(runaway).getByText('>999%')).toHaveClass('text-[#1f7a45]')
+
+    expect(panel.textContent).not.toMatch(/Infinity|NaN/)
   })
 
   it('builds its queue widgets from the existing lists, not new endpoints', async () => {

@@ -3,7 +3,6 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { apiClient, type ProblemDetail } from '@/lib/api/client'
 import type { components } from '@/lib/api/schema'
 
-import { PAGE_SIZE } from '../schema/types'
 import type { SearchFilters } from '../schema/types'
 
 export const searchKeys = {
@@ -28,7 +27,7 @@ export function useSearchProducts(filters: SearchFilters) {
             inStockOnly: filters.inStockOnly || undefined,
             sort: filters.sort,
             page: filters.page,
-            size: PAGE_SIZE,
+            size: filters.size,
           },
         },
       })

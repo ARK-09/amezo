@@ -75,11 +75,15 @@ export function metricsFor(from: string, to: string): SellerMetrics {
   }
 }
 
+// previousRevenue is the same product in the window before. One product is
+// deliberately null - it did not sell then, which is a fact rather than a zero,
+// and it is the case the table has to render as "no comparison" rather than as
+// a 100% rise.
 const TOP_PRODUCTS: Omit<TopProduct, 'share'>[] = [
-  { productId: '22222222-2222-2222-2222-222222222222', productRef: '14-ultrabook-laptop-16gb-ram', title: '14" Ultrabook Laptop, 16GB RAM', thumbnailUrl: null, units: 31, revenue: 27869 },
-  { productId: '55555555-5555-5555-5555-555555555555', productRef: 'mechanical-keyboard-hot-swappable', title: 'Mechanical Keyboard, Hot-Swappable', thumbnailUrl: null, units: 58, revenue: 8642 },
-  { productId: '11111111-1111-1111-1111-111111111111', productRef: 'wireless-noise-cancelling-headphones', title: 'Wireless Noise-Cancelling Headphones', thumbnailUrl: null, units: 44, revenue: 5719 },
-  { productId: '33333333-3333-3333-3333-333333333333', productRef: 'ceramic-non-stick-cookware-set-10-piece', title: 'Ceramic Non-Stick Cookware Set (10-piece)', thumbnailUrl: null, units: 22, revenue: 1639 },
+  { productId: '22222222-2222-2222-2222-222222222222', productRef: '14-ultrabook-laptop-16gb-ram', title: '14" Ultrabook Laptop, 16GB RAM', thumbnailUrl: null, units: 31, revenue: 27869, previousRevenue: 21444 },
+  { productId: '55555555-5555-5555-5555-555555555555', productRef: 'mechanical-keyboard-hot-swappable', title: 'Mechanical Keyboard, Hot-Swappable', thumbnailUrl: null, units: 58, revenue: 8642, previousRevenue: 9310 },
+  { productId: '11111111-1111-1111-1111-111111111111', productRef: 'wireless-noise-cancelling-headphones', title: 'Wireless Noise-Cancelling Headphones', thumbnailUrl: null, units: 44, revenue: 5719, previousRevenue: null },
+  { productId: '33333333-3333-3333-3333-333333333333', productRef: 'ceramic-non-stick-cookware-set-10-piece', title: 'Ceramic Non-Stick Cookware Set (10-piece)', thumbnailUrl: null, units: 22, revenue: 1639, previousRevenue: 1636 },
 ]
 
 export function topProducts(limit: number): TopProduct[] {
