@@ -1,3 +1,11 @@
+/*
+ * Upstream uses Tailwind's bare `data-open:` / `data-active:` / `data-horizontal:`
+ * variants. Those compile to attribute-presence selectors ([data-open]), but the
+ * Radix primitives emit data-state="open" and data-orientation="horizontal", so
+ * the rules never matched: dialogs had no transition and the selected tab looked
+ * like the rest. Only the variant selectors are changed; the classes are as
+ * shipped.
+ */
 "use client"
 
 import * as React from "react"
@@ -38,7 +46,7 @@ function ScrollBar({
       data-orientation={orientation}
       orientation={orientation}
       className={cn(
-        "flex touch-none p-px transition-colors select-none data-horizontal:h-2.5 data-horizontal:flex-col data-horizontal:border-t data-horizontal:border-t-transparent data-vertical:h-full data-vertical:w-2.5 data-vertical:border-l data-vertical:border-l-transparent",
+        "flex touch-none p-px transition-colors select-none data-[orientation=horizontal]:h-2.5 data-[orientation=horizontal]:flex-col data-[orientation=horizontal]:border-t data-[orientation=horizontal]:border-t-transparent data-[orientation=vertical]:h-full data-[orientation=vertical]:w-2.5 data-[orientation=vertical]:border-l data-[orientation=vertical]:border-l-transparent",
         className
       )}
       {...props}

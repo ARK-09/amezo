@@ -100,6 +100,11 @@ export function SellerAuthProvider({ children }: { children: ReactNode }) {
     // content). If any API call 401s, the cookie is gone/expired, so drop
     // the local flag too and let the route guard redirect to sign-in.
     function onUnauthorized() {
+      // Except in demo mode, where there is no cookie to lose: the boot check
+      // above already opts out, but this listener did not, so the 401 that
+      // GET /sessions/current returns for a visitor signed the demo seller
+      // straight back out again.
+      if (DEMO_AUTH) return
       forgetStoredSession()
       setSeller(null)
     }

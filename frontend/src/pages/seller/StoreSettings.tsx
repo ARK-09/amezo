@@ -1,5 +1,5 @@
 import { Check, Store } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -77,12 +77,17 @@ export function StoreSettings() {
   const update = useUpdateMyStore()
 
   const [draft, setDraft] = useState<Draft | null>(null)
+  const [seededFrom, setSeededFrom] = useState<string | null>(null)
 
   // Re-seed whenever the saved profile changes, so a successful save becomes
-  // the new baseline and the form stops reading as dirty.
-  useEffect(() => {
-    if (query.data) setDraft(draftFrom(query.data))
-  }, [query.data])
+  // the new baseline and the form stops reading as dirty. Derived during
+  // render rather than in an effect: an effect would paint the stale draft
+  // once before correcting it.
+  const savedAt = query.data?.updatedAt ?? null
+  if (query.data && savedAt !== seededFrom) {
+    setSeededFrom(savedAt)
+    setDraft(draftFrom(query.data))
+  }
 
   const baseline = useMemo(() => (query.data ? draftFrom(query.data) : null), [query.data])
   const dirty = Boolean(draft && baseline && JSON.stringify(draft) !== JSON.stringify(baseline))

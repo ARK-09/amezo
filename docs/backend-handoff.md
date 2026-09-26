@@ -50,7 +50,7 @@ should be added.
 | GET | `/api/v1/sellers/me/products` | `q`, `status`, `categorySlug`, `stockBelow`, `sort`, `page`, `size`. Supersedes the unversioned one, which takes no parameters and caps at 100. |
 | GET | `/api/v1/sellers/me/orders` | `q`, `status`, `sort`, `page`, `size`. |
 | GET | `/api/v1/sellers/me/orders/{orderId}` | |
-| PATCH | `/api/v1/sellers/me/orders/{orderId}` | **Replaces `POST /sellers/me/orders/{id}/ship`**, which put the verb in the path. |
+| PATCH | `/api/v1/sellers/me/orders/{orderId}` | **Replaces `POST /sellers/me/orders/{id}/ship`**, which put the verb in the path. Body carries `parcels`/`packedBy` for PACKED and `handoverMethod`/`hub` for SHIPPED. `trackingNumber` is **not** writable — the design says it is issued by the platform on handover. |
 | PATCH | `/products/{productRef}` | Accept `status` (`ACTIVE\|DRAFT\|ARCHIVED`) on the existing endpoint. |
 
 ### Metrics
@@ -106,6 +106,10 @@ visitor hash for dedupe) plus a daily rollup the metrics endpoints read;
 serving the charts off the raw table will not hold.
 
 ## State transitions
+
+The unversioned seller endpoints previously declared their own inline
+`[PLACED, SHIPPED, DELIVERED]`. They describe the same column, so they now
+reference the shared `OrderStatus` too.
 
 **Order** — `PLACED → PACKED → SHIPPED → IN_TRANSIT → OUT_FOR_DELIVERY →
 DELIVERED`. Seller may drive `PLACED→PACKED` (takes `parcels`) and
@@ -164,6 +168,15 @@ Terminal: `REFUNDED`, `REPLACEMENT_SENT`, `DECLINED`, `CANCELLED`.
 - **Replacement orders.** `REPLACEMENT_SENT` implies a replacement shipment. The
   design does not say whether that is a new order or a reshipment of the
   original, and the contract deliberately does not guess. Needs a decision.
+- **Seller-initiated refunds.** The order panel in the designs has a "Refunded"
+  stage in its compose box, which would let a seller refund an order without the
+  buyer raising anything. The refund resource is buyer-raised today, so that
+  stage is not built. If it is wanted, it needs either
+  `POST /api/v1/sellers/me/refund-requests` or a flag on the existing create
+  endpoint, plus a rule for who may raise one against whom.
+- **Handover hubs.** `hub` is a free string in the contract because the design
+  lists three fixed warehouses with no source. If hubs are real entities they
+  want `GET /api/v1/hubs` and an id rather than a label.
 - **Category conflict.** The seller product designs use free-text categories
   (`Headphones`, `Earbuds`, `Speakers`); the app moved to system categories with
   slugs. The contract uses the system `Category`. The designs' labels are not

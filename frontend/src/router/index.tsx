@@ -15,6 +15,7 @@ import { SearchResults } from '@/pages/SearchResults'
 import { StoreFront } from '@/pages/StoreFront'
 import { SellerAddProduct } from '@/pages/seller/SellerAddProduct'
 import { SellerOrderDetail } from '@/pages/seller/SellerOrderDetail'
+import { SellerDashboard } from '@/pages/seller/SellerDashboard'
 import { SellerOrders } from '@/pages/seller/SellerOrders'
 import { SellerProductDetail } from '@/pages/seller/SellerProductDetail'
 import { SellerProducts } from '@/pages/seller/SellerProducts'
@@ -60,7 +61,8 @@ export const router = createBrowserRouter([
     element: <SellerPortalLayout />,
     children: [
       // /seller on its own rendered the portal shell around an empty outlet.
-      { index: true, element: <Navigate to="/seller/products" replace /> },
+      { index: true, element: <Navigate to="/seller/dashboard" replace /> },
+      { path: 'dashboard', element: <SellerDashboard /> },
       { path: 'products', element: <SellerProducts /> },
       // 'new' before ':productId' for the reader's sake - React Router ranks a
       // static segment above a dynamic one whatever the order here, but nobody

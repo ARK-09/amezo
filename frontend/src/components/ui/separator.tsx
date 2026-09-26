@@ -1,3 +1,11 @@
+/*
+ * Upstream uses Tailwind's bare `data-open:` / `data-active:` / `data-horizontal:`
+ * variants. Those compile to attribute-presence selectors ([data-open]), but the
+ * Radix primitives emit data-state="open" and data-orientation="horizontal", so
+ * the rules never matched: dialogs had no transition and the selected tab looked
+ * like the rest. Only the variant selectors are changed; the classes are as
+ * shipped.
+ */
 "use client"
 
 import * as React from "react"
@@ -16,7 +24,7 @@ function Separator({
       decorative={decorative}
       orientation={orientation}
       className={cn(
-        "shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch",
+        "shrink-0 bg-border data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:w-px data-[orientation=vertical]:self-stretch",
         className
       )}
       {...props}

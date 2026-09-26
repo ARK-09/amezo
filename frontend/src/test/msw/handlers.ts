@@ -12,6 +12,7 @@ import { systemCategories } from './fixtures/categories'
 import { currentLastCheckoutDetails } from './fixtures/checkoutDetails'
 import { mockCountries } from './fixtures/countries'
 import { productIdForPurchasedLine, purchasedLineFor } from './fixtures/purchases'
+import { categoryBreakdown, metricsFor, topProducts } from './fixtures/sellerMetrics'
 import {
   TAKEN_HANDLES,
   getStoreProfile,
@@ -86,6 +87,22 @@ export const handlers = [
   // --- /api/v1 --------------------------------------------------------------
   // These endpoints do not exist on the backend yet; see docs/backend-handoff.md.
   // They run only under VITE_USE_MSW and in vitest.
+
+  http.get('http://localhost:8080/api/v1/sellers/me/metrics', ({ request }) => {
+    const url = new URL(request.url)
+    return HttpResponse.json(
+      metricsFor(url.searchParams.get('from')!, url.searchParams.get('to')!),
+    )
+  }),
+
+  http.get('http://localhost:8080/api/v1/sellers/me/metrics/top-products', ({ request }) => {
+    const url = new URL(request.url)
+    return HttpResponse.json(topProducts(Number(url.searchParams.get('limit') ?? 5)))
+  }),
+
+  http.get('http://localhost:8080/api/v1/sellers/me/metrics/category-breakdown', () =>
+    HttpResponse.json(categoryBreakdown()),
+  ),
 
   http.get('http://localhost:8080/api/v1/sellers/me/store', () =>
     HttpResponse.json(getStoreProfile()),
