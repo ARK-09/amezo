@@ -151,3 +151,85 @@ export function summaryOf(order: SellerOrderDetail) {
     status: order.status,
   }
 }
+
+// --- /api/v1/sellers/me/orders ---------------------------------------------
+// Derived from the same store the unversioned endpoints serve. The older
+// fixture carries no address or recipient (the old screens never showed one),
+// so those are filled in here rather than duplicating the seed.
+
+type SellerOrderRow = components['schemas']['SellerOrderRow']
+type SellerOrderRowDetail = components['schemas']['SellerOrderRowDetail']
+
+function recipientFor(order: SellerOrderDetail): string {
+  const [name] = order.buyerEmail.split('@')
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
+function addressFor(order: SellerOrderDetail) {
+  return {
+    fullName: recipientFor(order),
+    line1: '418 Harrison Street',
+    line2: null,
+    city: 'Seattle',
+    state: 'WA',
+    postalCode: '98109',
+    country: 'US',
+  }
+}
+
+function referenceFor(order: SellerOrderDetail): string {
+  return `ord_${order.id.replace(/-/g, '').slice(-8)}`
+}
+
+export function sellerOrderRowOf(order: SellerOrderDetail): SellerOrderRow {
+  return {
+    id: order.id,
+    reference: referenceFor(order),
+    buyerEmail: order.buyerEmail,
+    recipientName: recipientFor(order),
+    placedAt: order.placedAt,
+    status: order.status,
+    itemCount: order.lines.reduce((sum, line) => sum + line.quantity, 0),
+    total: order.total,
+    currency: 'USD',
+    destination: 'Seattle, WA',
+    trackingNumber: order.trackingNumber ?? null,
+    hasOpenRefund: false,
+  }
+}
+
+export function sellerOrderRowDetailOf(order: SellerOrderDetail): SellerOrderRowDetail {
+  // lineTotal is optional on the older shape; derive it when it is absent.
+  const lineTotalOf = (line: SellerOrderDetail['lines'][number]) =>
+    line.lineTotal ?? line.unitPrice * line.quantity
+  const subtotal = order.lines.reduce((sum, line) => sum + lineTotalOf(line), 0)
+  return {
+    ...sellerOrderRowOf(order),
+    lines: order.lines.map((line) => ({
+      ...line,
+      productRef: null,
+      sku: null,
+      lineTotal: lineTotalOf(line),
+    })),
+    subtotal,
+    shipping: 0,
+    tax: 0,
+    total: order.total,
+    shippingAddress: addressFor(order),
+    shipment: {
+      carrier: order.trackingNumber ? 'Amezo Logistics' : null,
+      trackingNumber: order.trackingNumber ?? null,
+      trackingUrl: null,
+      estimatedDeliveryAt: null,
+      deliveredAt: order.status === 'DELIVERED' ? order.shippedAt ?? null : null,
+      deliveryNote: null,
+    },
+    packedAt: null,
+    parcels: null,
+    refundRequests: [],
+  }
+}
+
+export function listSellerOrderRows(): SellerOrderRow[] {
+  return listSellerOrders().map(sellerOrderRowOf)
+}

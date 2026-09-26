@@ -2099,14 +2099,22 @@ components:
         refundRequests:
           type: array
           items: { $ref: '#/components/schemas/RefundRequestSummary' }
+    HandoverMethod:
+      type: string
+      enum: [AMEZO_PICKUP, HUB_DROPOFF, LOCKER_DROP]
     UpdateSellerOrder:
       type: object
       required: [status]
       properties:
         status: { $ref: '#/components/schemas/OrderStatus' }
+        # PLACED -> PACKED
         parcels: { type: integer, minimum: 1 }
-        trackingNumber: { type: string }
-        carrier: { type: string }
+        packedBy: { type: string }
+        # PACKED -> SHIPPED. The tracking number is issued by the platform on
+        # handover, not typed by the seller, so it is not writable here.
+        handoverMethod: { $ref: '#/components/schemas/HandoverMethod' }
+        hub: { type: string }
+        # Shown to the buyer on the order's timeline.
         note: { type: string }
 
     MetricPoint:

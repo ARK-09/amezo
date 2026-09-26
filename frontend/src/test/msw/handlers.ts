@@ -12,7 +12,14 @@ import { systemCategories } from './fixtures/categories'
 import { currentLastCheckoutDetails } from './fixtures/checkoutDetails'
 import { mockCountries } from './fixtures/countries'
 import { productIdForPurchasedLine, purchasedLineFor } from './fixtures/purchases'
-import { findSellerOrder, listSellerOrders, summaryOf, updateSellerOrder } from './fixtures/sellerOrders'
+import {
+  findSellerOrder,
+  listSellerOrderRows,
+  listSellerOrders,
+  sellerOrderRowDetailOf,
+  summaryOf,
+  updateSellerOrder,
+} from './fixtures/sellerOrders'
 import {
   addSellerProduct,
   addSellerVariant,
@@ -67,6 +74,84 @@ export const handlers = [
   // --- /api/v1 --------------------------------------------------------------
   // These endpoints do not exist on the backend yet; see docs/backend-handoff.md.
   // They run only under VITE_USE_MSW and in vitest.
+
+  http.get('http://localhost:8080/api/v1/sellers/me/orders', ({ request }) => {
+    const url = new URL(request.url)
+    const q = url.searchParams.get('q')?.toLowerCase()
+    const status = url.searchParams.get('status')
+    const sort = url.searchParams.get('sort') ?? 'newest'
+    const page = Number(url.searchParams.get('page') ?? 0)
+    const size = Number(url.searchParams.get('size') ?? 20)
+
+    let rows = listSellerOrderRows().filter((row) => {
+      if (status && row.status !== status) return false
+      if (q && !`${row.reference} ${row.recipientName} ${row.buyerEmail}`.toLowerCase().includes(q)) {
+        return false
+      }
+      return true
+    })
+
+    const by: Record<string, (a: typeof rows[number], b: typeof rows[number]) => number> = {
+      newest: (a, b) => b.placedAt.localeCompare(a.placedAt),
+      oldest: (a, b) => a.placedAt.localeCompare(b.placedAt),
+      total_desc: (a, b) => b.total - a.total,
+      total_asc: (a, b) => a.total - b.total,
+    }
+    rows = [...rows].sort(by[sort] ?? by.newest)
+
+    return HttpResponse.json({
+      content: rows.slice(page * size, page * size + size),
+      page,
+      totalElements: rows.length,
+      totalPages: Math.ceil(rows.length / size) || 1,
+    })
+  }),
+
+  http.get('http://localhost:8080/api/v1/sellers/me/orders/:orderId', ({ params }) => {
+    const order = findSellerOrder(params.orderId as string)
+    if (!order) {
+      return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
+    }
+    return HttpResponse.json(sellerOrderRowDetailOf(order))
+  }),
+
+  http.patch('http://localhost:8080/api/v1/sellers/me/orders/:orderId', async ({ params, request }) => {
+    const body = (await request.json()) as { status: string; parcels?: number; note?: string }
+    const order = findSellerOrder(params.orderId as string)
+    if (!order) {
+      return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
+    }
+
+    // The same state machine the contract describes: the seller owns packing
+    // and handover, and nothing else.
+    const legal =
+      (body.status === 'PACKED' && order.status === 'PLACED') ||
+      (body.status === 'SHIPPED' && ['PLACED', 'PACKED'].includes(order.status))
+    if (!legal) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/illegal-transition',
+          title: 'Illegal transition',
+          status: 409,
+          detail: `Cannot move from ${order.status} to ${body.status}`,
+        },
+        { status: 409 },
+      )
+    }
+
+    const updated = updateSellerOrder(order.id, {
+      status: body.status as typeof order.status,
+      ...(body.status === 'SHIPPED'
+        ? { trackingNumber: `AZ${order.id.replace(/-/g, '').slice(-8).toUpperCase()}`, shippedAt: new Date().toISOString() }
+        : {}),
+    })!
+    const detail = sellerOrderRowDetailOf(updated)
+    return HttpResponse.json({
+      ...detail,
+      packedAt: body.status === 'PACKED' ? new Date().toISOString() : detail.packedAt,
+      parcels: body.parcels ?? detail.parcels,
+    })
+  }),
 
   http.get('http://localhost:8080/api/v1/sellers/me/products', ({ request }) => {
     const url = new URL(request.url)
