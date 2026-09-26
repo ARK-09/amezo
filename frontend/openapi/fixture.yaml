@@ -684,7 +684,7 @@ paths:
       parameters:
         - name: status
           in: query
-          schema: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+          schema: { $ref: '#/components/schemas/OrderStatus' }
         - name: page
           in: query
           schema: { type: integer, default: 0 }
@@ -1474,7 +1474,7 @@ components:
         buyerEmail: { type: string }
         placedAt: { type: string, format: date-time }
         total: { type: number }
-        status: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+        status: { $ref: '#/components/schemas/OrderStatus' }
     SellerOrderSummaryPage:
       type: object
       required: [content, page, totalElements, totalPages]
@@ -1562,7 +1562,7 @@ components:
         buyerEmail: { type: string }
         placedAt: { type: string, format: date-time }
         total: { type: number }
-        status: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+        status: { $ref: '#/components/schemas/OrderStatus' }
         trackingNumber: { type: string, nullable: true }
         shippedAt: { type: string, format: date-time, nullable: true }
         lines:
