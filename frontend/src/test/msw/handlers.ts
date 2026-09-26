@@ -23,6 +23,15 @@ import {
   patchStoreProfile,
 } from './fixtures/storeProfile'
 import {
+  findStoreByHandle,
+  followStore,
+  isFollowing,
+  listingsWithStore,
+  publicStoreOf,
+  storeProductsPage,
+  unfollowStore,
+} from './fixtures/stores'
+import {
   addRefundRequest,
   canTransition,
   findRefundRequest,
@@ -87,6 +96,24 @@ function notFound() {
   )
 }
 
+function unauthorized() {
+  return HttpResponse.json(
+    {
+      type: 'https://api/errors/unauthorized',
+      title: 'Unauthorized',
+      status: 401,
+      detail: 'Session is missing, expired, or invalid',
+    },
+    { status: 401 },
+  )
+}
+
+/** The signed-in buyer, or null - the same mock cookie the other routes read. */
+function currentBuyer() {
+  const identity = currentSessionIdentity()
+  return identity?.identityType === 'BUYER' ? identity : null
+}
+
 export const handlers = [
 
   // --- /api/v1 --------------------------------------------------------------
@@ -142,6 +169,102 @@ export const handlers = [
     }
 
     return HttpResponse.json(patchStoreProfile(body))
+  }),
+
+  /**
+   * The public storefront header. Everything countable on it is counted off the
+   * same catalogue the listings endpoint below serves, so the stats strip cannot
+   * disagree with the grid under it.
+   */
+  http.get('http://localhost:8080/api/v1/stores/:handle', ({ params }) => {
+    const store = findStoreByHandle(String(params.handle))
+    if (!store) return notFound()
+
+    // null, not false: a signed-out visitor is not following this store and
+    // cannot be asked to, which is a different answer from "following: no".
+    const buyer = currentBuyer()
+    const following = buyer ? isFollowing(buyer.identityId, store.id!) : null
+
+    return HttpResponse.json(publicStoreOf(store, following))
+  }),
+
+  http.get('http://localhost:8080/api/v1/stores/:handle/products', ({ params, request }) => {
+    const store = findStoreByHandle(String(params.handle))
+    if (!store) return notFound()
+
+    const url = new URL(request.url)
+    return HttpResponse.json(
+      storeProductsPage(store.id!, {
+        q: url.searchParams.get('q'),
+        category: url.searchParams.get('category'),
+        sort: url.searchParams.get('sort'),
+        page: url.searchParams.get('page'),
+        size: url.searchParams.get('size'),
+      }),
+    )
+  }),
+
+  /**
+   * Follow, and unfollow, are the same route in two verbs and both are
+   * idempotent - the button is optimistic, so a double click has to land on the
+   * state it shows rather than on a 409. Buyer-scoped like the other
+   * buyer-only routes: with no buyer session the mock answers 401, because a
+   * follow belongs to somebody.
+   */
+  http.put('http://localhost:8080/api/v1/stores/:handle/follow', ({ params }) => {
+    const buyer = currentBuyer()
+    if (!buyer) return unauthorized()
+    const store = findStoreByHandle(String(params.handle))
+    if (!store) return notFound()
+
+    followStore(buyer.identityId, store.id!)
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.delete('http://localhost:8080/api/v1/stores/:handle/follow', ({ params }) => {
+    const buyer = currentBuyer()
+    if (!buyer) return unauthorized()
+    const store = findStoreByHandle(String(params.handle))
+    if (!store) return notFound()
+
+    unfollowStore(buyer.identityId, store.id!)
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  /**
+   * A question for the seller. Accepted for delivery, not answered: nothing
+   * reads it back, so nothing is stored. The bounds are the contract's, checked
+   * here because a mock that accepts anything is how a form ships without the
+   * error states the real endpoint will show it.
+   */
+  http.post('http://localhost:8080/api/v1/stores/:handle/messages', async ({ params, request }) => {
+    // Checked before the handle lookup, the way a security filter runs ahead of
+    // the controller. The seller answers to the address on the caller's account,
+    // so there has to be one.
+    if (!currentBuyer()) return unauthorized()
+
+    const store = findStoreByHandle(String(params.handle))
+    if (!store) return notFound()
+
+    const body = (await request.json()) as { subject?: string; body?: string }
+    const errors: { field: string; reason: string }[] = []
+
+    const subject = body.subject ?? ''
+    if (subject.length > 120) errors.push({ field: 'subject', reason: 'at most 120 characters' })
+
+    const message = body.body ?? ''
+    // Trimmed for the lower bound: ten spaces is not ten characters of question.
+    if (message.trim().length < 10) errors.push({ field: 'body', reason: 'at least 10 characters' })
+    else if (message.length > 2000) errors.push({ field: 'body', reason: 'at most 2000 characters' })
+
+    if (errors.length > 0) {
+      return HttpResponse.json(
+        { type: 'https://api/errors/validation', title: 'Validation failed', status: 422, errors },
+        { status: 422 },
+      )
+    }
+
+    return new HttpResponse(null, { status: 202 })
   }),
 
   http.get('http://localhost:8080/api/v1/sellers/me/orders', ({ request }) => {
@@ -1025,7 +1148,9 @@ export const handlers = [
       return true
     })
 
-    const content = filtered.slice(page * size, page * size + size)
+    // Store refs brought up to date, so a card links to the handle the store has
+    // now rather than the one the catalogue fixture was written with.
+    const content = listingsWithStore(filtered.slice(page * size, page * size + size))
 
     return HttpResponse.json({
       content,

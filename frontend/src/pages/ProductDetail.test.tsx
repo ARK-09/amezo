@@ -1,10 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { CartProvider } from '@/features/cart/context/CartContext'
+import { productDetails } from '@/test/msw/fixtures/productDetails'
+import { server } from '@/test/msw/server'
 
 import { ProductDetail } from './ProductDetail'
 
@@ -70,6 +73,42 @@ describe('ProductDetail', () => {
 
     await userEvent.click(screen.getByRole('tab', { name: /Reviews/ }))
     expect(await screen.findByText('No reviews yet.')).toBeInTheDocument()
+  })
+
+  /**
+   * The storefront is addressed by a handle now. Both links to it on this page - the
+   * breadcrumb crumb and "Sold by" - take it from the product's store ref; the display
+   * name beside them is a label, not a key.
+   */
+  it('links to the storefront by handle', async () => {
+    renderPage(HEADPHONES_SLUG)
+    await screen.findByRole('heading', { name: /Wireless/ })
+
+    const links = screen.getAllByRole('link', { name: 'Aurora Audio' })
+    expect(links).toHaveLength(2)
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', '/stores/aurora-audio')
+    }
+  })
+
+  /**
+   * `store` is optional in the contract. Without it the links fall back to the display
+   * name, which the store route resolves - the one thing they must not do is guess a
+   * handle by slugifying the name.
+   */
+  it('falls back to the display-name URL when the product names no store', async () => {
+    const detail = { ...productDetails[HEADPHONES_SLUG] }
+    delete detail.store
+    server.use(
+      http.get('http://localhost:8080/products/:productRef', () => HttpResponse.json(detail)),
+    )
+
+    renderPage(HEADPHONES_SLUG)
+    await screen.findByRole('heading', { name: /Wireless/ })
+
+    for (const link of screen.getAllByRole('link', { name: 'Aurora Audio' })) {
+      expect(link).toHaveAttribute('href', '/stores/Aurora%20Audio')
+    }
   })
 
   it('adds the selected variant and quantity to the cart', async () => {

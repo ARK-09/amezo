@@ -92,7 +92,11 @@ export function Landing() {
         onRetry={() => deals.refetch()}
       />
 
-      <PromoTiles category={firstCategory} brand={heroProducts[0]?.brandName} />
+      <PromoTiles
+        category={firstCategory}
+        brand={heroProducts[0]?.brandName}
+        store={heroProducts[0]?.store}
+      />
 
       <DealRail
         id="rail-fresh"

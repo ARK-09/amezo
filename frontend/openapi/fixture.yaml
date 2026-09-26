@@ -1050,6 +1050,130 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
 
+  /api/v1/stores/{handle}/products:
+    get:
+      operationId: getStoreProducts
+      description: >-
+        A store's own listings, paged and filtered server-side. Replaces reading
+        a page of GET /products and matching on brandName in the browser, which
+        capped a storefront at whatever fitted in one catalogue page and matched
+        a display string rather than a key.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/StoreHandle' }
+        - name: q
+          in: query
+          description: Searches within this store only - title, brand and category.
+          schema: { type: string }
+        - name: category
+          in: query
+          description: A category slug from GET /categories.
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [relevance, priceAsc, priceDesc, rating] }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductSummaryPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/stores/{handle}/messages:
+    post:
+      operationId: messageStore
+      description: >-
+        Send the seller a question about their store. Accepted for delivery
+        rather than answered inline - where the seller reads it (email today, an
+        inbox later) is the platform's business, not the buyer's.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/StoreHandle' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                subject: { type: string, maxLength: 120 }
+                body: { type: string, minLength: 10, maxLength: 2000 }
+      responses:
+        '202':
+          description: Accepted
+        '401':
+          description: >-
+            Buyer session required. The seller answers to the address on the
+            caller's account, and an endpoint that emails sellers on behalf of
+            anonymous callers is a spam relay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/stores/{handle}/follow:
+    put:
+      operationId: followStore
+      description: >-
+        Follow this store. Idempotent - following an already-followed store
+        succeeds rather than erroring, so a double click cannot desync the
+        button from the server.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/StoreHandle' }
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    delete:
+      operationId: unfollowStore
+      description: Stop following. Idempotent in the same way as PUT.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/StoreHandle' }
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
   /api/v1/sellers/me/metrics:
     get:
       operationId: getSellerMetrics
@@ -1325,6 +1449,10 @@ components:
         slug: { type: string }
         title: { type: string }
         brandName: { type: string }
+        # The store that lists this product. Cards link by store.handle; before
+        # this existed the storefront had to scan the catalogue and match on
+        # brandName, which is a display string and not a key.
+        store: { $ref: '#/components/schemas/StoreRef' }
         category: { $ref: '#/components/schemas/Category' }
         priceFrom: { type: number }
         thumbnailUrl: { type: string, nullable: true }
@@ -1626,6 +1754,9 @@ components:
         sellerId: { type: string, format: uuid }
         title: { type: string }
         brandName: { type: string, nullable: true }
+        # The store that lists this product, so the page can link to the storefront
+        # by handle. brandName is a display string and cannot address anything.
+        store: { $ref: '#/components/schemas/StoreRef' }
         description: { type: string, nullable: true }
         category: { $ref: '#/components/schemas/Category' }
         images:
@@ -2013,6 +2144,18 @@ components:
         logoUrl: { type: string, nullable: true }
         status: { $ref: '#/components/schemas/StoreStatus' }
         vacationNote: { type: string }
+    StorePolicies:
+      type: object
+      description: >-
+        Seller-authored copy shown on the storefront. Free text, not enforced by
+        the platform - a null field is simply not shown rather than rendered as
+        a promise the seller never made.
+      properties:
+        shipping: { type: string, nullable: true }
+        returns: { type: string, nullable: true }
+        warranty: { type: string, nullable: true }
+        shipsFrom: { type: string, nullable: true }
+
     PublicStore:
       type: object
       required: [id, name, handle, status, productCount]
@@ -2031,6 +2174,26 @@ components:
         inStockCount: { type: integer }
         averageRating: { type: number, nullable: true }
         ratingCount: { type: integer }
+        policies: { $ref: '#/components/schemas/StorePolicies' }
+        # The categories this store actually lists, for the storefront's filter
+        # chips. Not derivable client-side once the listings are paged - a page
+        # of results only knows its own page - and the system category list would
+        # offer categories this seller does not sell.
+        categories:
+          type: array
+          items: { $ref: '#/components/schemas/Category' }
+        # When the seller joined Amezo - the storefront prints "Since 2021".
+        # Distinct from StoreProfile.foundedYear, which is when the business began.
+        joinedAt: { type: string, format: date-time, nullable: true }
+        # Share of ratings the platform counts as positive, 0-100. Null until
+        # there are enough ratings to say anything honest.
+        positiveRatingPct: { type: number, nullable: true }
+        # The UI buckets this into "Under 2h" and the like. A number, not a
+        # display string, so the wording stays the client's business.
+        medianResponseMinutes: { type: integer, nullable: true }
+        # Whether the CALLER follows this store. Null for a signed-out visitor,
+        # who is not following it and cannot be asked to.
+        following: { type: boolean, nullable: true }
 
     SellerProductRow:
       type: object

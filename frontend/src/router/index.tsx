@@ -1,4 +1,4 @@
-import { Navigate, createBrowserRouter } from 'react-router'
+import { Navigate, createBrowserRouter, type RouteObject } from 'react-router'
 
 import { BuyerLayout } from '@/components/layout/BuyerLayout'
 import { Account } from '@/pages/Account'
@@ -12,7 +12,7 @@ import { MyOrders } from '@/pages/MyOrders'
 import { ProductDetail } from '@/pages/ProductDetail'
 import { RefundRequest } from '@/pages/RefundRequest'
 import { SearchResults } from '@/pages/SearchResults'
-import { StoreFront } from '@/pages/StoreFront'
+import { StoreFrontRoute } from '@/features/store/components/StoreFrontRoute'
 import { SellerAddProduct } from '@/pages/seller/SellerAddProduct'
 import { SellerOrderDetail } from '@/pages/seller/SellerOrderDetail'
 import { SellerDashboard } from '@/pages/seller/SellerDashboard'
@@ -25,7 +25,7 @@ import { SellerSignIn } from '@/pages/seller/SellerSignIn'
 import { StoreSettings } from '@/pages/seller/StoreSettings'
 import { SellerVerify } from '@/pages/seller/SellerVerify'
 
-export const router = createBrowserRouter([
+export const routes: RouteObject[] = [
   {
     element: <BuyerLayout />,
     children: [
@@ -34,7 +34,9 @@ export const router = createBrowserRouter([
       // The segment is a slug. A legacy id still resolves and the page redirects to
       // the slug URL, so old links land on the product instead of an error.
       { path: '/products/:productRef', element: <ProductDetail /> },
-      { path: '/stores/:brand', element: <StoreFront /> },
+      // The segment is a store handle. A legacy display name still resolves and the
+      // route redirects to the handle URL - see StoreFrontRoute.
+      { path: '/stores/:handle', element: <StoreFrontRoute /> },
       { path: '/checkout', element: <Checkout /> },
       { path: '/sign-in', element: <BuyerSignIn /> },
       // Where the buyer magic-link email points - see BuyerAuthService.
@@ -76,4 +78,6 @@ export const router = createBrowserRouter([
       { path: 'store', element: <StoreSettings /> },
     ],
   },
-])
+]
+
+export const router = createBrowserRouter(routes)

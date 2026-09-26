@@ -42,7 +42,12 @@ should be added.
 |---|---|---|
 | GET | `/api/v1/sellers/me/store` | |
 | PATCH | `/api/v1/sellers/me/store` | Partial. `409 handle-taken`, checked before the unique index so the seller learns which field collided. |
-| GET | `/api/v1/stores/{handle}` | Public. Replaces deriving a storefront from `brandName`. |
+| GET | `/api/v1/stores/{handle}` | Public. Replaces deriving a storefront from `brandName`. Now also returns `policies`, `categories` (the store's own facets), `joinedAt`, `positiveRatingPct`, `medianResponseMinutes` and `following`. |
+| GET | `/api/v1/stores/{handle}/products` | **New.** The store's listings, paged and filtered server-side: `q` (within this store only), `category`, `sort`, `page`, `size`. Replaces reading one page of `GET /products` and matching `brandName` in the browser, which capped a storefront at whatever fitted in that page. |
+| PUT | `/api/v1/stores/{handle}/follow` | **New.** Buyer session. Idempotent — following twice succeeds, so a double click cannot desync the button. |
+| DELETE | `/api/v1/stores/{handle}/follow` | **New.** Idempotent in the same way. |
+| GET | `/api/v1/stores?name=` | **Worth considering.** Legacy `/stores/{displayName}` links are kept alive client-side by reading one page of `GET /products` and matching `brandName` — exactly the reach the old storefront had, so no link that worked before breaks, but a store whose listings fall outside that page will not resolve. A server-side resolver (this, or letting `/api/v1/stores/{handle}` accept a legacy name) would make it exact. Only needed for as long as the old URLs are supported. |
+| POST | `/api/v1/stores/{handle}/messages` | **New.** Buyer session. `{subject?: ≤120, body: 10–2000}` → `202`. Accepted for delivery; where the seller reads it is the platform's business. |
 
 ### Seller catalog and orders
 | Method | Path | Notes |
@@ -84,6 +89,22 @@ timestamps `requested_at`, `approved_at`, `declined_at`, `return_received_at`,
 FK, `quantity`. Partial-unique index on `order_line_id` where the parent
 request is open, which is what makes the duplicate-request `409` enforceable
 rather than a race.
+
+**Changed: `product`/`ProductSummary`** — the summary now carries `store`
+(`{id, name, handle}`). Cards link to a storefront by handle; `brandName` is a
+display string, not a key, and matching on it is what forced the catalogue scan.
+
+**New: `store_follow`** — `buyer_id`, `store_id`, `followed_at`, unique on the
+pair so PUT is idempotent. `PublicStore.following` reads it for the caller and is
+**null for a signed-out visitor** — not `false`, which would claim they are a
+known non-follower.
+
+**Store facts the storefront prints** — `positiveRatingPct` (share of ratings the
+platform counts as positive, null until there are enough to say anything honest),
+`medianResponseMinutes` (a number, not a phrase: the UI buckets it into "Under
+2h"), `joinedAt` (when the seller joined Amezo, distinct from
+`store_profile.founded_year`, which is when the business began), and
+`store_profile` columns for the four `policies` fields.
 
 **Derived on the order lists** — `GET /api/v1/orders` returns
 `openRefundRequestId` and `openRefundStatus` per row, and

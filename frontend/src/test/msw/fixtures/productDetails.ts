@@ -48,6 +48,9 @@ export const productDetails: Record<string, ProductDetail> = Object.fromEntries(
       sellerId: p.sellerId,
       title: p.title,
       brandName: p.brandName,
+      // The same store ref the summary carries, so the detail page links to the
+      // storefront by handle rather than by the display name beside it.
+      store: p.store,
       description: DESCRIPTIONS[p.id] ?? '',
       category: p.category,
       images: [],
