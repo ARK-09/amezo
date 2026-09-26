@@ -55,6 +55,7 @@ should be added.
 | POST | `/api/v1/sellers/me/store/images` | **New.** Presigned slot for the storefront `COVER` or `LOGO`, mirroring the product-image flow. `coverUrl`/`logoUrl` were writable on the profile with no way to produce a URL to write. |
 | POST | `/api/v1/sellers/me/store/images/confirm` | **New.** Promotes the upload and returns the updated `StoreProfile`, so the caller need not re-read it. |
 | PUT | `/api/v1/products/{productId}/images/order` | **New.** The whole ordering at once — a per-image position PATCH cannot express a swap without a transient duplicate position. First id is the cover. |
+| GET | `/api/v1/reviews/eligibility?productRefs=` | **Worth considering.** My Orders' inline review block asks `GET /products/{productRef}/reviews/eligibility` once per distinct product in an expanded order, because nothing on `BuyerOrderLine` says whether it has been reviewed. Bounded by the lines in one order, and the answer is cached and shared with the product page, so it is not urgent — but a batched form would collapse it to one request. |
 | PATCH | `/api/v1/reviews/{reviewId}` | **New.** Author only; rating and body editable, the purchase it belongs to is not, or a review could be moved onto another product after the fact. |
 | GET | `/api/v1/sellers/me/orders?productId=` | **New filter.** Narrows the queue to orders containing one product, for the product drawer's "Active orders" block. |
 

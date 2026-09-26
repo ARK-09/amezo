@@ -164,10 +164,13 @@ export function OrderCard({
             </button>
           )}
           {order.status === 'DELIVERED' && preview[0] && (
-            <Link to={`/products/${preview[0].productRef}?review=1`} className={PILL}>
+            // Reviewing lives inside the expanded card now, so this opens it rather
+            // than leaving for the product page - where ?review=1 was read by nothing
+            // and the buyer arrived at a Reviews tab they still had to find.
+            <button type="button" onClick={onToggle} className={cn(PILL, 'bg-background')}>
               <Star className="size-3.5" strokeWidth={1.8} />
               Write a review
-            </Link>
+            </button>
           )}
           {preview[0] && (
             <Link to={`/products/${preview[0].productRef}`} className={PILL}>

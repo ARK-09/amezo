@@ -13,15 +13,9 @@ import { formatPrice } from '@/lib/formatPrice'
 import { formatShortDate } from '@/lib/formatDate'
 
 import { formatAddressLines } from './formatAddress'
+import { OrderReviews } from './OrderReviews'
 import { ProgressSteps, type ProgressStep } from './ProgressSteps'
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-xs font-bold tracking-[0.06em] text-muted-foreground uppercase">
-      {children}
-    </h3>
-  )
-}
+import { SectionLabel } from './SectionLabel'
 
 /**
  * The expanded half of an order card. Kept in its own component because it is
@@ -156,6 +150,10 @@ export function OrderCardDetail({ orderId }: { orderId: string }) {
           </div>
         </div>
       </div>
+
+      {/* Reviewing is offered once the order has arrived, which is also when the
+          server starts accepting one. */}
+      {order.status === 'DELIVERED' && <OrderReviews lines={order.lines} />}
     </div>
   )
 }
