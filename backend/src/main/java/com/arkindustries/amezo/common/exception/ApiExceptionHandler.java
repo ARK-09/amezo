@@ -47,6 +47,17 @@ public class ApiExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(UnprocessableEntityException.class)
+    public ProblemDetail handleUnprocessableEntity(UnprocessableEntityException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle(ex.getTitle());
+        problem.setType(ex.getType());
+        if (ex.getErrors() != null && !ex.getErrors().isEmpty()) {
+            problem.setProperty("errors", ex.getErrors());
+        }
+        return problem;
+    }
+
     @ExceptionHandler(PayloadTooLargeException.class)
     public ProblemDetail handlePayloadTooLarge(PayloadTooLargeException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.PAYLOAD_TOO_LARGE, ex.getMessage());

@@ -7,13 +7,17 @@ import com.arkindustries.amezo.catalog.dto.ImageResponse;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlRequest;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlResponse;
 import com.arkindustries.amezo.catalog.dto.CreateVariantRequest;
+import com.arkindustries.amezo.catalog.dto.ProductOpenOrdersResponse;
+import com.arkindustries.amezo.catalog.dto.ReorderImagesRequest;
 import com.arkindustries.amezo.catalog.dto.SellerProductDetailResponse;
+import com.arkindustries.amezo.catalog.dto.SellerProductRowPageResponse;
 import com.arkindustries.amezo.catalog.dto.SellerProductSummaryResponse;
 import com.arkindustries.amezo.catalog.dto.SellerVariantResponse;
 import com.arkindustries.amezo.catalog.dto.UpdateProductRequest;
 import com.arkindustries.amezo.catalog.dto.UpdateVariantRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,16 +26,27 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
- * Auth-gated seller product management - list/create/delete + the image
- * upload pair. No edit endpoint, matching the time-boxed scope this was
- * built under (add and delete only). All routes already permitted for
- * hasRole("SELLER") by SecurityConfig.
+ * Auth-gated seller product management - list/create/update/delete, variants,
+ * and the image upload pair.
+ *
+ * Two path prefixes live here. The unversioned routes are the ones the buyer
+ * app and the portal already call and are left exactly as they were; the
+ * /api/v1 ones are new surface from frontend/openapi/fixture.yaml. Both are
+ * served by the same SellerProductService - the version is where a route
+ * answers, not a second copy of the feature.
+ *
+ * SecurityConfig permits all of these for hasRole("SELLER"). The /api/v1 ones
+ * needed saying explicitly: /sellers/me/** does not match /api/v1/sellers/me/**,
+ * so without their own matchers they fall through to anyRequest().denyAll().
  */
 @RestController
 public class SellerProductController {
@@ -86,6 +101,46 @@ public class SellerProductController {
     @GetMapping("/sellers/me/products")
     public Page<SellerProductSummaryResponse> listMine(Pageable pageable) {
         return sellerProductService.listMine(pageable);
+    }
+
+    /**
+     * The products screen's own read - the contract's sellerListProductsV1.
+     *
+     * Under /api/v1 because that is where the contract puts it and where all new
+     * routes go; the unversioned listMine above is untouched and still serves its
+     * existing callers. Same controller, same service: this is one more route
+     * onto the seller's catalogue, not a second implementation of it.
+     */
+    @GetMapping("/api/v1/sellers/me/products")
+    public SellerProductRowPageResponse listRows(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) ProductStatus status,
+            @RequestParam(required = false) String categorySlug,
+            @RequestParam(required = false) Integer stockBelow,
+            @RequestParam(required = false) String sort,
+            // Defaults spelled out because the contract declares them (page 0,
+            // size 20) and Spring's own defaults are not the same.
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return sellerProductService.listRows(
+                q, status, categorySlug, stockBelow, sort, PageRequest.of(page, size));
+    }
+
+    /**
+     * The whole image ordering at once. PUT because it replaces the ordering
+     * rather than adjusting it - see ReorderImagesRequest on why a per-image
+     * PATCH cannot express a swap.
+     */
+    @PutMapping("/api/v1/products/{productId}/images/order")
+    public List<SellerProductDetailResponse.SellerImageResponse> reorderImages(
+            @PathVariable UUID productId, @Valid @RequestBody ReorderImagesRequest request) {
+        return sellerProductService.reorderImages(productId, request.imageIds());
+    }
+
+    /** Backs the product drawer's Open orders tile and Active orders list. */
+    @GetMapping("/api/v1/sellers/me/products/{productId}/open-orders")
+    public ProductOpenOrdersResponse openOrders(@PathVariable UUID productId) {
+        return sellerProductService.openOrders(productId);
     }
 
     // Create lives under /sellers/me/, not /products, matching

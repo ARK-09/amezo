@@ -57,6 +57,7 @@ import {
   addSellerVariant,
   confirmSellerImage,
   reorderSellerImages,
+  findProductOpenOrders,
   findSellerProductDetail,
   MAX_IMAGES_PER_PRODUCT,
   reserveSellerImage,
@@ -1117,6 +1118,18 @@ export const handlers = [
     const detail = findSellerProductDetail(params.productId as string)
     return detail ? HttpResponse.json(detail) : notFound()
   }),
+
+  // The product drawer's Open orders tile and Active orders list.
+  http.get(
+    'http://localhost:8080/api/v1/sellers/me/products/:productId/open-orders',
+    ({ params }) => {
+      const productId = params.productId as string
+      if (!findSellerProductDetail(productId)) {
+        return notFound()
+      }
+      return HttpResponse.json(findProductOpenOrders(productId))
+    },
+  ),
 
   // Absent fields are left alone, same as the backend's PATCH semantics.
   http.patch('http://localhost:8080/products/:productId', async ({ params, request }) => {

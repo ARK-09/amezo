@@ -23,7 +23,7 @@ function renderPage() {
 
 /** The four queue widgets, in the order a browser that has never been told
  *  otherwise shows them. */
-const WIDGET_TITLES = ['Waiting to ship', 'Low stock', 'Recent orders', 'Refunds to review']
+const WIDGET_TITLES = ['Orders to ship', 'Low stock', 'Recent orders', 'Refund requests']
 
 function widgetTitles() {
   return screen
@@ -44,6 +44,10 @@ const LOW_STOCK_ROW = {
   status: 'ACTIVE',
   variantCount: 1,
   totalStock: 0,
+  // Not "the product's SKU" - sku is a column on variant, so the API names the
+  // one variant that actually needs reordering. Null is a real answer for a
+  // product with nothing priced, and the widget has to survive it.
+  lowestStockVariant: { id: 'v0', label: 'Default', sku: 'AUR-BP-BLK', stockQty: 0 },
   priceFrom: 10,
   priceTo: 10,
   createdAt: '2026-01-01T00:00:00Z',
@@ -74,11 +78,69 @@ describe('SellerDashboard', () => {
   it('shows the headline measures with their change against the previous window', async () => {
     renderPage()
 
-    for (const label of ['Revenue', 'Orders', 'Conversion']) {
+    for (const label of ['Revenue', 'Orders']) {
       const tile = await screen.findByRole('group', { name: label })
       // Direction is words and an arrow, never colour alone.
       expect(within(tile).getByText(/vs prev/)).toBeInTheDocument()
     }
+  })
+
+  it('heads the page with the store, not with the word Dashboard', async () => {
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Aurora Audio', level: 1 })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Dashboard', level: 1 })).not.toBeInTheDocument()
+  })
+
+  it('names the window it is showing and the window it is comparing against', async () => {
+    renderPage()
+    await screen.findByRole('tab', { name: 'Last 7 days' })
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Last 7 days' }))
+
+    // Every measure on the page carries a delta; without this clause the
+    // window those deltas are against is left for the seller to infer.
+    expect(
+      await screen.findByText(/· compared with the previous 7 days$/),
+    ).toBeInTheDocument()
+  })
+
+  it('says the conversion rate is not tracked rather than printing a number for it', async () => {
+    renderPage()
+
+    const tile = await screen.findByRole('group', { name: 'Conversion rate' })
+    expect(within(tile).getByText('Not tracked yet')).toBeInTheDocument()
+    expect(within(tile).getByText('Store views are not recorded')).toBeInTheDocument()
+    // Not a zero, not an estimate, and not a stale "vs prev" against either.
+    expect(within(tile).queryByText(/%/)).not.toBeInTheDocument()
+    expect(within(tile).queryByText(/vs prev/)).not.toBeInTheDocument()
+    expect(within(tile).getByText('Not available')).toBeInTheDocument()
+  })
+
+  it('gives each chart panel the one fact its chart cannot state, and its total', async () => {
+    renderPage()
+
+    const revenue = (
+      await screen.findByRole('heading', { name: 'Revenue', level: 2 })
+    ).closest('section')!
+    // findBy, not getBy: the panel is on screen while its query is in flight,
+    // and a subtitle read off the series can only exist once the series does.
+    expect(await within(revenue).findByText(/^Peak day \$/)).toBeInTheDocument()
+    expect(within(revenue).getByText(/^\$[\d,]+\.\d\d$/)).toBeInTheDocument()
+
+    const orders = screen.getByRole('heading', { name: 'Orders per day', level: 2 })
+      .closest('section')!
+    expect(within(orders).getByText(/^\d+\.\d per day$/)).toBeInTheDocument()
+
+    // The top-products endpoint returns the best N and stops, so a full page
+    // only proves there were at least that many - it must not name a total
+    // nobody sent. The mock serves four against a limit of five, so this one
+    // is genuinely the whole list.
+    const top = (await screen.findByText('Top products by revenue')).closest('section')!
+    expect(within(top).getByText('Top 4 of 4 products selling')).toBeInTheDocument()
+
+    const categories = (await screen.findByText('Sales by category')).closest('section')!
+    expect(within(categories).getByText('3 categories selling')).toBeInTheDocument()
   })
 
   it('refetches when the range changes', async () => {
@@ -99,7 +161,7 @@ describe('SellerDashboard', () => {
   it('ranks top products by revenue share, with their units and a footer', async () => {
     renderPage()
 
-    const panel = (await screen.findByText('Top products')).closest('section')!
+    const panel = (await screen.findByText('Top products by revenue')).closest('section')!
     await within(panel).findByText('14" Ultrabook Laptop, 16GB RAM')
     // Row 0 is the header; the ranked products follow it in order.
     const rows = within(panel).getAllByRole('row')
@@ -123,7 +185,7 @@ describe('SellerDashboard', () => {
     )
     renderPage()
 
-    const panel = (await screen.findByText('Top products')).closest('section')!
+    const panel = (await screen.findByText('Top products by revenue')).closest('section')!
     await within(panel).findByText('Rising Desk Lamp')
     expect(within(panel).getByRole('columnheader', { name: 'vs prev' })).toBeInTheDocument()
     // Row 0 is the header; the five products follow in the order sent.
@@ -177,7 +239,7 @@ describe('SellerDashboard', () => {
     ])
     renderPage()
 
-    const panel = (await screen.findByText('Waiting to ship')).closest('section')!
+    const panel = (await screen.findByText('Orders to ship')).closest('section')!
     expect(await within(panel).findByText('Maya')).toBeInTheDocument()
   })
 
@@ -192,7 +254,7 @@ describe('SellerDashboard', () => {
     )
     renderPage()
 
-    const panel = (await screen.findByText('Top products')).closest('section')!
+    const panel = (await screen.findByText('Top products by revenue')).closest('section')!
     expect(
       await within(panel).findByText("Couldn't load top products", {}, { timeout: 5000 }),
     ).toBeInTheDocument()
@@ -254,7 +316,7 @@ describe('SellerDashboard', () => {
     )
     renderPage()
 
-    const panel = (await screen.findByText('Top products')).closest('section')!
+    const panel = (await screen.findByText('Top products by revenue')).closest('section')!
     await waitFor(() =>
       expect(panel.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0),
     )
@@ -274,7 +336,7 @@ describe('SellerDashboard', () => {
     )
     renderPage()
 
-    const panel = (await screen.findByText('Top products')).closest('section')!
+    const panel = (await screen.findByText('Top products by revenue')).closest('section')!
     expect(await within(panel).findByText('No sales in this window.')).toBeInTheDocument()
     expect(panel.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0)
   })
@@ -292,7 +354,7 @@ describe('SellerDashboard', () => {
     )
     renderPage()
 
-    const panel = (await screen.findByText('Refunds to review')).closest('section')!
+    const panel = (await screen.findByText('Refund requests')).closest('section')!
     await waitFor(() =>
       expect(panel.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(5),
     )
@@ -305,7 +367,7 @@ describe('SellerDashboard', () => {
   })
 
   it('keeps both chart cards on a window with no points instead of vanishing them', async () => {
-    const zero = { views: 0, orders: 0, revenue: 0, conversionRate: 0, averageOrderValue: 0 }
+    const zero = { views: null, orders: 0, revenue: 0, conversionRate: null, averageOrderValue: 0 }
     server.use(
       http.get('http://localhost:8080/api/v1/sellers/me/metrics', ({ request }) => {
         const url = new URL(request.url)
@@ -326,7 +388,7 @@ describe('SellerDashboard', () => {
     ).closest('section')!
     expect(await within(revenue).findByText('No activity in this window.')).toBeInTheDocument()
 
-    const orders = screen.getByRole('heading', { name: 'Orders', level: 2 }).closest('section')!
+    const orders = screen.getByRole('heading', { name: 'Orders per day', level: 2 }).closest('section')!
     expect(within(orders).getByText('No activity in this window.')).toBeInTheDocument()
   })
 
@@ -382,7 +444,7 @@ describe('SellerDashboard', () => {
     ])
     renderPage()
 
-    const panel = (await screen.findByText('Waiting to ship')).closest('section')!
+    const panel = (await screen.findByText('Orders to ship')).closest('section')!
     const row = (await within(panel).findAllByRole('listitem'))[0]
     expect(within(row).getByText('Maya')).toBeInTheDocument()
     expect(within(row).getByText(/2 items/)).toBeInTheDocument()
@@ -395,7 +457,7 @@ describe('SellerDashboard', () => {
   it('draws the category split as a donut whose legend names every slice', async () => {
     renderPage()
 
-    const panel = (await screen.findByText('Revenue by category')).closest('section')!
+    const panel = (await screen.findByText('Sales by category')).closest('section')!
     const legend = await within(panel).findAllByRole('listitem')
     expect(legend).toHaveLength(3)
     // Identity is never colour alone: each slice is named, with its share and
@@ -465,25 +527,113 @@ describe('SellerDashboard', () => {
     expect(within(tile).queryByText(/below 10 units/)).not.toBeInTheDocument()
   })
 
+  it('names the variant to restock under each low-stock product, not the product alone', async () => {
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/products', () =>
+        HttpResponse.json({
+          content: [
+            {
+              ...LOW_STOCK_ROW,
+              id: 'p1',
+              title: 'Aurora Buds Pro',
+              totalStock: 0,
+              lowestStockVariant: { id: 'v1', label: 'Black', sku: 'AUR-BP-BLK', stockQty: 0 },
+            },
+            {
+              ...LOW_STOCK_ROW,
+              id: 'p2',
+              title: 'Aurora Studio Monitor 5"',
+              totalStock: 9,
+              // The row's totalStock is the sum over every variant; the named
+              // one carries its own, smaller number. A widget that paired the
+              // sku with totalStock would tell the seller to order the wrong
+              // quantity.
+              lowestStockVariant: { id: 'v2', label: 'Pair', sku: 'AUR-SM5-PR', stockQty: 3 },
+            },
+          ],
+          page: 0,
+          totalElements: 2,
+          totalPages: 1,
+        }),
+      ),
+    )
+    renderPage()
+
+    const panel = (await screen.findByRole('heading', { name: 'Low stock', level: 2 })).closest(
+      'section',
+    )!
+    // selector: 'p' because the Restock link repeats the title in a sr-only
+    // span, which is deliberate and not the line under test.
+    const first = (
+      await within(panel).findByText('Aurora Buds Pro', { selector: 'p' })
+    ).closest('li')!
+    expect(within(first).getByText('AUR-BP-BLK')).toBeInTheDocument()
+
+    const second = within(panel)
+      .getByText('Aurora Studio Monitor 5"', { selector: 'p' })
+      .closest('li')!
+    expect(within(second).getByText('AUR-SM5-PR')).toBeInTheDocument()
+    // The stock pill still reports the product total, which is the alert the
+    // row is raising; the sku line is about which variant to reorder.
+    expect(within(second).getByText('9 left')).toBeInTheDocument()
+  })
+
+  it('leaves the second line off a product with no variant to name rather than inventing one', async () => {
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/products', () =>
+        HttpResponse.json({
+          content: [
+            {
+              ...LOW_STOCK_ROW,
+              id: 'p1',
+              title: 'Nothing priced yet',
+              totalStock: 0,
+              // No variant is priced and stocked, so there is no least-stocked
+              // one. It still reaches the low-stock list on a zero total.
+              lowestStockVariant: null,
+            },
+          ],
+          page: 0,
+          totalElements: 1,
+          totalPages: 1,
+        }),
+      ),
+    )
+    renderPage()
+
+    const panel = (await screen.findByRole('heading', { name: 'Low stock', level: 2 })).closest(
+      'section',
+    )!
+    const row = (
+      await within(panel).findByText('Nothing priced yet', { selector: 'p' })
+    ).closest('li')!
+    // The title, the alert and the action - and no placeholder dash standing in
+    // for a SKU this product does not have.
+    expect(within(row).getByText('Out of stock')).toBeInTheDocument()
+    expect(within(row).getByRole('link', { name: /Restock/ })).toBeInTheDocument()
+    expect(within(row).queryByText('—')).not.toBeInTheDocument()
+    expect(within(row).queryByText('AUR-BP-BLK')).not.toBeInTheDocument()
+  })
+
   it('moves a panel one place, and remembers it for the next visit', async () => {
     const first = renderPage()
     await screen.findByRole('heading', { name: 'Low stock', level: 2 })
 
     expect(widgetTitles()).toEqual([
-      'Waiting to ship',
+      'Orders to ship',
       'Low stock',
       'Recent orders',
-      'Refunds to review',
+      'Refund requests',
     ])
     // The first panel has nowhere earlier to go.
-    expect(screen.getByRole('button', { name: 'Move Waiting to ship earlier' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Move Orders to ship earlier' })).toBeDisabled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Move Low stock earlier' }))
     expect(widgetTitles()).toEqual([
       'Low stock',
-      'Waiting to ship',
+      'Orders to ship',
       'Recent orders',
-      'Refunds to review',
+      'Refund requests',
     ])
 
     // The order is this browser's preference, so it survives the page going away.
@@ -492,9 +642,9 @@ describe('SellerDashboard', () => {
     await screen.findByRole('heading', { name: 'Low stock', level: 2 })
     expect(widgetTitles()).toEqual([
       'Low stock',
-      'Waiting to ship',
+      'Orders to ship',
       'Recent orders',
-      'Refunds to review',
+      'Refund requests',
     ])
   })
 
@@ -504,10 +654,10 @@ describe('SellerDashboard', () => {
 
     await screen.findByRole('heading', { name: 'Low stock', level: 2 })
     expect(widgetTitles()).toEqual([
-      'Waiting to ship',
+      'Orders to ship',
       'Low stock',
       'Recent orders',
-      'Refunds to review',
+      'Refund requests',
     ])
   })
 })

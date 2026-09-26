@@ -10,6 +10,7 @@ export type SellerOrderRow = components['schemas']['SellerOrderRow']
 export type SellerOrderRowDetail = components['schemas']['SellerOrderRowDetail']
 export type UpdateSellerOrder = components['schemas']['UpdateSellerOrder']
 export type ProductStatus = components['schemas']['ProductStatus']
+export type ProductOpenOrders = components['schemas']['ProductOpenOrders']
 type SellerProductRowPage = components['schemas']['SellerProductRowPage']
 type SellerOrderRowPage = components['schemas']['SellerOrderRowPage']
 
@@ -30,6 +31,9 @@ export const sellerCatalogKeys = {
     [...sellerProductKeys.all, 'rows', filters] as const,
   orders: (filters: SellerOrderFilters) => [...sellerOrderKeys.all, 'rows', filters] as const,
   order: (orderId: string) => [...sellerOrderKeys.detail(orderId), 'v1'] as const,
+  // Under the product's own detail key, so deleting or editing a product drops
+  // its order picture with it rather than leaving a stale tile behind.
+  openOrders: (productId: string) => [...sellerProductKeys.detail(productId), 'open-orders'] as const,
 }
 
 export function useSellerProductRows(filters: SellerProductFilters) {
@@ -44,6 +48,30 @@ export function useSellerProductRows(filters: SellerProductFilters) {
       return data
     },
     placeholderData: keepPreviousData,
+  })
+}
+
+/**
+ * What is still owed on one product, for the product drawer's Open orders tile
+ * and Active orders list.
+ *
+ * Its own query rather than a field on the product detail: the drawer opens on
+ * a product the list already has, and the order picture is the slower, less
+ * cacheable half of it - keyed under the product so deleting one drops this
+ * with it.
+ */
+export function useProductOpenOrders(productId: string | undefined) {
+  return useQuery<ProductOpenOrders, ProblemDetail>({
+    queryKey: sellerCatalogKeys.openOrders(productId ?? ''),
+    enabled: Boolean(productId),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await apiClient.GET(
+        '/api/v1/sellers/me/products/{productId}/open-orders',
+        { signal, params: { path: { productId: productId! } } },
+      )
+      if (error) throw error
+      return data
+    },
   })
 }
 
