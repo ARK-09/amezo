@@ -51,6 +51,7 @@ import {
   addSellerProduct,
   addSellerVariant,
   confirmSellerImage,
+  reorderSellerImages,
   findSellerProductDetail,
   MAX_IMAGES_PER_PRODUCT,
   reserveSellerImage,
@@ -1063,6 +1064,27 @@ export const handlers = [
     if (!confirmSellerImage(imageId)) return notFound()
     return HttpResponse.json({ id: imageId, url: `https://mock-s3.local/stored/${imageId}`, position: 0 })
   }),
+  http.put(
+    'http://localhost:8080/api/v1/products/:productId/images/order',
+    async ({ params, request }) => {
+      const { imageIds } = (await request.json()) as { imageIds: string[] }
+      const result = reorderSellerImages(String(params.productId), imageIds)
+      if (result === 'not-found') return notFound()
+      if (result === 'mismatch') {
+        return HttpResponse.json(
+          {
+            type: 'about:blank',
+            title: 'Unprocessable Entity',
+            status: 422,
+            detail: 'The list must name every image of this product exactly once.',
+            errors: [{ field: 'imageIds', reason: 'must name every image exactly once' }],
+          },
+          { status: 422 },
+        )
+      }
+      return HttpResponse.json(findSellerProductDetail(String(params.productId))!.images)
+    },
+  ),
   http.post('http://localhost:8080/auth/seller/magic-link', async ({ request }) => {
     const { email } = (await request.json()) as { email: string }
     issueMagicLinkToken(email)

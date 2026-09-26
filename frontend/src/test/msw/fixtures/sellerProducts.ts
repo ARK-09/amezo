@@ -211,6 +211,32 @@ export function confirmSellerImage(imageId: string): boolean {
   return false
 }
 
+/**
+ * PUT /images/order: the whole ordering at once, so a swap never needs a
+ * transient duplicate position. Renumbers from zero in the order given, which
+ * makes the first id the cover.
+ */
+export function reorderSellerImages(
+  productId: string,
+  imageIds: string[],
+): 'not-found' | 'mismatch' | { ok: true } {
+  const detail = findSellerProductDetail(productId)
+  if (!detail) return 'not-found'
+
+  // Every image exactly once, and nothing from another product - a partial list
+  // would silently drop whatever it left out.
+  const current = detail.images.map((image) => image.id)
+  const given = new Set(imageIds)
+  if (given.size !== imageIds.length || given.size !== current.length) return 'mismatch'
+  if (current.some((id) => !given.has(id))) return 'mismatch'
+
+  detail.images = imageIds.map((id, position) => ({
+    ...detail.images.find((image) => image.id === id)!,
+    position,
+  }))
+  return { ok: true }
+}
+
 export function removeSellerImage(imageId: string): boolean {
   for (const detail of Object.values(details)) {
     if (detail.images.some((i) => i.id === imageId)) {
@@ -223,9 +249,11 @@ export function removeSellerImage(imageId: string): boolean {
 
 // --- /api/v1/sellers/me/products -------------------------------------------
 // Derived from the same store the unversioned endpoints serve, so the portal
-// list and the product form never disagree about what exists. Product status
-// is not persisted anywhere yet (see docs/backend-handoff.md); until the column
-// exists, a product with no live variant reads as a draft.
+// list and the product form never disagree about what exists - including about
+// status, which the form now writes. It used to be guessed here as "no variants
+// means draft", so a listing the seller had explicitly unpublished still read as
+// Active in their own catalogue. Absent means ACTIVE, matching what the create
+// endpoint does with an omitted status.
 
 type SellerProductRow = components['schemas']['SellerProductRow']
 
@@ -246,7 +274,7 @@ export function listSellerProductRows(): SellerProductRow[] {
       thumbnailUrl: summary.thumbnailUrl,
       imageCount: detail?.images.length ?? 0,
       category: summary.category,
-      status: variants.length === 0 ? 'DRAFT' : 'ACTIVE',
+      status: detail?.status ?? 'ACTIVE',
       variantCount: summary.variantCount,
       totalStock,
       priceFrom: prices.length ? Math.min(...prices) : undefined,
