@@ -78,10 +78,14 @@ describe('SellerProducts', () => {
   it('shows the empty state with no products', async () => {
     renderPage()
     expect(await screen.findByText('No products here')).toBeInTheDocument()
-    // Once in the header, once in the empty state.
-    for (const link of screen.getAllByRole('link', { name: 'Add product' })) {
-      expect(link).toHaveAttribute('href', '/seller/products/new')
-    }
+    // Once in the header, once in the empty state. Both open the add drawer
+    // rather than navigating to a separate page - the design's "same drawer in
+    // ADD mode".
+    const buttons = screen.getAllByRole('button', { name: 'Add product' })
+    expect(buttons).toHaveLength(2)
+
+    await userEvent.click(buttons[1])
+    expect(await screen.findByRole('dialog', { name: 'Product form' })).toBeInTheDocument()
   })
 
   it('lists products with their category, variants and stock', async () => {
@@ -93,7 +97,8 @@ describe('SellerProducts', () => {
     expect(screen.getByText('2')).toBeInTheDocument()
     // Price range across the variants, and their stock summed.
     expect(screen.getByText('$49.99–$59.99')).toBeInTheDocument()
-    expect(screen.getByText('11')).toBeInTheDocument()
+    // The design prints the stock with its unit, and pills it when it is low.
+    expect(screen.getByText('11 in stock')).toBeInTheDocument()
     expect(screen.getByText('Active')).toBeInTheDocument()
   })
 
@@ -115,7 +120,7 @@ describe('SellerProducts', () => {
     await screen.findByText('Trail Backpack')
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete Trail Backpack' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Keep' }))
+    await userEvent.click(screen.getByRole('button', { name: 'No' }))
 
     expect(screen.getByText('Trail Backpack')).toBeInTheDocument()
   })
@@ -126,7 +131,7 @@ describe('SellerProducts', () => {
     await screen.findByText('Trail Backpack')
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete Trail Backpack' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
 
     await waitFor(() => expect(screen.queryByText('Trail Backpack')).not.toBeInTheDocument())
     expect(await screen.findByText('No products here')).toBeInTheDocument()
@@ -207,7 +212,7 @@ describe('SellerProducts', () => {
     await screen.findByText('Trail Backpack')
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete Trail Backpack' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
 
     // The confirm popover closes as soon as the request settles, so without
     // this the row simply stayed put and read as a delete that had worked.
@@ -266,7 +271,11 @@ describe('SellerProducts', () => {
     const asked: (string | null)[] = []
     server.use(
       http.get('http://localhost:8080/api/v1/sellers/me/products', ({ request }) => {
-        asked.push(new URL(request.url).searchParams.get('size'))
+        const size = new URL(request.url).searchParams.get('size')
+        // The header's "N products · N active" line asks for size=1 twice -
+        // a count and one row, over the whole catalogue rather than the filtered
+        // page. Those are not the list request this test is about.
+        if (size !== '1') asked.push(size)
         return undefined // fall through to the default handler
       }),
     )
@@ -277,26 +286,44 @@ describe('SellerProducts', () => {
     for (const junk of ['10000', 'abc']) {
       const view = renderPage(`/seller/products?size=${junk}`)
       expect(await screen.findByText('Item 1')).toBeInTheDocument()
-      // Ten a page over eight rows: one page, and the label stops at eight.
-      expect(screen.getByText('Showing 1\u20138 of 8')).toBeInTheDocument()
+      // Five a page over eight rows - the design's default - so the first page
+      // stops at five.
+      expect(screen.getByText('Showing 1\u20135 of 8')).toBeInTheDocument()
       view.unmount()
     }
 
     expect(asked.length).toBeGreaterThan(0)
-    expect(asked.every((size) => size === '10')).toBe(true)
+    expect(asked.every((size) => size === '5')).toBe(true)
   })
 
-  it('opens the edit drawer with a link to the same form full page', async () => {
+  it('opens the edit drawer and expands it in place, with a way back', async () => {
     seed()
     renderPage()
     await screen.findByText('Trail Backpack')
 
     await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
 
-    const drawer = await screen.findByRole('dialog')
-    expect(within(drawer).getByRole('link', { name: /Full page/ })).toHaveAttribute(
-      'href',
-      '/seller/products/p1',
-    )
+    const drawer = await screen.findByRole('dialog', { name: 'Product form' })
+    // A button, not a link: expanding keeps the same panel mounted so nothing
+    // typed into the form is lost, where the old link opened a new browser tab.
+    await userEvent.click(within(drawer).getByRole('button', { name: /Full page/ }))
+    expect(within(drawer).getByRole('button', { name: /Back to panel/ })).toBeInTheDocument()
+
+    await userEvent.click(within(drawer).getByRole('button', { name: /Back to panel/ }))
+    expect(within(drawer).getByRole('button', { name: /Full page/ })).toBeInTheDocument()
+  })
+
+  it('opens the view drawer when a row is clicked, and swaps to the form from it', async () => {
+    seed()
+    renderPage()
+
+    await userEvent.click(await screen.findByText('Trail Backpack'))
+
+    const view = await screen.findByRole('dialog', { name: 'Product details' })
+    expect(within(view).getByText('Open orders')).toBeInTheDocument()
+
+    await userEvent.click(within(view).getByRole('button', { name: 'Edit product' }))
+    // A mode swap between two drawers, not a tab inside one.
+    expect(await screen.findByRole('dialog', { name: 'Product form' })).toBeInTheDocument()
   })
 })

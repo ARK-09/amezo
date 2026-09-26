@@ -95,6 +95,10 @@ function detailFor(summary: SellerProductSummary): SellerProductDetail {
       stockQty: 5 + i,
     })),
     images: [],
+    // The drawer's meta footer prints both. updatedAt starts equal to
+    // createdAt - a product nobody has edited was last changed when it was made.
+    createdAt: summary.createdAt,
+    updatedAt: summary.createdAt,
   }
 }
 
@@ -283,4 +287,70 @@ export function listSellerProductRows(): SellerProductRow[] {
       updatedAt: summary.createdAt,
     }
   })
+}
+
+/**
+ * Open orders per product, for the seller product drawer. Keyed by product id;
+ * a product with no entry has none, which is the common case and the empty
+ * state the design calls for.
+ */
+type ProductOpenOrders = components['schemas']['ProductOpenOrders']
+
+/**
+ * Demo open orders, on the same product the demo catalogue leads with, so the
+ * dev server shows the drawer's Active orders list rather than only its empty
+ * state. Cleared by resetProductOpenOrders() in tests, exactly as the product
+ * seed is, so no test inherits it.
+ */
+const DEMO_OPEN_ORDERS: Record<string, ProductOpenOrders> = {
+  '11111111-1111-1111-1111-111111111111': {
+    openOrderCount: 2,
+    reservedUnits: 4,
+    orders: [
+      {
+        orderId: 'c41d9a70-0000-4000-8000-000000000001',
+        orderLineId: 'c41d9a70-0000-4000-8000-00000000000a',
+        buyerEmail: 'm.okafor@example.com',
+        variantId: '11111111-variant-0',
+        variantLabel: 'Default',
+        quantity: 1,
+        status: 'PLACED',
+        placedAt: '2026-09-24T09:00:00.000Z',
+      },
+      {
+        orderId: 'c41d9a70-0000-4000-8000-000000000001',
+        orderLineId: 'c41d9a70-0000-4000-8000-00000000000b',
+        buyerEmail: 'm.okafor@example.com',
+        variantId: '11111111-variant-1',
+        variantLabel: 'Option 2',
+        quantity: 2,
+        status: 'PLACED',
+        placedAt: '2026-09-24T09:00:00.000Z',
+      },
+      {
+        orderId: '7b02e315-0000-4000-8000-000000000002',
+        orderLineId: '7b02e315-0000-4000-8000-00000000000a',
+        buyerEmail: 'j.lindqvist@example.com',
+        variantId: '11111111-variant-0',
+        variantLabel: 'Default',
+        quantity: 1,
+        status: 'SHIPPED',
+        placedAt: '2026-09-21T09:00:00.000Z',
+      },
+    ],
+  },
+}
+
+let openOrders: Record<string, ProductOpenOrders> = { ...DEMO_OPEN_ORDERS }
+
+export function resetProductOpenOrders(seed: Record<string, ProductOpenOrders> = {}) {
+  openOrders = { ...seed }
+}
+
+export function setProductOpenOrders(productId: string, value: ProductOpenOrders) {
+  openOrders[productId] = value
+}
+
+export function findProductOpenOrders(productId: string): ProductOpenOrders {
+  return openOrders[productId] ?? { openOrderCount: 0, reservedUnits: 0, orders: [] }
 }

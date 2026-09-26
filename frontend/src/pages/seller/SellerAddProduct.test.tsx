@@ -47,21 +47,27 @@ describe('SellerAddProduct', () => {
     await userEvent.type(screen.getByLabelText('Variant 1 price'), '19.99')
     await userEvent.type(screen.getByLabelText('Variant 1 stock quantity'), '10')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Publish product' }))
 
     expect(await screen.findByText('Products page')).toBeInTheDocument()
     expect(listSellerProducts()).toHaveLength(1)
     expect(listSellerProducts()[0]).toMatchObject({ title: 'Trail Backpack', variantCount: 1 })
   })
 
-  /** Number('') is 0, so an unpriced variant used to be created at $0.00. */
+  /**
+   * Number('') is 0, so an unpriced variant used to be created at $0.00. The
+   * refusal now happens before the click rather than after it: the design's
+   * single save is gated on the form being complete, and a variant priced at 0
+   * is not, so the button never becomes pressable and the footer says why.
+   */
   it('refuses a variant priced at zero', async () => {
     renderPage()
     await fillProduct({ price: '0', stockQty: '5' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByRole('button', { name: 'Publish product' })).toBeDisabled()
+    expect(screen.getByText('Still needs every variant field.')).toBeInTheDocument()
 
-    expect(screen.getByText('Variant 1 needs a price above 0.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Publish product' }))
     expect(listSellerProducts()).toHaveLength(0)
   })
 
@@ -70,7 +76,7 @@ describe('SellerAddProduct', () => {
     renderPage()
     await fillProduct({ price: '19.99', stockQty: '0' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Publish product' }))
 
     expect(await screen.findByText('Products page')).toBeInTheDocument()
     expect(listSellerProducts()).toHaveLength(1)
@@ -98,22 +104,24 @@ describe('SellerAddProduct', () => {
     renderPage()
     await fillProduct({ price: '19.99', stockQty: '5' })
 
-    await userEvent.click(screen.getByRole('switch', { name: 'Active' }))
-    expect(screen.getByText(/hidden from shoppers until you activate it/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    // The design's segmented Active/Draft pill, not a switch: a switch labelled
+    // "Active" leaves the off state nameless.
+    await userEvent.click(screen.getByRole('radio', { name: 'Draft' }))
+    expect(screen.getByRole('radio', { name: 'Draft' })).toHaveAttribute('aria-checked', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Publish product' }))
 
     expect(await screen.findByText('Products page')).toBeInTheDocument()
     expect(bodies.at(-1)).toMatchObject({ title: 'Trail Backpack', status: 'DRAFT' })
   })
 
-  /** The switch starts on, so the ordinary path still publishes. */
+  /** The pill starts on Active, so the ordinary path still publishes. */
   it('creates an active listing by default', async () => {
     const bodies = captureCreateBodies()
     renderPage()
     await fillProduct({ price: '19.99', stockQty: '5' })
 
-    expect(screen.getByRole('switch', { name: 'Active' })).toBeChecked()
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByRole('radio', { name: 'Active' })).toHaveAttribute('aria-checked', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Publish product' }))
 
     expect(await screen.findByText('Products page')).toBeInTheDocument()
     expect(bodies.at(-1)).toMatchObject({ status: 'ACTIVE' })

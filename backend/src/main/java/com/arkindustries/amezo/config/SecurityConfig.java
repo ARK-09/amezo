@@ -136,12 +136,18 @@ public class SecurityConfig {
                 // Listing the namespace once means a new endpoint under it is
                 // seller-only from the moment it exists.
                 .requestMatchers("/sellers/me/**").hasRole("SELLER")
-                // The same namespace under the /api/v1 prefix the contract uses
-                // for new endpoints. A separate line because the matcher above
-                // matches the path as written: without this, a new
-                // /api/v1/sellers/me/... route falls through to
-                // anyRequest().denyAll() and 403s however correct it is.
+                // The /api/v1 twin of the rule above. It is a separate matcher and
+                // not a widened pattern because "/sellers/me/**" does not match
+                // "/api/v1/sellers/me/...": the prefix is part of the path, so a new
+                // versioned route under the seller's own namespace would otherwise
+                // fall through to anyRequest().denyAll() and 403 with the endpoint
+                // sitting right there - the same trap POST /sellers/me/products fell
+                // into. Naming the namespace once covers every route added under it.
                 .requestMatchers("/api/v1/sellers/me/**").hasRole("SELLER")
+                // Replacing a product's image ordering is a seller write like the
+                // other /products/* writes below; the service 404s an id that isn't
+                // the caller's.
+                .requestMatchers(HttpMethod.PUT, "/api/v1/products/*/images/order").hasRole("SELLER")
                 .requestMatchers(HttpMethod.DELETE, "/products/*").hasRole("SELLER")
                 // Removing a variant or an image is a seller write like any other;
                 // the service resolves which product they belong to and 404s if it
@@ -168,7 +174,11 @@ public class SecurityConfig {
             @Value("${app.cors.allowed-origins}") String allowedOrigins) {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(List.of(allowedOrigins.split(",")));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE"));
+        // PUT is here for PUT /api/v1/products/{id}/images/order, the first route
+        // this API serves on that method. Without it the browser's preflight is
+        // refused and the call never reaches the endpoint - and only from a
+        // browser, so it passes every curl and fails in the app.
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE"));
         configuration.setAllowedHeaders(List.of("Content-Type"));
         configuration.setAllowCredentials(true); // the session cookie must travel cross-port in local dev
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

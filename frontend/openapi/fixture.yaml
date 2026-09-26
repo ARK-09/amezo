@@ -1579,6 +1579,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/sellers/me/products/{productId}/open-orders:
+    get:
+      operationId: sellerProductOpenOrdersV1
+      description: >-
+        What is still owed on one product, for the product drawer's "Open
+        orders" tile and its Active orders list. Open means the order is PLACED
+        or SHIPPED - placed and not yet delivered. openOrderCount counts
+        distinct orders, while the list has one entry per line, so two lines of
+        the same product on one order are two rows and one order.
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductOpenOrders'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /api/v1/sellers/me/orders/{orderId}:
     get:
       operationId: sellerGetOrderV1
@@ -1808,6 +1835,10 @@ components:
         images:
           type: array
           items: { $ref: '#/components/schemas/SellerImage' }
+        # The drawer's meta footer prints both. updatedAt moves on every write
+        # to the product row, and the PATCH response carries the new value.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     UpdateProductRequest:
       type: object
       description: >
@@ -2532,6 +2563,32 @@ components:
         priceTo: { type: number }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    ProductOpenOrders:
+      type: object
+      required: [openOrderCount, reservedUnits, orders]
+      properties:
+        # Distinct orders, not lines - two lines of one product on one order are
+        # one order to pack and ship.
+        openOrderCount: { type: integer }
+        # Stock already promised away: the sum of every open line's quantity.
+        reservedUnits: { type: integer }
+        orders:
+          type: array
+          items:
+            type: object
+            required: [orderId, orderLineId, buyerEmail, variantId, quantity, status]
+            properties:
+              orderId: { type: string, format: uuid }
+              orderLineId: { type: string, format: uuid }
+              buyerEmail: { type: string }
+              variantId: { type: string, format: uuid }
+              # Null when the variant has been deleted since the purchase: the
+              # order still stands, so the line is shown without a label rather
+              # than dropped or given an invented one.
+              variantLabel: { type: string, nullable: true }
+              quantity: { type: integer }
+              status: { type: string, enum: [PLACED, SHIPPED] }
+              placedAt: { type: string, format: date-time }
     SellerProductRowPage:
       type: object
       required: [content, page, totalElements, totalPages]

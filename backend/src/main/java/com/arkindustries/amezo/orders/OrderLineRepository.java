@@ -40,4 +40,29 @@ public interface OrderLineRepository extends JpaRepository<OrderLine, UUID> {
             + "ORDER BY ol.createdAt ASC, ol.id ASC")
     List<OrderLine> findPurchases(
             @Param("productId") UUID productId, @Param("buyerIdentityId") UUID buyerIdentityId);
+
+    /**
+     * Backs ProductOpenOrdersQuery - the still-open lines against one product,
+     * for the seller's product drawer.
+     *
+     * The same OrderLine/Order join findPurchases uses, and for the same reason:
+     * the buyer's email and the order's status live on the order, order_line has
+     * no mapped association to it (both sides are plain id columns by design), so
+     * there is no property path to derive a method name from.
+     *
+     * Returns the pair rather than just the line, because the caller needs a
+     * field from each and fetching the orders afterwards would be one query per
+     * line. Element 0 is the OrderLine, element 1 is its Order.
+     *
+     * Statuses are passed in rather than hard-coded here so "open" is defined in
+     * one place - ProductOpenOrdersService - instead of being a literal buried in
+     * a query string.
+     */
+    @Query("SELECT ol, o FROM OrderLine ol, Order o "
+            + "WHERE o.id = ol.orderId "
+            + "AND ol.productIdSnapshot = :productId "
+            + "AND o.status IN :statuses "
+            + "ORDER BY o.placedAt DESC, ol.id ASC")
+    List<Object[]> findLinesForProductByOrderStatus(
+            @Param("productId") UUID productId, @Param("statuses") Collection<OrderStatus> statuses);
 }

@@ -8,7 +8,10 @@ import com.arkindustries.amezo.catalog.dto.ImageConfirmRequest;
 import com.arkindustries.amezo.catalog.dto.ImageResponse;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlRequest;
 import com.arkindustries.amezo.catalog.dto.ImageUploadUrlResponse;
+import com.arkindustries.amezo.catalog.dto.ProductOpenOrdersResponse;
 import com.arkindustries.amezo.catalog.dto.SellerProductDetailResponse;
+import com.arkindustries.amezo.catalog.dto.SellerProductRowPageResponse;
+import com.arkindustries.amezo.catalog.dto.SellerProductRowResponse;
 import com.arkindustries.amezo.catalog.dto.SellerProductSummaryResponse;
 import com.arkindustries.amezo.catalog.dto.SellerVariantResponse;
 import com.arkindustries.amezo.catalog.dto.UpdateProductRequest;
@@ -18,12 +21,16 @@ import com.arkindustries.amezo.common.exception.NotFoundException;
 import com.arkindustries.amezo.common.exception.PayloadTooLargeException;
 import com.arkindustries.amezo.common.exception.StorageCapReachedException;
 import com.arkindustries.amezo.common.exception.StorageUnavailableException;
+import com.arkindustries.amezo.common.exception.UnprocessableEntityException;
 import com.arkindustries.amezo.identity.api.CurrentSeller;
 import com.arkindustries.amezo.orders.api.OfferOrderHistoryQuery;
+import com.arkindustries.amezo.orders.api.OpenOrderLine;
+import com.arkindustries.amezo.orders.api.ProductOpenOrdersQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,12 +47,16 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
+import java.math.BigDecimal;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -73,6 +84,7 @@ public class SellerProductService {
     private final CategoryService categoryService;
     private final CurrentSeller currentSeller;
     private final OfferOrderHistoryQuery offerOrderHistory;
+    private final ProductOpenOrdersQuery productOpenOrders;
     private final S3Presigner s3Presigner;
     private final S3Client s3Client;
     private final String s3Bucket;
@@ -88,6 +100,7 @@ public class SellerProductService {
             CategoryService categoryService,
             CurrentSeller currentSeller,
             OfferOrderHistoryQuery offerOrderHistory,
+            ProductOpenOrdersQuery productOpenOrders,
             S3Presigner s3Presigner,
             S3Client s3Client,
             @Value("${app.s3.bucket}") String s3Bucket,
@@ -101,6 +114,7 @@ public class SellerProductService {
         this.categoryService = categoryService;
         this.currentSeller = currentSeller;
         this.offerOrderHistory = offerOrderHistory;
+        this.productOpenOrders = productOpenOrders;
         this.s3Presigner = s3Presigner;
         this.s3Client = s3Client;
         this.s3Bucket = s3Bucket;
@@ -134,6 +148,243 @@ public class SellerProductService {
                 product.getCreatedAt()));
     }
 
+    /**
+     * The seller's catalogue with the filtering the products screen needs - the
+     * contract's sellerListProductsV1, and the read that screen actually runs on.
+     *
+     * A second method beside listMine rather than a replacement for it: listMine
+     * backs the unversioned GET /sellers/me/products, whose response shape other
+     * callers already depend on, and it loads only what its own rows print. This
+     * one aggregates stock and price across every variant, which listMine has no
+     * use for and should not start paying for.
+     *
+     * Filtering and sorting happen in the database (ProductRepository.searchMine)
+     * because both read totals across a product's offers - a page of rows sorted
+     * by stock cannot be assembled by sorting one page of rows.
+     */
+    @Transactional(readOnly = true)
+    public SellerProductRowPageResponse listRows(
+            String q, ProductStatus status, String categorySlug, Integer stockBelow, String sort, Pageable pageable) {
+
+        UUID sellerId = currentSeller.sellerId();
+        String query = (q == null || q.isBlank()) ? null : q.trim();
+        String categoryFilter = (categorySlug == null || categorySlug.isBlank()) ? null : categorySlug.trim();
+
+        Page<Product> products = productRepository.searchMine(
+                sellerId,
+                query,
+                status != null ? status.name() : null,
+                categoryFilter,
+                stockBelow,
+                normalisedSort(sort),
+                // Unsorted on purpose: the query owns its ORDER BY, and a Sort here
+                // would be appended after it and silently win.
+                PageRequest.of(pageable.getPageNumber(), pageable.getPageSize()));
+
+        List<UUID> productIds = products.map(Product::getId).toList();
+        Map<UUID, List<Variant>> variantsByProduct = productIds.isEmpty()
+                ? Map.of()
+                : variantRepository.findByProductIdIn(productIds).stream()
+                        .collect(Collectors.groupingBy(Variant::getProductId));
+
+        List<UUID> variantIds = variantsByProduct.values().stream()
+                .flatMap(List::stream)
+                .map(Variant::getId)
+                .toList();
+        Map<UUID, Offer> offersByVariant = variantIds.isEmpty()
+                ? Map.of()
+                : offerRepository.findByVariantIdIn(variantIds).stream()
+                        .collect(Collectors.toMap(Offer::getVariantId, Function.identity()));
+
+        // STORED only, for both the thumbnail and the count: a PENDING row is an
+        // upload that never landed, and a row reading "4 images" when three of
+        // them render as broken is worse than reading "3".
+        Map<UUID, List<Image>> imagesByProduct = productIds.isEmpty()
+                ? Map.of()
+                : imageRepository.findByProductIdInAndStatusOrderByPositionAsc(productIds, ImageStatus.STORED).stream()
+                        .collect(Collectors.groupingBy(Image::getProductId));
+
+        Map<UUID, CategoryResponse> categoriesById = categoryService.byId();
+
+        List<SellerProductRowResponse> rows = products.getContent().stream()
+                .map(product -> {
+                    List<Variant> variants = variantsByProduct.getOrDefault(product.getId(), List.of());
+                    List<Offer> offers = variants.stream()
+                            .map(variant -> offersByVariant.get(variant.getId()))
+                            .filter(offer -> offer != null)
+                            .toList();
+                    List<Image> images = imagesByProduct.getOrDefault(product.getId(), List.of());
+
+                    int totalStock = offers.stream().mapToInt(Offer::getStockQty).sum();
+                    // Null, not zero, when nothing is priced: zero is a real price,
+                    // and a row reading "$0.00" for "we don't know" is a lie the
+                    // client cannot tell apart from a free product.
+                    BigDecimal priceFrom = offers.stream().map(Offer::getPrice)
+                            .min(Comparator.naturalOrder()).orElse(null);
+                    BigDecimal priceTo = offers.stream().map(Offer::getPrice)
+                            .max(Comparator.naturalOrder()).orElse(null);
+
+                    return new SellerProductRowResponse(
+                            product.getId(),
+                            product.getSlug(),
+                            product.getTitle(),
+                            product.getBrandName(),
+                            images.isEmpty() ? null : imageUrls.forKey(images.get(0).getS3Key()),
+                            images.size(),
+                            categoriesById.get(product.getCategoryId()),
+                            product.getStatus(),
+                            variants.size(),
+                            totalStock,
+                            priceFrom,
+                            priceTo,
+                            product.getCreatedAt(),
+                            product.getUpdatedAt());
+                })
+                .toList();
+
+        return new SellerProductRowPageResponse(
+                rows, products.getNumber(), products.getTotalElements(), products.getTotalPages());
+    }
+
+    /** The sort values the contract declares. */
+    private static final Set<String> SORTS =
+            Set.of("newest", "oldest", "title_asc", "title_desc", "stock_asc", "price_asc", "price_desc");
+
+    /**
+     * Absent means the contract's default. Anything else unrecognised is refused
+     * rather than quietly treated as the default: a client asking for an ordering
+     * this endpoint does not have should hear so, not be handed a page in a
+     * different order and left to conclude the sort is broken.
+     */
+    private static String normalisedSort(String sort) {
+        if (sort == null || sort.isBlank()) {
+            return "newest";
+        }
+        if (!SORTS.contains(sort)) {
+            throw new UnprocessableEntityException(
+                    URI.create("https://api/errors/unknown-sort"),
+                    "Unknown sort",
+                    "Sort must be one of " + SORTS.stream().sorted().collect(Collectors.joining(", ")) + ".",
+                    List.of(new UnprocessableEntityException.FieldError("sort", "unknown value")));
+        }
+        return sort;
+    }
+
+    /**
+     * Replaces the whole ordering in one write: position becomes the index in the
+     * submitted list, so the first id is the cover.
+     *
+     * The list has to be exactly this product's images - a permutation, nothing
+     * missing, nothing extra, no duplicates. A partial list is refused rather
+     * than applied to the ids it does name, because the images it leaves out keep
+     * their old positions and the result is an ordering nobody asked for: two
+     * images at position 0, or a gap where the cover should be.
+     *
+     * Every refusal is a 422 carrying which ids were wrong, per the contract.
+     */
+    @Transactional
+    public List<SellerProductDetailResponse.SellerImageResponse> reorderImages(UUID productId, List<UUID> imageIds) {
+        Product product = ownedProduct(productId);
+
+        List<Image> current = imageRepository.findByProductId(product.getId());
+        Map<UUID, Image> byId = current.stream().collect(Collectors.toMap(Image::getId, Function.identity()));
+
+        // LinkedHashSet so the duplicate check keeps submission order for the
+        // message, and so the size comparison below is against distinct ids.
+        Set<UUID> submitted = new LinkedHashSet<>(imageIds);
+        if (submitted.size() != imageIds.size()) {
+            throw reorderRejected("imageIds lists the same image more than once.");
+        }
+
+        List<UUID> foreign = submitted.stream().filter(id -> !byId.containsKey(id)).toList();
+        if (!foreign.isEmpty()) {
+            throw reorderRejected("Not images of product " + product.getId() + ": " + join(foreign) + ".");
+        }
+
+        List<UUID> missing = current.stream()
+                .map(Image::getId)
+                .filter(id -> !submitted.contains(id))
+                .toList();
+        if (!missing.isEmpty()) {
+            throw reorderRejected("imageIds must list every image of this product. Missing: " + join(missing) + ".");
+        }
+
+        // Written once per row, not once per move: position is assigned from the
+        // submitted index, so there is never a moment where two rows claim the
+        // same one - which is the whole reason this is a whole-list PUT and not a
+        // per-image PATCH.
+        for (int position = 0; position < imageIds.size(); position++) {
+            Image image = byId.get(imageIds.get(position));
+            image.setPosition(position);
+        }
+        imageRepository.saveAll(current);
+
+        return imageIds.stream()
+                .map(byId::get)
+                .map(image -> new SellerProductDetailResponse.SellerImageResponse(
+                        image.getId(),
+                        imageUrls.forKey(image.getS3Key()),
+                        image.getPosition(),
+                        image.getStatus().name()))
+                .toList();
+    }
+
+    private static UnprocessableEntityException reorderRejected(String detail) {
+        return new UnprocessableEntityException(
+                URI.create("https://api/errors/invalid-image-order"),
+                "Invalid image order",
+                detail,
+                List.of(new UnprocessableEntityException.FieldError("imageIds", "must be this product's images, once each")));
+    }
+
+    private static String join(List<UUID> ids) {
+        return ids.stream().map(UUID::toString).collect(Collectors.joining(", "));
+    }
+
+    /**
+     * What is still owed on one product, for the product drawer's Open orders
+     * tile and Active orders list.
+     *
+     * Orders hands back ids and quantities through ProductOpenOrdersQuery and
+     * nothing else - catalog may not read its tables. The variant LABEL is
+     * resolved here, because orders stores only the id it snapshotted and
+     * catalog is the side that owns what a variant is called.
+     *
+     * A variant deleted since the purchase leaves a null label rather than an
+     * invented one. The order still happened and still has to be shipped, so
+     * dropping the line would be the wrong answer.
+     */
+    @Transactional(readOnly = true)
+    public ProductOpenOrdersResponse openOrders(UUID productId) {
+        Product product = ownedProduct(productId);
+
+        List<OpenOrderLine> lines = productOpenOrders.findOpenLines(product.getId());
+        List<UUID> variantIds = lines.stream().map(OpenOrderLine::variantId).distinct().toList();
+        Map<UUID, String> labels = variantIds.isEmpty()
+                ? Map.of()
+                : variantRepository.findByIdIn(variantIds).stream()
+                        .collect(Collectors.toMap(Variant::getId, Variant::getLabel));
+
+        List<ProductOpenOrdersResponse.OpenOrderResponse> orders = lines.stream()
+                .map(line -> new ProductOpenOrdersResponse.OpenOrderResponse(
+                        line.orderId(),
+                        line.orderLineId(),
+                        line.buyerEmail(),
+                        line.variantId(),
+                        labels.get(line.variantId()),
+                        line.quantity(),
+                        line.status(),
+                        line.placedAt()))
+                .toList();
+
+        // Distinct orders, not lines: two lines of the same product on one order
+        // are one order for the seller to pack and ship.
+        int openOrderCount = (int) lines.stream().map(OpenOrderLine::orderId).distinct().count();
+        int reservedUnits = lines.stream().mapToInt(OpenOrderLine::quantity).sum();
+
+        return new ProductOpenOrdersResponse(openOrderCount, reservedUnits, orders);
+    }
+
     @Transactional
     public CreateProductResponse create(CreateProductRequest request) {
         // Resolved before anything is written: a slug that isn't a live system
@@ -148,6 +399,10 @@ public class SellerProductService {
                 .brandName(request.brandName())
                 .description(request.description())
                 .categoryId(category.getId())
+                // Null means ACTIVE, matching the column default and the contract.
+                // Before V17 this field was accepted and thrown away, so a product
+                // saved as a draft went straight to the storefront.
+                .status(request.status() != null ? request.status() : ProductStatus.ACTIVE)
                 .build());
 
         for (CreateVariantRequest variantRequest : request.variants()) {
@@ -210,8 +465,11 @@ public class SellerProductService {
                 product.getBrandName(),
                 product.getDescription(),
                 categoryService.byIdOrThrow(product.getCategoryId()),
+                product.getStatus(),
                 variantResponses,
-                imageResponses);
+                imageResponses,
+                product.getCreatedAt(),
+                product.getUpdatedAt());
     }
 
     /** Partial update: only the fields the request actually carries are written. */
@@ -234,7 +492,28 @@ public class SellerProductService {
         if (request.categorySlug() != null) {
             product.setCategoryId(categoryService.requireSelectable(request.categorySlug()).getId());
         }
-        productRepository.save(product);
+        if (request.status() != null) {
+            // ARCHIVED is the soft delete's business, not an edit's. The contract's
+            // UpdateProductRequest offers ACTIVE and DRAFT only, and the portal has
+            // no way to bring an archived listing back, so accepting it here would
+            // be a one-way door with no handle on the other side.
+            if (request.status() == ProductStatus.ARCHIVED) {
+                throw new UnprocessableEntityException(
+                        URI.create("https://api/errors/status-not-settable"),
+                        "Status not settable",
+                        "A product can be set ACTIVE or DRAFT. ARCHIVED is reserved for deletion.",
+                        List.of(new UnprocessableEntityException.FieldError("status", "must be ACTIVE or DRAFT")));
+            }
+            product.setStatus(request.status());
+        }
+        // saveAndFlush, not save: @UpdateTimestamp assigns updated_at during the
+        // flush, and getMine() below reads the product straight out of the
+        // persistence context without one - its other queries touch variant and
+        // image, so Hibernate's auto-flush sees no overlap with the dirty product
+        // and doesn't bother. Without the explicit flush the row is written
+        // correctly at commit but the response carries the OLD timestamp, so the
+        // drawer that just saved shows a stale "Last updated" until it refetches.
+        productRepository.saveAndFlush(product);
 
         return getMine(product.getId());
     }
