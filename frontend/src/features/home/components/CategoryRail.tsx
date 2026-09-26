@@ -34,9 +34,9 @@ export function CategoryRail({
     <section aria-labelledby="popular-categories">
       <SectionHeading id="popular-categories" title="Explore popular categories" viewAllTo="/search" />
       {/* Scrolls horizontally with no scrollbar painted under the tiles - see the
-          no-scrollbar utility in index.css. Swipe, wheel and keyboard scrolling all
-          still work; only the bar is hidden. */}
-      <div className="no-scrollbar -mx-7 flex gap-4 overflow-x-auto px-7 pb-1">
+          rail-no-scrollbar utility in index.css. Swipe, wheel and keyboard scrolling
+          all still work; only the bar is hidden, and only here. */}
+      <div className="rail-no-scrollbar -mx-7 flex gap-4 overflow-x-auto px-7 pb-1">
         {categories.map((category) => {
           const image = categoryImage(category.slug)
           return (

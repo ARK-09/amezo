@@ -116,8 +116,16 @@
    still scrolls with a wheel, a trackpad, a touch swipe, and the keyboard once
    focused. Only the painted bar goes. `scrollbar-width` covers Firefox and
    modern Chromium; the `::-webkit-scrollbar` rule covers Safari and older
-   Chromium, which ignore it. */
-@utility no-scrollbar {
+   Chromium, which ignore it.
+
+   Named for the rail rather than the generic `no-scrollbar`, and that is the
+   whole point: the shadcn registry's CommandList already ships `no-scrollbar`
+   among its own classes, expecting radix-nova's starter CSS to define it. Here
+   that class was inert, so dropdowns kept their scrollbars - until a generic
+   utility of the same name gave it teeth and silently hid the scrollbar in
+   every combobox and menu in the app. A name the registry does not use cannot
+   collide with it again. */
+@utility rail-no-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
   &::-webkit-scrollbar {
