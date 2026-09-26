@@ -115,6 +115,30 @@ itself.
    the repo, so nothing to set in its dashboard unless you'd rather manage the URL
    there — in which case delete that file so there's no ambiguity about which wins.
 
+   **Skipping builds that cannot matter.** `scripts/vercel-ignore-build.sh` is
+   for Vercel's Ignored Build Step (Project Settings -> Git). It skips any commit
+   that is not on `main`, and any commit that did not touch `frontend/` - the
+   backend deploys from `render.yaml` and the docs deploy nowhere, so a
+   backend-only or docs-only commit has nothing for Vercel to rebuild. Set the
+   command to:
+
+   ```
+   bash ../scripts/vercel-ignore-build.sh
+   ```
+
+   The `../` is because the project's Root Directory is `frontend` (that is where
+   `vercel.json` lives), and the Ignored Build Step runs from there. The script
+   `cd`s to the repository root before diffing for exactly the same reason: a path
+   filter is resolved against the current directory, so from `frontend` a bare
+   `-- frontend/` matches nothing, reports "no changes", and silently skips every
+   build including the ones that matter. Verified both ways round against real
+   commits.
+
+   Vercel's convention here reads backwards from a normal script: **exit 0 skips
+   the build, exit 1 runs it.** On a shallow clone where `HEAD^` does not resolve,
+   git exits non-zero, the test is false, and the build goes ahead - building when
+   we cannot tell is the right way round to be wrong.
+
    Seller sign-in is the one rough edge of turning the mock off:
    `LoggingEmailSender` writes the magic link to the server log instead of sending
    it, so signing in means copying the token out of Render's log stream. Wiring a
