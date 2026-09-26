@@ -29,14 +29,18 @@ export function FacetTabs({ label, tabs, value, onValueChange, facets, isPending
       {/* h-auto! beats the list's own rule, a flat h-8 written as a group-data
           variant: two lines per tab, and a second row once they wrap, both
           overflow it. */}
-      <TabsList aria-label={label} className="h-auto! flex-wrap justify-start gap-1 p-1">
+      <TabsList aria-label={label} className="h-auto! w-full flex-wrap justify-start gap-1 p-1">
         {tabs.map((tab) => {
           const facet = byKey.get(tab.value)
           return (
             <TabsTrigger
               key={tab.value}
               value={tab.value}
-              className="h-auto flex-none flex-col items-start gap-1 px-2.5 py-1.5"
+              // grow + a 7.5rem basis rather than flex-none: the tabs share
+              // the strip's full width, and each row still fills when they
+              // wrap. No min-w-0, so a long label like "Ready for pickup"
+              // wraps the strip instead of being squashed.
+              className="h-auto grow basis-[7.5rem] flex-col items-start gap-1 px-2.5 py-1.5"
             >
               <span className="text-[13px] leading-none">{tab.label}</span>
               {/* Keeps its height whether the numbers are loading, there, or
