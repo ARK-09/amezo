@@ -32,8 +32,11 @@ export function SellerPortalLayout() {
   }
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="flex w-60 shrink-0 flex-col border-r">
+    // h-screen + overflow-hidden, not min-h-screen: the page itself must not
+    // scroll, or the sidebar and the banners scroll away with the table. The
+    // only scroll container is the content well below.
+    <div className="flex h-screen overflow-hidden">
+      <aside className="flex w-60 shrink-0 flex-col overflow-y-auto border-r">
         <div className="flex items-center gap-2.5 px-5 py-4">
           <span className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <ShoppingBag className="size-4" />
@@ -70,7 +73,9 @@ export function SellerPortalLayout() {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Outside the scroll well, so both banners stay put while the page
+            under them scrolls. */}
         <BackendWakingBanner />
         {DEMO_AUTH && (
           <div
@@ -80,7 +85,20 @@ export function SellerPortalLayout() {
             Demo mode — authentication is mocked.
           </div>
         )}
-        <Outlet />
+        {/* The one scrolling region, and the one place the portal's gutter is
+            set. Every page under this outlet rendered flush against the
+            sidebar and the window edge because each was a bare flex column
+            with no padding of its own. */}
+        {/* `relative` is load-bearing. Tailwind's sr-only is position:absolute,
+            and the portal is full of it - every row action carries one naming
+            what it acts on. With no positioned ancestor those spans resolve
+            against the initial containing block, which an unpositioned
+            overflow-hidden does not clip: the document kept a 1403px
+            scrollHeight and scrolled the sidebar away even though every visible
+            element fitted. */}
+        <div className="relative flex-1 overflow-y-auto p-6">
+          <Outlet />
+        </div>
       </main>
     </div>
   )

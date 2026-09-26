@@ -195,7 +195,7 @@ export function SellerAddProduct() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
+    <div className="mx-auto max-w-2xl">
       <div className="mb-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-bold">Add product</h1>
