@@ -8,8 +8,8 @@ import { AllCategoriesMenu } from '@/components/layout/AllCategoriesMenu'
 import { DeliveryLocation } from '@/components/layout/DeliveryLocation'
 import { CartTrigger } from '@/features/cart/components/CartTrigger'
 import { useCategories } from '@/features/reference/api/useCategories'
-import { useSellerAuth } from '@/features/seller-portal/context/SellerAuthContext'
 import { useSession } from '@/features/session/api/useSession'
+import { useViewerRole } from '@/features/session/api/useViewerRole'
 import { cn } from '@/lib/utils'
 
 // Enough to fill the nav row on a laptop without wrapping it to two lines.
@@ -24,15 +24,10 @@ export function SiteHeader() {
   // to be guessed by sampling a page of products, which meant the nav could only
   // ever show categories that happened to have something listed in them.
   const categories = useCategories()
+  // Still read directly for the avatar's name and email; the role itself comes
+  // from the shared hook, which four screens now agree on.
   const session = useSession()
-  // Two sources, because a seller can be signed in without a server session:
-  // in demo mode the portal keeps its own local flag and never sets a cookie.
-  // A real cookie wins over that flag, so a buyer cookie beside a stale seller
-  // flag is treated as the buyer it is.
-  const { seller } = useSellerAuth()
-  const identity = session.data?.identityType
-  const isSeller = identity === 'SELLER' || (identity == null && Boolean(seller))
-  const isBuyer = identity === 'BUYER'
+  const { role } = useViewerRole()
 
   const onSearchPage = location.pathname === '/search'
   // Every buyer page renders this header from the layout route, so none of
@@ -109,7 +104,7 @@ export function SiteHeader() {
               buyer account page, and in demo mode - where the portal signs in
               locally with no cookie - they were pitched "Sell on Amezo" while
               already selling. Either way the portal is where they meant to go. */}
-          {isSeller ? (
+          {role === 'seller' ? (
             <Link
               to="/seller/dashboard"
               className="hidden items-center gap-1.5 text-[13px] font-semibold whitespace-nowrap hover:text-primary sm:inline-flex"
@@ -117,7 +112,7 @@ export function SiteHeader() {
               <Store className="size-4" aria-hidden />
               Seller dashboard
             </Link>
-          ) : isBuyer ? (
+          ) : role === 'buyer' ? (
             <Link
               to="/account"
               className="flex items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"

@@ -1,4 +1,4 @@
-import { ChevronRight, Package } from 'lucide-react'
+import { ChevronRight, Package, Store } from 'lucide-react'
 import { Link, Navigate } from 'react-router'
 
 import { Avatar } from '@/components/Avatar'
@@ -28,7 +28,7 @@ export function Account() {
     // the top of an empty screen and then jump when the account loads under it.
     return (
       <div className="flex flex-1 items-center justify-center px-7 py-16">
-        <Spinner className="size-6 text-muted-foreground" />
+        <Spinner className="size-6 text-primary" />
       </div>
     )
   }
@@ -37,6 +37,7 @@ export function Account() {
   }
 
   const identity = session.data
+  const isSeller = identity.identityType === 'SELLER'
 
   return (
     <div className="mx-auto w-full max-w-[640px] flex-1 px-7 py-10">
@@ -53,21 +54,43 @@ export function Account() {
         </Button>
       </div>
 
-      <Link
-        to="/orders"
-        className="mt-4 flex items-center gap-4 rounded-xl border p-5 transition-colors hover:border-primary/50 hover:bg-accent"
-      >
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <Package className="size-5" aria-hidden />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block font-semibold">Your orders</span>
-          <span className="block text-sm text-muted-foreground">
-            Track deliveries, request a refund and buy again
+      {/* A seller has no buyer order history, and /orders calls a buyer-only
+          endpoint: offering it here sent them to a page that reported their
+          perfectly good session as expired. The portal is the destination that
+          actually exists for them - the same one the header now offers. */}
+      {isSeller ? (
+        <Link
+          to="/seller/dashboard"
+          className="mt-4 flex items-center gap-4 rounded-xl border p-5 transition-colors hover:border-primary/50 hover:bg-accent"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Store className="size-5" aria-hidden />
           </span>
-        </span>
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      </Link>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">Seller dashboard</span>
+            <span className="block text-sm text-muted-foreground">
+              Your listings, orders and refunds live in the seller portal
+            </span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        </Link>
+      ) : (
+        <Link
+          to="/orders"
+          className="mt-4 flex items-center gap-4 rounded-xl border p-5 transition-colors hover:border-primary/50 hover:bg-accent"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Package className="size-5" aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">Your orders</span>
+            <span className="block text-sm text-muted-foreground">
+              Track deliveries, request a refund and buy again
+            </span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        </Link>
+      )}
 
       {/* Sign-out used to fail silently here: the page is reachable by a seller
           session, the endpoint it called was buyer-only, and a rejected mutation
@@ -79,10 +102,8 @@ export function Account() {
         </p>
       )}
 
-      {identity.identityType === 'SELLER' && (
-        <p className="mt-4 text-sm text-muted-foreground">
-          You're signed in as a seller. Your listings live in the seller portal.
-        </p>
+      {isSeller && (
+        <p className="mt-4 text-sm text-muted-foreground">You're signed in as a seller.</p>
       )}
     </div>
   )

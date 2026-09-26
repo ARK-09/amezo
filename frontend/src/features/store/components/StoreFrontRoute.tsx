@@ -63,7 +63,7 @@ export function StoreFrontRoute() {
     if (resolved.isLoading) {
       return (
         <div className="mx-auto flex w-full max-w-[1320px] flex-1 items-center justify-center px-7 py-5">
-          <Spinner className="size-6 text-muted-foreground" />
+          <Spinner className="size-6 text-primary" />
         </div>
       )
     }

@@ -140,3 +140,15 @@ export function useSellerAuth() {
   if (!ctx) throw new Error('useSellerAuth must be used within a SellerAuthProvider')
   return ctx
 }
+
+/**
+ * The same flag, for chrome that renders on the buyer side. Returns `null`
+ * instead of throwing when there is no provider: the buyer header and footer
+ * only want to know whether a seller is signed in, and a test that mounts one
+ * of them without the portal's provider is asking a fair question - the answer
+ * is "no seller", not a crash. The real app wraps everything in
+ * `SellerAuthProvider` (App.tsx), so in production this is never null.
+ */
+export function useOptionalSellerAuth() {
+  return useContext(SellerAuthContext)
+}

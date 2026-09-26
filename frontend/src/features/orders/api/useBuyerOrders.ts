@@ -23,9 +23,20 @@ export const buyerOrderKeys = {
   detail: (orderId: string) => [...buyerOrderKeys.all, 'detail', orderId] as const,
 }
 
-export function useBuyerOrders(filters: BuyerOrderFilters) {
+/**
+ * `enabled` exists for one caller: My Orders turns both queries off for a
+ * seller. `/api/v1/orders` is buyer-only, so asking it on a seller's behalf can
+ * only ever come back 401 - and a 401 about a valid seller session reads as
+ * "your session expired", which is a lie the page then prints.
+ */
+export interface BuyerOrderQueryOptions {
+  enabled?: boolean
+}
+
+export function useBuyerOrders(filters: BuyerOrderFilters, options: BuyerOrderQueryOptions = {}) {
   return useQuery<BuyerOrderSummaryPage, ProblemDetail>({
     queryKey: buyerOrderKeys.list(filters),
+    enabled: options.enabled ?? true,
     queryFn: async ({ signal }) => {
       const { data, error } = await apiClient.GET('/api/v1/orders', { signal, params: { query: filters } })
       if (error) throw error
@@ -46,9 +57,13 @@ export function useBuyerOrders(filters: BuyerOrderFilters) {
  * and the key - selecting a tab reads this same cache rather than refetching
  * numbers that would come back identical.
  */
-export function useBuyerOrderFacets(filters: BuyerOrderFacetFilters) {
+export function useBuyerOrderFacets(
+  filters: BuyerOrderFacetFilters,
+  options: BuyerOrderQueryOptions = {},
+) {
   return useQuery<Map<string, number>, ProblemDetail>({
     queryKey: buyerOrderKeys.facets(filters),
+    enabled: options.enabled ?? true,
     queryFn: async ({ signal }) => {
       const { data, error } = await apiClient.GET('/api/v1/orders/facets', {
         signal,

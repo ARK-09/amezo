@@ -1,4 +1,4 @@
-import { ChevronRight, Search } from 'lucide-react'
+import { ChevronRight, Search, Store } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
@@ -21,6 +21,7 @@ import {
 } from '@/features/orders/api/useBuyerOrders'
 import { OrderCard } from '@/features/orders/components/OrderCard'
 import { useSession } from '@/features/session/api/useSession'
+import { useViewerRole } from '@/features/session/api/useViewerRole'
 import { cn } from '@/lib/utils'
 
 const TABS: { value: BuyerOrderGroup; label: string }[] = [
@@ -70,8 +71,33 @@ function sizeParam(raw: string | null) {
   return PAGE_SIZES.some((size) => size === parsed) ? parsed : DEFAULT_SIZE
 }
 
+/** Shared by the orders list and the seller notice that stands in for it. */
+function OrdersBreadcrumb() {
+  return (
+    <nav
+      aria-label="Breadcrumb"
+      className="mb-[18px] flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+    >
+      <Link to="/" className="hover:text-primary">
+        Home
+      </Link>
+      <ChevronRight className="size-3.5" aria-hidden />
+      <Link to="/account" className="hover:text-primary">
+        Your account
+      </Link>
+      <ChevronRight className="size-3.5" aria-hidden />
+      <span className="text-foreground">Orders</span>
+    </nav>
+  )
+}
+
 export function MyOrders() {
   const session = useSession()
+  // A seller has no buyer order history. Firing the request anyway returned a
+  // 401 that this page printed as "Session is missing, expired, or invalid" -
+  // about a session that was valid, just not a buyer's.
+  const viewer = useViewerRole()
+  const isSeller = viewer.role === 'seller'
   const [searchParams, setSearchParams] = useSearchParams()
   const [openId, setOpenId] = useState<string | null>(null)
 
@@ -103,12 +129,15 @@ export function MyOrders() {
     [group, q, period, page, size],
   )
 
-  const query = useBuyerOrders(filters)
+  // Held until the session has answered, so a seller loading /orders directly
+  // does not fire the doomed request in the gap before their role is known.
+  const ordersEnabled = !viewer.isPending && !isSeller
+  const query = useBuyerOrders(filters, { enabled: ordersEnabled })
   // The same window the list is showing, spelled the way each endpoint takes
   // it: a `from` date for the list, the period token for the counts. No
   // `group` - the strip describes every bucket, so narrowing the counts by the
   // tab being viewed would zero the other three.
-  const facets = useBuyerOrderFacets({ q: q || undefined, period })
+  const facets = useBuyerOrderFacets({ q: q || undefined, period }, { enabled: ordersEnabled })
 
   function patch(next: Record<string, string | undefined>, replace = false) {
     const params = new URLSearchParams(searchParams)
@@ -136,23 +165,35 @@ export function MyOrders() {
   // A ?page= past the end comes back empty; don't also print a page number that
   // doesn't exist, and let Previous walk back into the range that does.
   const shownPage = Math.min(page, totalPages - 1)
+  // Disabled queries never report isLoading, so the wait for the session is
+  // part of the page's own loading state rather than a blank body.
+  const isLoading = viewer.isPending || query.isLoading
+
+  if (isSeller) {
+    return (
+      <div className="mx-auto w-full max-w-[1320px] flex-1 px-7 pt-5 pb-[72px]">
+        <OrdersBreadcrumb />
+        <h1 className="text-[28px] leading-[1.2] font-bold tracking-[-0.01em]">Your orders</h1>
+        <div className="flex flex-col items-center gap-3 py-16 text-center">
+          <p className="font-medium">This page is for buyer orders</p>
+          <p className="max-w-[420px] text-sm text-muted-foreground">
+            You're signed in as a seller. The orders buyers have placed with you live in the
+            seller portal.
+          </p>
+          <Button variant="outline" asChild>
+            <Link to="/seller/orders">
+              <Store className="size-4" aria-hidden />
+              Go to seller orders
+            </Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1320px] flex-1 px-7 pt-5 pb-[72px]">
-      <nav
-        aria-label="Breadcrumb"
-        className="mb-[18px] flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
-      >
-        <Link to="/" className="hover:text-primary">
-          Home
-        </Link>
-        <ChevronRight className="size-3.5" aria-hidden />
-        <Link to="/account" className="hover:text-primary">
-          Your account
-        </Link>
-        <ChevronRight className="size-3.5" aria-hidden />
-        <span className="text-foreground">Orders</span>
-      </nav>
+      <OrdersBreadcrumb />
 
       <div className="mb-[18px] flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -203,7 +244,7 @@ export function MyOrders() {
           </SelectContent>
         </Select>
         <p className="ml-auto text-[13px] text-muted-foreground">
-          {query.isLoading ? 'Loading…' : `${total} order${total === 1 ? '' : 's'}`}
+          {isLoading ? 'Loading…' : `${total} order${total === 1 ? '' : 's'}`}
         </p>
       </div>
 
@@ -249,7 +290,7 @@ export function MyOrders() {
         })}
       </div>
 
-      {query.isLoading && (
+      {isLoading && (
         <div className="flex flex-col gap-3.5">
           {Array.from({ length: 3 }, (_, i) => (
             <Skeleton key={i} className="h-[220px] w-full rounded-xl" />
