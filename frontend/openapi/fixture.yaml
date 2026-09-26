@@ -294,6 +294,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/reviews/{reviewId}:
+    patch:
+      operationId: updateReview
+      description: >-
+        Edit a review already written. Only its author may, and only the rating
+        and the body are editable - the purchase it belongs to is not, or a
+        review could be moved onto a different product after the fact.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                body: { type: string, nullable: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /products/{productRef}/reviews/eligibility:
     get:
       operationId: getReviewEligibility
@@ -573,6 +607,45 @@ paths:
                   status: { type: string }
                   uploadUrl: { type: string }
                   expiresAt: { type: string, format: date-time }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/products/{productId}/images/order:
+    put:
+      operationId: reorderProductImages
+      description: >-
+        The whole ordering at once, as the resource it is - not a per-image
+        position PATCH, which cannot express a swap without a transient
+        duplicate position. The first id is the cover. Any id missing from the
+        list, or any image not belonging to this product, is a 422.
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageIds]
+              properties:
+                imageIds:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SellerImage' }
         default:
           description: Error
           content:
@@ -1050,6 +1123,73 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
 
+  /api/v1/sellers/me/store/images:
+    post:
+      operationId: createStoreImageUploadUrl
+      description: >-
+        A presigned slot for the storefront cover or logo, mirroring the
+        product-image flow (POST for a URL, PUT the bytes to it, then confirm).
+        Store images had no upload path at all, so coverUrl and logoUrl were
+        writable on the profile with no way to produce a URL to write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slot, contentType]
+              properties:
+                slot: { type: string, enum: [COVER, LOGO] }
+                contentType: { type: string }
+                fileSizeBytes: { type: integer }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, uploadUrl, expiresAt]
+                properties:
+                  id: { type: string, format: uuid }
+                  uploadUrl: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/sellers/me/store/images/confirm:
+    post:
+      operationId: confirmStoreImage
+      description: >-
+        Promotes an uploaded slot to the live storefront and returns the updated
+        profile, so the caller does not have to re-read it to learn the URL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, slot]
+              properties:
+                id: { type: string, format: uuid }
+                slot: { type: string, enum: [COVER, LOGO] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreProfile'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
   /api/v1/stores/{handle}/products:
     get:
       operationId: getStoreProducts
@@ -1312,6 +1452,12 @@ paths:
     get:
       operationId: sellerListOrdersV1
       parameters:
+        # Narrows the queue to orders containing this product, for the drawer's
+        # "Active orders" block. Without it that block would mean reading the
+        # whole queue and filtering in the browser.
+        - name: productId
+          in: query
+          schema: { type: string, format: uuid }
         - name: q
           in: query
           description: Matches order reference, recipient name and buyer email.
@@ -1480,6 +1626,18 @@ components:
         page: { type: integer }
         totalElements: { type: integer }
         totalPages: { type: integer }
+    ProductAttribute:
+      type: object
+      description: >-
+        One row of the specification table under a product's Details tab -
+        "Battery life / 30 hours". Seller-authored and free text on both sides:
+        the marketplace spans categories that share no attribute vocabulary, so
+        the platform does not enumerate them.
+      required: [label, value]
+      properties:
+        label: { type: string, maxLength: 60 }
+        value: { type: string, maxLength: 200 }
+
     ProductImage:
       type: object
       required: [id, url, position]
@@ -1758,6 +1916,10 @@ components:
         # by handle. brandName is a display string and cannot address anything.
         store: { $ref: '#/components/schemas/StoreRef' }
         description: { type: string, nullable: true }
+        # The specification table. Ordered as the seller entered them.
+        attributes:
+          type: array
+          items: { $ref: '#/components/schemas/ProductAttribute' }
         category: { $ref: '#/components/schemas/Category' }
         images:
           type: array
@@ -2352,6 +2514,10 @@ components:
         units: { type: integer }
         revenue: { type: number }
         share: { type: number }
+        # The same product's revenue in the window immediately before this one,
+        # so the table can print a delta. Null when it did not sell then - which
+        # is a fact, not a zero.
+        previousRevenue: { type: number, nullable: true }
     CategoryShare:
       type: object
       required: [category, revenue, units, share]

@@ -49,6 +49,25 @@ should be added.
 | GET | `/api/v1/stores?name=` | **Worth considering.** Legacy `/stores/{displayName}` links are kept alive client-side by reading one page of `GET /products` and matching `brandName` — exactly the reach the old storefront had, so no link that worked before breaks, but a store whose listings fall outside that page will not resolve. A server-side resolver (this, or letting `/api/v1/stores/{handle}` accept a legacy name) would make it exact. Only needed for as long as the old URLs are supported. |
 | POST | `/api/v1/stores/{handle}/messages` | **New.** Buyer session. `{subject?: ≤120, body: 10–2000}` → `202`. Accepted for delivery; where the seller reads it is the platform's business. |
 
+### Storefront and product page (added for the design-gap pass)
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/v1/sellers/me/store/images` | **New.** Presigned slot for the storefront `COVER` or `LOGO`, mirroring the product-image flow. `coverUrl`/`logoUrl` were writable on the profile with no way to produce a URL to write. |
+| POST | `/api/v1/sellers/me/store/images/confirm` | **New.** Promotes the upload and returns the updated `StoreProfile`, so the caller need not re-read it. |
+| PUT | `/api/v1/products/{productId}/images/order` | **New.** The whole ordering at once — a per-image position PATCH cannot express a swap without a transient duplicate position. First id is the cover. |
+| PATCH | `/api/v1/reviews/{reviewId}` | **New.** Author only; rating and body editable, the purchase it belongs to is not, or a review could be moved onto another product after the fact. |
+| GET | `/api/v1/sellers/me/orders?productId=` | **New filter.** Narrows the queue to orders containing one product, for the product drawer's "Active orders" block. |
+
+**`ProductDetail.attributes`** — the specification table under the Details tab
+(`{label, value}`, seller-authored, free text on both sides). The marketplace
+spans categories that share no attribute vocabulary, so the platform does not
+enumerate them. Needs a `product_attribute` table (`product_id`, `label`,
+`value`, `position`).
+
+**`TopProduct.previousRevenue`** — the same product's revenue in the preceding
+window, so the dashboard's Top products table can print a delta. Null when it
+did not sell then, which is a fact rather than a zero.
+
 ### Seller catalog and orders
 | Method | Path | Notes |
 |---|---|---|

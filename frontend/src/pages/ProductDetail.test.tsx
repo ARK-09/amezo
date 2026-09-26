@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -120,5 +120,30 @@ describe('ProductDetail', () => {
 
     const stored = JSON.parse(localStorage.getItem('cart:v1') ?? '[]')
     expect(stored).toEqual([{ variantId: `${HEADPHONES_ID}-v1`, quantity: 2, priceWhenAdded: 129.99 }])
+  })
+
+  // The design fills Delivery and Returns with fixed marketing copy. Printing
+  // that on every listing would promise terms the platform does not set, so both
+  // come from the store's own policies - and a policy the seller never wrote is
+  // left out rather than invented.
+  it('prints the SKU and the seller’s own delivery and returns terms', async () => {
+    renderPage('wireless-noise-cancelling-headphones')
+
+    expect(await screen.findByText('SKU')).toBeInTheDocument()
+    expect(await screen.findByText('Delivery')).toBeInTheDocument()
+    expect(screen.getByText('Returns')).toBeInTheDocument()
+  })
+
+  it('shows the specification table under Details, and nothing when there is none', async () => {
+    renderPage('wireless-noise-cancelling-headphones')
+
+    await userEvent.click(await screen.findByRole('tab', { name: /Details/ }))
+    expect(await screen.findByText('Battery life')).toBeInTheDocument()
+    expect(screen.getByText('Bluetooth 5.3, USB-C')).toBeInTheDocument()
+
+    cleanup()
+    renderPage('trail-running-shoes')
+    await userEvent.click(await screen.findByRole('tab', { name: /Details/ }))
+    expect(screen.queryByText('Battery life')).not.toBeInTheDocument()
   })
 })

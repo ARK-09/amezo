@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router'
 
 import { RatingBadge } from '@/components/RatingBadge'
+import { ProductFacts } from '@/features/catalog/components/ProductFacts'
+import { ProductSpecs } from '@/features/catalog/components/ProductSpecs'
 import { Button } from '@/components/ui/button'
 import { useAddToCart } from '@/features/catalog/api/useAddToCart'
 import { useIsOwnProduct } from '@/features/session/api/useIsOwnProduct'
@@ -112,6 +114,8 @@ export function ProductDetail() {
                 selectedId={selectedVariant.id}
                 onSelect={selectVariant}
               />
+
+              <ProductFacts variant={selectedVariant} storeHandle={product.store?.handle} />
             </div>
 
             <BuyBox
@@ -129,9 +133,12 @@ export function ProductDetail() {
             <ProductTabs tab={tab} reviewCount={product.reviewSummary.count} onChange={setTab} />
 
             {tab === 'details' && (
-              <p className="max-w-[62ch] text-[14.5px] leading-relaxed text-muted-foreground">
-                {product.description}
-              </p>
+              <div>
+                <p className="mb-5 max-w-[62ch] text-[14.5px] leading-relaxed text-muted-foreground">
+                  {product.description}
+                </p>
+                <ProductSpecs attributes={product.attributes ?? []} />
+              </div>
             )}
 
             {tab === 'reviews' && (
