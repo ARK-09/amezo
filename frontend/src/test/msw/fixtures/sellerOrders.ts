@@ -277,3 +277,24 @@ export function sellerOrderRowDetailOf(order: StoredSellerOrder): SellerOrderRow
 export function listSellerOrderRows(): SellerOrderRow[] {
   return listSellerOrders().map(sellerOrderRowOf)
 }
+
+/**
+ * The order tabs' buckets. Coarser than status because the design's tabs are:
+ * "With Amezo" is the three carrier states at once. Keyed by the same values
+ * GET /api/v1/sellers/me/orders takes for `group`, so a tab is a filter.
+ */
+export const ORDER_GROUPS = {
+  to_pack: ['PLACED'],
+  ready_for_pickup: ['PACKED'],
+  with_amezo: ['SHIPPED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY'],
+  delivered: ['DELIVERED'],
+  refunded: ['REFUNDED'],
+} as const
+
+export type OrderGroup = keyof typeof ORDER_GROUPS
+
+export function inOrderGroup(status: string, group: string): boolean {
+  if (group === 'all') return true
+  const statuses = ORDER_GROUPS[group as OrderGroup]
+  return statuses ? (statuses as readonly string[]).includes(status) : true
+}

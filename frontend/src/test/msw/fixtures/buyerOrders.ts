@@ -236,3 +236,15 @@ function summaryOf(order: StoredBuyerOrder): BuyerOrderSummary {
 export function listBuyerOrders(): BuyerOrderSummary[] {
   return Object.values(orders).map(summaryOf)
 }
+
+/**
+ * The buyer's order tabs. Shared by the list and its facets so a tab's count
+ * and the rows behind it are computed by the same predicate - two copies would
+ * drift the first time a group's definition changed.
+ */
+export function inBuyerGroup(order: BuyerOrderSummary, group: string): boolean {
+  if (group === 'delivered') return order.status === 'DELIVERED'
+  if (group === 'in_progress') return !['DELIVERED', 'CANCELLED', 'REFUNDED'].includes(order.status)
+  if (group === 'refunds') return Boolean(order.openRefundRequestId)
+  return true
+}

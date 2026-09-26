@@ -10,6 +10,7 @@ import {
 import {
   buyerOrderDetailOf,
   findBuyerOrder,
+  inBuyerGroup,
   listBuyerOrders,
 } from './fixtures/buyerOrders'
 import { systemCategories } from './fixtures/categories'
@@ -44,6 +45,8 @@ import {
 import {
   findSellerOrder,
   listSellerOrderRows,
+  inOrderGroup,
+  ORDER_GROUPS,
   listSellerOrders,
   sellerOrderRowDetailOf,
   summaryOf,
@@ -116,6 +119,11 @@ function unauthorized() {
 function currentBuyer() {
   const identity = currentSessionIdentity()
   return identity?.identityType === 'BUYER' ? identity : null
+}
+
+/** What a bucket of orders is worth, for the tabs that print it. */
+function sum(rows: { total: number }[]): number {
+  return rows.reduce((running, row) => running + row.total, 0)
 }
 
 export const handlers = [
@@ -313,6 +321,68 @@ export const handlers = [
     return new HttpResponse(null, { status: 202 })
   }),
 
+  http.get('http://localhost:8080/api/v1/sellers/me/orders/facets', ({ request }) => {
+    const url = new URL(request.url)
+    const q = url.searchParams.get('q')?.toLowerCase()
+    // Honours q, ignores group and status on purpose: the tabs show every
+    // bucket at once, so narrowing by the tab being viewed would zero the rest.
+    const rows = listSellerOrderRows().filter(
+      (row) =>
+        !q || `${row.reference} ${row.recipientName} ${row.buyerEmail}`.toLowerCase().includes(q),
+    )
+    const bucket = (keys: readonly string[]) => rows.filter((row) => keys.includes(row.status))
+    return HttpResponse.json({
+      facets: [
+        { key: 'all', count: rows.length, value: sum(rows), currency: 'USD' },
+        ...Object.entries(ORDER_GROUPS).map(([key, statuses]) => {
+          const inBucket = bucket(statuses)
+          return { key, count: inBucket.length, value: sum(inBucket), currency: 'USD' }
+        }),
+      ],
+    })
+  }),
+
+  http.get('http://localhost:8080/api/v1/sellers/me/refund-requests/facets', ({ request }) => {
+    const url = new URL(request.url)
+    const q = url.searchParams.get('q')?.toLowerCase()
+    const rows = listRefundRequests().filter(
+      (row) => !q || `${row.reference} ${row.buyerName ?? ''}`.toLowerCase().includes(q),
+    )
+    // Keyed by RefundStatus, which is what the list's own status filter takes.
+    const statuses = ['REQUESTED', 'APPROVED', 'AWAITING_RETURN', 'REFUNDED', 'DECLINED']
+    return HttpResponse.json({
+      facets: [
+        { key: 'all', count: rows.length, value: null, currency: null },
+        ...statuses.map((key) => ({
+          key,
+          count: rows.filter((row) => row.status === key).length,
+          value: null,
+          currency: null,
+        })),
+      ],
+    })
+  }),
+
+  http.get('http://localhost:8080/api/v1/orders/facets', ({ request }) => {
+    const buyer = currentBuyer()
+    if (!buyer) return unauthorized()
+    const url = new URL(request.url)
+    const q = url.searchParams.get('q')?.toLowerCase()
+    const rows = listBuyerOrders().filter(
+      (row) => !q || `${row.reference} ${row.seller.name}`.toLowerCase().includes(q),
+    )
+    // Keyed by the same group values GET /api/v1/orders takes.
+    const counted = (group: string) => rows.filter((row) => inBuyerGroup(row, group)).length
+    return HttpResponse.json({
+      facets: ['all', 'in_progress', 'delivered', 'refunds'].map((key) => ({
+        key,
+        count: counted(key),
+        value: null,
+        currency: null,
+      })),
+    })
+  }),
+
   http.get('http://localhost:8080/api/v1/sellers/me/orders', ({ request }) => {
     const url = new URL(request.url)
     const q = url.searchParams.get('q')?.toLowerCase()
@@ -321,8 +391,10 @@ export const handlers = [
     const page = Number(url.searchParams.get('page') ?? 0)
     const size = Number(url.searchParams.get('size') ?? 20)
 
+    const group = url.searchParams.get('group')
     let rows = listSellerOrderRows().filter((row) => {
       if (status && row.status !== status) return false
+      if (group && !inOrderGroup(row.status, group)) return false
       if (q && !`${row.reference} ${row.recipientName} ${row.buyerEmail}`.toLowerCase().includes(q)) {
         return false
       }
@@ -452,9 +524,7 @@ export const handlers = [
     const size = Number(url.searchParams.get('size') ?? 10)
 
     const filtered = listBuyerOrders().filter((order) => {
-      if (group === 'delivered' && order.status !== 'DELIVERED') return false
-      if (group === 'in_progress' && ['DELIVERED', 'CANCELLED'].includes(order.status)) return false
-      if (group === 'refunds' && !order.openRefundRequestId) return false
+      if (!inBuyerGroup(order, group)) return false
       if (q) {
         const haystack = [order.reference, ...(order.previewLines ?? []).map((l) => l.productTitle)]
           .join(' ')

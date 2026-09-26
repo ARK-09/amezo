@@ -1544,6 +1544,16 @@ paths:
           in: query
           description: Matches order reference, recipient name and buyer email.
           schema: { type: string }
+        # The tab buckets. Coarser than status because the design's tabs are
+        # coarser: "With Amezo" is the three carrier states at once, which a
+        # single status cannot express. Facet keys are these values, so a tab
+        # becomes a filter with no translation table. Given with status, both
+        # apply.
+        - name: group
+          in: query
+          schema:
+            type: string
+            enum: [all, to_pack, ready_for_pickup, with_amezo, delivered, refunded]
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/OrderStatus' }
