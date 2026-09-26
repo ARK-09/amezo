@@ -10,6 +10,7 @@ import { SellerPortalLayout } from '@/features/seller-portal/components/SellerPo
 import { Landing } from '@/pages/Landing'
 import { MyOrders } from '@/pages/MyOrders'
 import { ProductDetail } from '@/pages/ProductDetail'
+import { RefundRequest } from '@/pages/RefundRequest'
 import { SearchResults } from '@/pages/SearchResults'
 import { StoreFront } from '@/pages/StoreFront'
 import { SellerAddProduct } from '@/pages/seller/SellerAddProduct'
@@ -38,6 +39,10 @@ export const router = createBrowserRouter([
       { path: '/orders', element: <MyOrders /> },
       { path: '/orders/:orderId/confirmation', element: <OrderConfirmation /> },
     ],
+  },
+  {
+    path: '/orders/:orderId/refund',
+    element: <RefundRequest />,
   },
   {
     path: '/seller/sign-in',

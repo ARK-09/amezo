@@ -1717,9 +1717,11 @@ components:
     RefundResolution:
       type: string
       enum: [REFUND, REPLACEMENT]
+    # The design offers "the card you paid with" or "that card is closed, contact
+    # me" - not store credit, which the marketplace has no concept of.
     RefundPayout:
       type: string
-      enum: [ORIGINAL_PAYMENT, STORE_CREDIT]
+      enum: [ORIGINAL_PAYMENT, ALTERNATE_METHOD]
 
     Money:
       type: object

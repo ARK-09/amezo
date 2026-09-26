@@ -73,7 +73,7 @@ The dashboard's four queue widgets need no endpoints of their own — they are
 
 **New: `refund_request`** — `id`, `reference`, `order_id` FK, `buyer_id`,
 `seller_id`, `status`, `resolution` (`REFUND|REPLACEMENT`), `payout`
-(`ORIGINAL_PAYMENT|STORE_CREDIT`), `detail`, `requested_amount`,
+(`ORIGINAL_PAYMENT|ALTERNATE_METHOD`), `detail`, `requested_amount`,
 `approved_amount`, `currency`, `decline_reason`, `return_tracking_number`, and
 timestamps `requested_at`, `approved_at`, `declined_at`, `return_received_at`,
 `refunded_at`, `replacement_sent_at`.

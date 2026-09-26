@@ -104,6 +104,68 @@ export const handlers = [
     return HttpResponse.json(detail)
   }),
 
+  http.post('http://localhost:8080/api/v1/refund-requests', async ({ request }) => {
+    const body = (await request.json()) as {
+      orderId: string
+      lines: { orderLineId: string; quantity: number }[]
+      resolution: 'REFUND' | 'REPLACEMENT'
+      payout: 'ORIGINAL_PAYMENT' | 'ALTERNATE_METHOD' | null
+      detail: string
+    }
+    const order = orderDetails[body.orderId]
+    if (!order) {
+      return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
+    }
+    if (body.detail.trim().length < 20) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/validation',
+          title: 'Validation failed',
+          status: 422,
+          errors: [{ field: 'detail', reason: 'at least 20 characters' }],
+        },
+        { status: 422 },
+      )
+    }
+
+    const lines = body.lines.map((requested) => {
+      const line = order.lines.find((l) => l.id === requested.orderLineId)!
+      return {
+        orderLineId: requested.orderLineId,
+        productTitle: line.productTitle,
+        variantLabel: line.variantLabel,
+        quantity: requested.quantity,
+        unitPrice: line.unitPrice,
+        lineTotal: line.unitPrice * requested.quantity,
+      }
+    })
+    const requestedAmount = lines.reduce((sum, l) => sum + l.lineTotal, 0)
+
+    return HttpResponse.json(
+      {
+        id: crypto.randomUUID(),
+        reference: 'ref_' + Math.random().toString(16).slice(2, 10),
+        status: 'REQUESTED',
+        resolution: body.resolution,
+        payout: body.payout ?? 'ORIGINAL_PAYMENT',
+        detail: body.detail,
+        requestedAt: new Date().toISOString(),
+        requestedAmount,
+        approvedAmount: null,
+        currency: order.currency,
+        orderId: order.id,
+        orderReference: order.reference,
+        orderPlacedAt: order.placedAt,
+        buyerName: order.shippingAddress.fullName,
+        buyerEmail: null,
+        seller: order.seller,
+        paymentMethod: null,
+        lines,
+      },
+      { status: 201 },
+    )
+  }),
+
   http.get('http://localhost:8080/api/v1/refund-requests/:refundRequestId', ({ params }) => {
     const found = refundRequests.find((r) => r.id === params.refundRequestId)
     if (!found) {
