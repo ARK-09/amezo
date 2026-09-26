@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest'
 
 import { SiteHeader } from '@/components/layout/SiteHeader'
 import { CartProvider } from '@/features/cart/context/CartContext'
-import { signInBuyerSession } from '@/test/msw/fixtures/sellerAuth'
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { signInBuyerSession, signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 
 function LocationProbe() {
   const location = useLocation()
@@ -17,12 +18,16 @@ function renderHeader(initialEntry = '/') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
+      {/* The real app wraps the header in this; leaving it out would test a tree
+          the app never renders, and the header reads the seller flag from it. */}
+      <SellerAuthProvider>
       <CartProvider>
         <MemoryRouter initialEntries={[initialEntry]}>
           <SiteHeader />
           <LocationProbe />
         </MemoryRouter>
       </CartProvider>
+      </SellerAuthProvider>
     </QueryClientProvider>,
   )
 }
@@ -167,5 +172,62 @@ describe('SiteHeader', () => {
       'href',
       '/seller/sign-in',
     )
+  })
+})
+
+describe('SiteHeader seller entry point', () => {
+  it('sends a signed-in seller to their portal, not to a pitch to become one', async () => {
+    signInSellerSession({ sellerId: 'seller-1', email: 'shop@example.com' })
+    renderHeader()
+
+    expect(await screen.findByRole('link', { name: /Seller dashboard/ })).toHaveAttribute(
+      'href',
+      '/seller/dashboard',
+    )
+    expect(screen.queryByRole('link', { name: 'Sell on Amezo' })).not.toBeInTheDocument()
+  })
+
+  /**
+   * The header falls back to the portal's local flag when the server reports no
+   * session, which is what makes demo mode work - there the portal signs in
+   * locally and never sets a cookie. That fallback must not let a leftover flag
+   * claim sellerhood for real: with a live backend the provider evicts it, and
+   * the header goes back to pitching.
+   */
+  it('stops treating a leftover local flag as a seller once the server denies it', async () => {
+    localStorage.setItem(
+      'seller:session',
+      JSON.stringify({ sellerId: 'seller-1', email: 'shop@example.com' }),
+    )
+    renderHeader()
+
+    expect(await screen.findByRole('link', { name: 'Sell on Amezo' })).toHaveAttribute(
+      'href',
+      '/seller/sign-in',
+    )
+  })
+
+  // A real cookie is the better answer than a flag left in localStorage.
+  it('treats a buyer cookie as a buyer even with a stale seller flag', async () => {
+    localStorage.setItem(
+      'seller:session',
+      JSON.stringify({ sellerId: 'seller-1', email: 'shop@example.com' }),
+    )
+    signInBuyerSession({ buyerIdentityId: 'buyer-1', email: 'ada@example.com' })
+    renderHeader()
+
+    expect(await screen.findByRole('link', { name: 'Your account' })).toHaveAttribute(
+      'href',
+      '/account',
+    )
+    expect(screen.queryByRole('link', { name: /Seller dashboard/ })).not.toBeInTheDocument()
+  })
+
+  it('does not offer a seller the buyer account page', async () => {
+    signInSellerSession({ sellerId: 'seller-1', email: 'shop@example.com' })
+    renderHeader()
+
+    await screen.findByRole('link', { name: /Seller dashboard/ })
+    expect(screen.queryByRole('link', { name: 'Your account' })).not.toBeInTheDocument()
   })
 })

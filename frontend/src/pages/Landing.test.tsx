@@ -13,6 +13,7 @@ import {
 import { describe, expect, it } from 'vitest'
 
 import { CartProvider } from '@/features/cart/context/CartContext'
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
 import { routes } from '@/router'
 import { server } from '@/test/msw/server'
 
@@ -207,9 +208,13 @@ describe('legacy storefront URLs', () => {
     const testRouter = createMemoryRouter(routes, { initialEntries: [initialEntry] })
     render(
       <QueryClientProvider client={queryClient}>
-        <CartProvider>
-          <RouterProvider router={testRouter} />
-        </CartProvider>
+        {/* App.tsx puts this above the router, and the header reads the seller
+            flag from it - mounting `routes` directly has to supply it too. */}
+        <SellerAuthProvider>
+          <CartProvider>
+            <RouterProvider router={testRouter} />
+          </CartProvider>
+        </SellerAuthProvider>
       </QueryClientProvider>,
     )
     return testRouter
