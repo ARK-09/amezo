@@ -8,6 +8,7 @@ import { Checkout } from '@/pages/Checkout'
 import { OrderConfirmation } from '@/pages/OrderConfirmation'
 import { SellerPortalLayout } from '@/features/seller-portal/components/SellerPortalLayout'
 import { Landing } from '@/pages/Landing'
+import { MyOrders } from '@/pages/MyOrders'
 import { ProductDetail } from '@/pages/ProductDetail'
 import { SearchResults } from '@/pages/SearchResults'
 import { StoreFront } from '@/pages/StoreFront'
@@ -34,6 +35,7 @@ export const router = createBrowserRouter([
       // Where the buyer magic-link email points - see BuyerAuthService.
       { path: '/verify', element: <BuyerVerify /> },
       { path: '/account', element: <Account /> },
+      { path: '/orders', element: <MyOrders /> },
       { path: '/orders/:orderId/confirmation', element: <OrderConfirmation /> },
     ],
   },

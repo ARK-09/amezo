@@ -7,6 +7,7 @@ import {
   issueMagicLinkToken,
   signInBuyerSession,
 } from './fixtures/sellerAuth'
+import { listBuyerOrders, orderDetails, refundRequests } from './fixtures/buyerOrders'
 import { systemCategories } from './fixtures/categories'
 import { currentLastCheckoutDetails } from './fixtures/checkoutDetails'
 import { mockCountries } from './fixtures/countries'
@@ -62,6 +63,55 @@ function notFound() {
 }
 
 export const handlers = [
+
+  // --- /api/v1 --------------------------------------------------------------
+  // These endpoints do not exist on the backend yet; see docs/backend-handoff.md.
+  // They run only under VITE_USE_MSW and in vitest.
+
+  http.get('http://localhost:8080/api/v1/orders', ({ request }) => {
+    const url = new URL(request.url)
+    const group = url.searchParams.get('group') ?? 'all'
+    const q = url.searchParams.get('q')?.toLowerCase()
+    const page = Number(url.searchParams.get('page') ?? 0)
+    const size = Number(url.searchParams.get('size') ?? 10)
+
+    const filtered = listBuyerOrders().filter((order) => {
+      if (group === 'delivered' && order.status !== 'DELIVERED') return false
+      if (group === 'in_progress' && ['DELIVERED', 'CANCELLED'].includes(order.status)) return false
+      if (group === 'refunds' && !order.openRefundRequestId) return false
+      if (q) {
+        const haystack = [order.reference, ...(order.previewLines ?? []).map((l) => l.productTitle)]
+          .join(' ')
+          .toLowerCase()
+        if (!haystack.includes(q)) return false
+      }
+      return true
+    })
+
+    return HttpResponse.json({
+      content: filtered.slice(page * size, page * size + size),
+      page,
+      totalElements: filtered.length,
+      totalPages: Math.ceil(filtered.length / size) || 1,
+    })
+  }),
+
+  http.get('http://localhost:8080/api/v1/orders/:orderId', ({ params }) => {
+    const detail = orderDetails[params.orderId as string]
+    if (!detail) {
+      return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
+    }
+    return HttpResponse.json(detail)
+  }),
+
+  http.get('http://localhost:8080/api/v1/refund-requests/:refundRequestId', ({ params }) => {
+    const found = refundRequests.find((r) => r.id === params.refundRequestId)
+    if (!found) {
+      return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
+    }
+    return HttpResponse.json(found)
+  }),
+
   // The system reference lists. Both are public, and both are what their selectors
   // read - so a test cannot pick a category or country the API would refuse.
   http.get('http://localhost:8080/categories', () => HttpResponse.json(systemCategories)),
