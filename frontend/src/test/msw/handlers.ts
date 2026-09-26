@@ -13,6 +13,13 @@ import { currentLastCheckoutDetails } from './fixtures/checkoutDetails'
 import { mockCountries } from './fixtures/countries'
 import { productIdForPurchasedLine, purchasedLineFor } from './fixtures/purchases'
 import {
+  canTransition,
+  findRefundRequest,
+  listRefundRequests,
+  summaryOfRefund,
+  updateRefundRequest,
+} from './fixtures/refunds'
+import {
   findSellerOrder,
   listSellerOrderRows,
   listSellerOrders,
@@ -289,11 +296,97 @@ export const handlers = [
   }),
 
   http.get('http://localhost:8080/api/v1/refund-requests/:refundRequestId', ({ params }) => {
-    const found = refundRequests.find((r) => r.id === params.refundRequestId)
+    const found =
+      findRefundRequest(params.refundRequestId as string) ??
+      refundRequests.find((r) => r.id === params.refundRequestId)
     if (!found) {
       return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
     }
     return HttpResponse.json(found)
+  }),
+
+  http.patch('http://localhost:8080/api/v1/refund-requests/:refundRequestId', async ({ params, request }) => {
+    const body = (await request.json()) as {
+      status: Parameters<typeof canTransition>[1]
+      approvedAmount?: number
+      declineReason?: string
+      returnTrackingNumber?: string
+    }
+    const found = findRefundRequest(params.refundRequestId as string)
+    if (!found) {
+      return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
+    }
+    if (!canTransition(found.status, body.status)) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/illegal-transition',
+          title: 'Illegal transition',
+          status: 409,
+          detail: `Cannot move from ${found.status} to ${body.status}`,
+        },
+        { status: 409 },
+      )
+    }
+    if (body.approvedAmount != null && body.approvedAmount > found.requestedAmount) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/validation',
+          title: 'Validation failed',
+          status: 422,
+          errors: [{ field: 'approvedAmount', reason: 'cannot exceed the requested amount' }],
+        },
+        { status: 422 },
+      )
+    }
+
+    const now = new Date().toISOString()
+    const stamps: Record<string, Record<string, string>> = {
+      APPROVED: { approvedAt: now },
+      AWAITING_RETURN: { approvedAt: found.approvedAt ?? now },
+      RETURN_RECEIVED: { returnReceivedAt: now },
+      REFUNDED: { refundedAt: now },
+      REPLACEMENT_SENT: { replacementSentAt: now },
+      DECLINED: { declinedAt: now },
+    }
+
+    return HttpResponse.json(
+      updateRefundRequest(found.id, {
+        status: body.status,
+        approvedAmount: body.approvedAmount ?? found.approvedAmount,
+        declineReason: body.declineReason ?? found.declineReason,
+        returnTrackingNumber: body.returnTrackingNumber ?? found.returnTrackingNumber,
+        ...(stamps[body.status] ?? {}),
+      }),
+    )
+  }),
+
+  http.get('http://localhost:8080/api/v1/sellers/me/refund-requests', ({ request }) => {
+    const url = new URL(request.url)
+    const status = url.searchParams.get('status')
+    const q = url.searchParams.get('q')?.toLowerCase()
+    const page = Number(url.searchParams.get('page') ?? 0)
+    const size = Number(url.searchParams.get('size') ?? 20)
+
+    const rows = listRefundRequests()
+      .filter((row) => {
+        if (status && row.status !== status) return false
+        if (q) {
+          const haystack = [row.buyerName, row.buyerEmail, row.orderReference, row.reference]
+            .concat(row.lines.map((l) => l.productTitle))
+            .join(' ')
+            .toLowerCase()
+          if (!haystack.includes(q)) return false
+        }
+        return true
+      })
+      .map(summaryOfRefund)
+
+    return HttpResponse.json({
+      content: rows.slice(page * size, page * size + size),
+      page,
+      totalElements: rows.length,
+      totalPages: Math.ceil(rows.length / size) || 1,
+    })
   }),
 
   // The system reference lists. Both are public, and both are what their selectors

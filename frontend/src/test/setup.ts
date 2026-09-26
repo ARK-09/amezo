@@ -10,6 +10,7 @@ import { resetWrittenReviews } from './msw/fixtures/productDetails'
 import { resetPurchases } from './msw/fixtures/purchases'
 import { clearSellerSession } from './msw/fixtures/sellerAuth'
 import { resetSellerOrders } from './msw/fixtures/sellerOrders'
+import { resetRefundRequests } from './msw/fixtures/refunds'
 import { resetSellerProducts } from './msw/fixtures/sellerProducts'
 
 // jsdom doesn't implement ResizeObserver; radix-ui's Slider needs it to measure the track
@@ -28,6 +29,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => server.resetHandlers())
 afterEach(() => localStorage.clear())
 afterEach(() => resetSellerProducts())
+afterEach(() => resetRefundRequests())
 afterEach(() => resetSellerOrders())
 // The mock session cookie is module state like the rest; a test that signs in
 // must not leave the next one signed in.

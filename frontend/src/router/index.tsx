@@ -18,6 +18,8 @@ import { SellerOrderDetail } from '@/pages/seller/SellerOrderDetail'
 import { SellerOrders } from '@/pages/seller/SellerOrders'
 import { SellerProductDetail } from '@/pages/seller/SellerProductDetail'
 import { SellerProducts } from '@/pages/seller/SellerProducts'
+import { SellerRefundDetail } from '@/pages/seller/SellerRefundDetail'
+import { SellerRefunds } from '@/pages/seller/SellerRefunds'
 import { SellerSignIn } from '@/pages/seller/SellerSignIn'
 import { SellerVerify } from '@/pages/seller/SellerVerify'
 
@@ -66,6 +68,8 @@ export const router = createBrowserRouter([
       { path: 'products/:productId', element: <SellerProductDetail /> },
       { path: 'orders', element: <SellerOrders /> },
       { path: 'orders/:orderId', element: <SellerOrderDetail /> },
+      { path: 'refunds', element: <SellerRefunds /> },
+      { path: 'refunds/:refundRequestId', element: <SellerRefundDetail /> },
     ],
   },
 ])
