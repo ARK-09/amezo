@@ -12,3 +12,8 @@ backend/target/
 
 # Per-machine Claude Code overrides (interpreter paths, local hook tweaks)
 .claude/settings.local.json
+
+# Git worktrees the Claude Code harness creates for isolated subagents. These are
+# live checkouts of this same repo - committing them would nest the repo inside
+# itself. They are removed automatically when the agent finishes.
+.claude/worktrees/
