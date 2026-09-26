@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { BrandingSection } from '@/features/store-settings/components/BrandingSection'
 import {
   useMyStore,
   useUpdateMyStore,
@@ -94,23 +95,37 @@ export function StoreSettings() {
   const update = useUpdateMyStore()
 
   const [draft, setDraft] = useState<Draft | null>(null)
-  const [seededFrom, setSeededFrom] = useState<StoreProfile | null>(null)
-
-  // Re-seed whenever the saved profile changes, so a successful save becomes
-  // the new baseline and the form stops reading as dirty. Derived during
-  // render rather than in an effect: an effect would paint the stale draft
-  // once before correcting it.
-  //
-  // Keyed on the profile object rather than its updatedAt, which is optional -
-  // a server that omits it left seededFrom and savedAt both null, so the draft
-  // was never seeded and the form sat on its skeleton forever.
-  if (query.data && query.data !== seededFrom) {
-    setSeededFrom(query.data)
-    setDraft(draftFrom(query.data))
-  }
+  const [seededFrom, setSeededFrom] = useState<string | null>(null)
+  const [seededSave, setSeededSave] = useState<StoreProfile | null>(null)
 
   const baseline = useMemo(() => (query.data ? draftFrom(query.data) : null), [query.data])
-  const dirty = Boolean(draft && baseline && JSON.stringify(draft) !== JSON.stringify(baseline))
+  const baselineKey = baseline && JSON.stringify(baseline)
+
+  // Seed from the saved profile, and re-seed whenever one of these fields
+  // changes under the form. Derived during render rather than in an effect: an
+  // effect would paint the stale draft once before correcting it.
+  //
+  // Keyed on the seeded values rather than on updatedAt, which is optional - a
+  // server that omits it never re-seeded the draft at all, so the form sat on
+  // its skeleton forever. Values rather than the profile object, because a
+  // branding upload replaces that object without touching a single field of this
+  // form, and re-seeding on it would throw away whatever the seller had typed
+  // meanwhile.
+  if (baseline && baselineKey !== seededFrom) {
+    setSeededFrom(baselineKey)
+    setDraft(baseline)
+  }
+
+  // A save of this form is a new baseline whatever came back, so the form stops
+  // reading as dirty: save trims what was typed, and a trailing space trimmed
+  // away leaves every seeded field identical to the one already seeded - which
+  // the check above would read as nothing to do.
+  if (update.data && update.data !== seededSave) {
+    setSeededSave(update.data)
+    setDraft(draftFrom(update.data))
+  }
+
+  const dirty = Boolean(draft && baselineKey && JSON.stringify(draft) !== baselineKey)
 
   if (query.isError) {
     return (
@@ -126,7 +141,8 @@ export function StoreSettings() {
     )
   }
 
-  if (query.isLoading || !draft) {
+  const profile = query.data
+  if (query.isLoading || !draft || !profile) {
     return (
       <div className="flex max-w-[720px] flex-col gap-4">
         <Skeleton className="h-7 w-48" />
@@ -192,6 +208,10 @@ export function StoreSettings() {
           Saved
         </p>
       )}
+
+      {/* Branding sits outside the draft: an upload is live the moment it is
+          confirmed, so there is nothing for Save changes to carry. */}
+      <BrandingSection profile={profile} storeName={draft.name} />
 
       <section className="rounded-xl border p-6">
         <h2 className="text-[15px] font-bold">Identity</h2>
@@ -294,12 +314,25 @@ export function StoreSettings() {
         )}
       </section>
 
-      <section className="rounded-xl border p-6">
-        <h2 className="text-[15px] font-bold">Preview</h2>
+      <section className="rounded-xl border p-6" aria-labelledby="st-preview">
+        <h2 id="st-preview" className="text-[15px] font-bold">
+          Preview
+        </h2>
         <Separator className="my-4" />
+        {/* The band only appears once there is a cover, so a store without one
+            previews exactly as it did before. */}
+        {profile.coverUrl && (
+          <div className="mb-4 h-[110px] overflow-hidden rounded-lg bg-muted">
+            <img src={profile.coverUrl} alt="" className="size-full object-cover" />
+          </div>
+        )}
         <div className="flex items-center gap-4">
-          <span className="flex size-14 shrink-0 items-center justify-center rounded-xl border bg-muted">
-            <Store className="size-6 text-muted-foreground" aria-hidden />
+          <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-muted">
+            {profile.logoUrl ? (
+              <img src={profile.logoUrl} alt="" className="size-full object-cover" />
+            ) : (
+              <Store className="size-6 text-muted-foreground" aria-hidden />
+            )}
           </span>
           <div className="min-w-0">
             <p className="truncate text-base font-bold">{draft.name || 'Your store'}</p>
