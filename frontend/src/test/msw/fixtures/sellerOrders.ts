@@ -162,7 +162,7 @@ export function summaryOf(order: StoredSellerOrder) {
     buyerEmail: order.buyerEmail,
     placedAt: order.placedAt,
     total: total(order),
-    status: order.status,
+    status: statusOf(order),
   }
 }
 
@@ -206,6 +206,21 @@ function refundsOn(order: StoredSellerOrder) {
   return refundRequestsForOrder(order.id).map(summaryOfRefund)
 }
 
+/**
+ * REFUNDED is derived, never stored on the order: the server reports it once
+ * the order's refund request has settled as REFUNDED. Refunds are modelled once
+ * by refund_request, so an order that also carried its own refunded flag would
+ * be a second source of truth - and the first person to settle a refund from
+ * the queue rather than the order would desync them.
+ *
+ * A replacement is not a refund, so REPLACEMENT_SENT leaves the fulfilment
+ * status alone.
+ */
+function statusOf(order: StoredSellerOrder): StoredSellerOrder['status'] {
+  const refunded = refundsOn(order).some((refund) => refund.status === 'REFUNDED')
+  return refunded ? 'REFUNDED' : order.status
+}
+
 export function sellerOrderRowOf(order: StoredSellerOrder): SellerOrderRow {
   return {
     id: order.id,
@@ -213,7 +228,7 @@ export function sellerOrderRowOf(order: StoredSellerOrder): SellerOrderRow {
     buyerEmail: order.buyerEmail,
     recipientName: recipientFor(order),
     placedAt: order.placedAt,
-    status: order.status,
+    status: statusOf(order),
     itemCount: order.lines.reduce((sum, line) => sum + line.quantity, 0),
     total: order.total,
     currency: 'USD',

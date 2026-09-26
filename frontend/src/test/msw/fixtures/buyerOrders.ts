@@ -168,10 +168,22 @@ function refundsOn(order: StoredBuyerOrder) {
   return refundRequestsForOrder(order.id)
 }
 
+/**
+ * REFUNDED is derived from the refund request, never stored on the order - the
+ * same rule the seller side applies, so buyer and seller never disagree about
+ * whether an order was refunded. A replacement is not a refund, so
+ * REPLACEMENT_SENT leaves the fulfilment status alone.
+ */
+function statusOf(order: StoredBuyerOrder): StoredBuyerOrder['status'] {
+  const refunded = refundsOn(order).some((refund) => refund.status === 'REFUNDED')
+  return refunded ? 'REFUNDED' : order.status
+}
+
 export function buyerOrderDetailOf(order: StoredBuyerOrder): BuyerOrderDetail {
   const raised = refundsOn(order)
   return {
     ...order,
+    status: statusOf(order),
     lines: order.lines.map((line) => {
       // The contract sets these "when this line is inside an open refund
       // request", so settling one clears the line's "In refund" flag rather

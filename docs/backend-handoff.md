@@ -164,7 +164,23 @@ The unversioned seller endpoints previously declared their own inline
 reference the shared `OrderStatus` too.
 
 **Order** — `PLACED → PACKED → SHIPPED → IN_TRANSIT → OUT_FOR_DELIVERY →
-DELIVERED`. Seller may drive `PLACED→PACKED` (takes `parcels`, `packedBy`) and
+DELIVERED`.
+
+**`REFUNDED` is derived, never written.** It is on `OrderStatus` so the order
+lists and their tabs can show it, but `UpdateSellerOrder.status` takes
+`SellerOrderTransition` — `PACKED | SHIPPED | CANCELLED` — and the endpoint
+answers `422` to a client that tries to declare it. The server reports
+`REFUNDED` when the order's refund request reaches `REFUNDED`; a
+`REPLACEMENT_SENT` is not a refund and leaves the fulfilment status alone.
+Refunds are modelled once, by `refund_request`; an order status a client could
+also write would be a second source of truth that nothing reconciles the first
+time somebody settles a refund from the queue instead of the order. Buyer and
+seller derive it the same way, so they cannot disagree.
+
+Open question for whoever implements this: a **partial** refund currently
+flips the whole order to `REFUNDED`. If that is wrong for your data, the
+derivation is one predicate to change, and the alternative is to keep the
+fulfilment status and let the refund badge carry it alone. Seller may drive `PLACED→PACKED` (takes `parcels`, `packedBy`) and
 `PLACED|PACKED→SHIPPED` (takes `handoverMethod`, `hub`). Either may carry a
 `note`, which is shown to the buyer on the order timeline. The seller never
 supplies `trackingNumber`: the platform issues it on handover and returns it on

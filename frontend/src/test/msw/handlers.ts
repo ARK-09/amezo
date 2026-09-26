@@ -355,6 +355,21 @@ export const handlers = [
 
   http.patch('http://localhost:8080/api/v1/sellers/me/orders/:orderId', async ({ params, request }) => {
     const body = (await request.json()) as { status: string; parcels?: number; note?: string }
+    // REFUNDED is derived from the refund request, so it is not a status a
+    // client may declare - accepting one here would create the second source of
+    // truth the derivation exists to avoid.
+    if (body.status === 'REFUNDED') {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/validation',
+          title: 'Validation failed',
+          status: 422,
+          detail: 'REFUNDED is derived from the order\'s refund request, not set directly.',
+          errors: [{ field: 'status', reason: 'is derived and cannot be written' }],
+        },
+        { status: 422 },
+      )
+    }
     const order = findSellerOrder(params.orderId as string)
     if (!order) {
       return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })

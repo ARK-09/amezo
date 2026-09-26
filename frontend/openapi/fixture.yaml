@@ -2088,7 +2088,27 @@ components:
     # carrier is scanning.
     OrderStatus:
       type: string
-      enum: [PLACED, PACKED, SHIPPED, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, CANCELLED]
+      description: >-
+        Read-only. PLACED through DELIVERED is the fulfilment lifecycle the
+        seller drives; CANCELLED and REFUNDED are outcomes the server decides.
+
+        REFUNDED is DERIVED, never written: the server reports it when the
+        order's refund request reaches REFUNDED. Refunds are modelled once, by
+        refund_request, with their own state machine, approval and return steps
+        and money. An order status a client could also write would be a second
+        source of truth that nothing reconciles the first time somebody settles
+        a refund through the queue instead. See SellerOrderTransition for what a
+        seller may actually write.
+      enum:
+        [PLACED, PACKED, SHIPPED, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, CANCELLED, REFUNDED]
+
+    SellerOrderTransition:
+      type: string
+      description: >-
+        The statuses a seller may write, which is deliberately narrower than
+        OrderStatus. The three carrier states are system-driven, and REFUNDED is
+        derived from the refund request rather than declared here.
+      enum: [PACKED, SHIPPED, CANCELLED]
     ProductStatus:
       type: string
       enum: [ACTIVE, DRAFT, ARCHIVED]
@@ -2586,7 +2606,7 @@ components:
       type: object
       required: [status]
       properties:
-        status: { $ref: '#/components/schemas/OrderStatus' }
+        status: { $ref: '#/components/schemas/SellerOrderTransition' }
         # PLACED -> PACKED
         parcels: { type: integer, minimum: 1 }
         packedBy: { type: string }

@@ -152,7 +152,7 @@ count), and a published state with **Edit review**.
 `POST /reviews` and the eligibility endpoint exist. **Edit review needs a new
 endpoint** — there is no `PATCH`/`PUT /reviews/{id}`.
 
-## 12. Seller order composer — no "Refunded" stage, no date field · L, needs API
+## 12. Seller order composer — no "Refunded" stage, no date field · resolved differently
 
 The design's compose stages are `Packed / Handed over / Refunded`. Refunded adds
 an amount (validated ≤ order total) and a reason select, posting as "Refund $X".
@@ -161,6 +161,16 @@ Every mode has a **Date** input.
 `SellerOrderPanel.tsx:28` types `Stage = 'PACKED' | 'SHIPPED'` and renders two
 chips. `OrderStatus` has no `REFUNDED` value and `UpdateSellerOrder` has no
 amount, reason or date field.
+
+
+**Resolved, not built as designed.** The composer will not gain a Refunded
+stage. Refunds are already modelled by `refund_request` — its own state machine,
+approval and return steps, and money — so a composer that also declared an order
+refunded would be a second writable source of truth for one fact. Instead
+`REFUNDED` is on `OrderStatus` as a **derived** value: the server reports it once
+the order's refund request settles, `UpdateSellerOrder` will not accept it, and
+the Refunds queue stays the one place a refund is decided. The design's per-mode
+**Date** field was built, as `UpdateSellerOrder.occurredAt`.
 
 ## 13. Product Form — missing controls in edit mode · S, reorder is M and needs API
 

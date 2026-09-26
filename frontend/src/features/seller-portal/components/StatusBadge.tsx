@@ -35,6 +35,9 @@ const TONE_FOR: Record<string, Tone> = {
   APPROVED: 'progress',
   AWAITING_RETURN: 'progress',
   RETURN_RECEIVED: 'progress',
+  // Shared by a refund request that completed and by an order derived REFUNDED
+  // from one. Both mean the same thing - the money went back and the process
+  // finished - so one tone is right for both.
   REFUNDED: 'positive',
   REPLACEMENT_SENT: 'positive',
   DECLINED: 'danger',

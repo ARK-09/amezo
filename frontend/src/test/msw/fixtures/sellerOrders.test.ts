@@ -18,6 +18,7 @@ type RefundRequestDetail = components['schemas']['RefundRequestDetail']
 const ORDERS = 'http://localhost:8080/api/v1/sellers/me/orders'
 const REFUNDS = 'http://localhost:8080/api/v1/refund-requests'
 const ORDER_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
+const REFUND_ID = 'ref-seeded'
 
 function seedOrder(patch: Partial<StoredSellerOrder> = {}) {
   resetSellerOrders([
@@ -107,6 +108,55 @@ describe('seller order fulfilment', () => {
     expect(shipped.parcels).toBe(2)
     // The panel dates its "Handed over" step from the shipment, not the order.
     expect(shipped.shipment?.shippedAt).toEqual(expect.any(String))
+  })
+})
+
+describe('an order derived REFUNDED from its refund request', () => {
+  // REFUNDED is not stored on the order. Refunds are modelled once by
+  // refund_request, and the order reports what that says.
+  it('reads REFUNDED once the refund settles, on the row and the detail', async () => {
+    seedOrder({ status: 'DELIVERED' })
+    seedRefund({ status: 'RETURN_RECEIVED' })
+
+    expect((await getRow()).status).toBe('DELIVERED')
+
+    await fetch(`http://localhost:8080/api/v1/refund-requests/${REFUND_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'REFUNDED' }),
+    })
+
+    expect((await getRow()).status).toBe('REFUNDED')
+    expect((await getOrder()).status).toBe('REFUNDED')
+  })
+
+  it('leaves the fulfilment status alone for a replacement, which is not a refund', async () => {
+    seedOrder({ status: 'DELIVERED' })
+    seedRefund({ status: 'APPROVED', resolution: 'REPLACEMENT' })
+
+    await fetch(`http://localhost:8080/api/v1/refund-requests/${REFUND_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'REPLACEMENT_SENT' }),
+    })
+
+    expect((await getRow()).status).toBe('DELIVERED')
+  })
+
+  it('refuses a client that tries to declare it', async () => {
+    seedOrder({ status: 'DELIVERED' })
+
+    const response = await fetch(`${ORDERS}/${ORDER_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'REFUNDED' }),
+    })
+
+    expect(response.status).toBe(422)
+    const problem = (await response.json()) as components['schemas']['ProblemDetail']
+    expect(problem.errors?.[0].field).toBe('status')
+    // And the order is untouched by the attempt.
+    expect((await getRow()).status).toBe('DELIVERED')
   })
 })
 
