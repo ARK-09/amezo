@@ -377,7 +377,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /checkout/last-details:
+    get:
+      operationId: getLastCheckoutDetails
+      description: >
+        The signed-in buyer's most recent delivery details, for prefilling checkout.
+        204 means they have not ordered before, which is not an error - the form
+        simply stays empty. Buyer-scoped even though POST /orders is public: placing
+        an order needs no account, reading past ones does.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LastCheckoutDetails'
+        '204':
+          description: No previous order
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /sessions/current:
+    delete:
+      operationId: signOut
+      description: >
+        Signs out whoever the cookie names, buyer or seller alike. Role-agnostic on
+        purpose: the account page is reachable by both, and the buyer-scoped
+        DELETE /auth/buyer/session 403'd for a signed-in seller, which is why
+        sign-out appeared to do nothing there.
+      responses:
+        '204':
+          description: Signed out - session row deleted and cookie expired
+        '401':
+          description: No session to sign out of
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
     get:
       operationId: getCurrentSession
       description: >
@@ -752,9 +797,37 @@ components:
       properties:
         code: { type: string, minLength: 2, maxLength: 2 }
         name: { type: string }
+    Address:
+      type: object
+      required: [fullName, line1, city, state, postalCode, country]
+      properties:
+        fullName: { type: string }
+        line1: { type: string }
+        # The one optional field, matching CheckoutAddressRequest's validation
+        # exactly - it is not marked required on the form either.
+        line2: { type: string, nullable: true }
+        city: { type: string }
+        state: { type: string }
+        postalCode: { type: string }
+        # ISO 3166-1 alpha-2, the same code GET /countries serves and
+        # @ValidCountryCode enforces - never a display name.
+        country: { type: string, minLength: 2, maxLength: 2 }
+    LastCheckoutDetails:
+      type: object
+      required: [phone, shippingAddress, billingSameAsShipping]
+      properties:
+        phone: { type: string }
+        shippingAddress: { $ref: '#/components/schemas/Address' }
+        billingSameAsShipping: { type: boolean }
+        # Null when the last order billed to the shipping address. Echoing the
+        # shipping one here would tick "same as shipping" off on a form where the
+        # buyer never chose that.
+        billingAddress:
+          allOf: [{ $ref: '#/components/schemas/Address' }]
+          nullable: true
     ProductSummary:
       type: object
-      required: [id, slug, title, brandName, category, priceFrom, inStock, sellerId]
+      required: [id, slug, title, brandName, category, priceFrom, inStock, reviewCount, sellerId]
       properties:
         id: { type: string, format: uuid }
         # What the card links to, in place of the id.
@@ -765,6 +838,10 @@ components:
         priceFrom: { type: number }
         thumbnailUrl: { type: string, nullable: true }
         avgRating: { type: number, nullable: true }
+        # How many reviews that average is over. Zero is the unambiguous "nobody
+        # has reviewed this" - avgRating being null cannot be told apart from a
+        # field the client failed to read.
+        reviewCount: { type: integer }
         inStock: { type: boolean }
         # What a card's Add-to-cart button puts in the cart, so it needs no
         # request of its own: the cheapest buyable offer, with its own price

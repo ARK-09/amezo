@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { SiteHeader } from '@/components/layout/SiteHeader'
 import { CartProvider } from '@/features/cart/context/CartContext'
+import { signInBuyerSession } from '@/test/msw/fixtures/sellerAuth'
 
 function LocationProbe() {
   const location = useLocation()
@@ -75,17 +76,76 @@ describe('SiteHeader', () => {
       'href',
       '/search?category=apparel',
     )
-    expect(screen.getByRole('link', { name: /All categories/ })).toHaveAttribute('href', '/search')
   })
 
-  it('remembers the delivery city across visits', async () => {
+  /**
+   * The chevron used to sit on a plain link with no menu behind it, which is the
+   * whole reason the control read as broken.
+   */
+  it('opens the All categories menu and links each one by slug', async () => {
     renderHeader()
 
-    await userEvent.click(screen.getByRole('button', { name: /Deliver to Dubai/ }))
-    await userEvent.click(screen.getByRole('option', { name: 'Sharjah' }))
+    const trigger = screen.getByRole('button', { name: /All categories/ })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
 
-    expect(screen.getByRole('button', { name: /Deliver to Sharjah/ })).toBeInTheDocument()
-    expect(localStorage.getItem('delivery-city:v1')).toBe('Sharjah')
+    await userEvent.click(trigger)
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    const menu = within(screen.getByRole('button', { name: /All categories/ }).parentElement!)
+    expect(await menu.findByRole('link', { name: 'Kitchen' })).toHaveAttribute(
+      'href',
+      '/search?category=kitchen',
+    )
+    expect(menu.getByRole('link', { name: 'Browse everything' })).toHaveAttribute('href', '/search')
+  })
+
+  it('closes the All categories menu on Escape', async () => {
+    renderHeader()
+
+    const trigger = screen.getByRole('button', { name: /All categories/ })
+    await userEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+    await userEvent.keyboard('{Escape}')
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  /**
+   * It used to offer five hardcoded Gulf cities defaulting to Dubai. It is a country
+   * now, from the same list checkout validates against, and what is stored is the ISO
+   * code - a city name in that slot would have become "Du" in an address.
+   */
+  it('picks a delivery country from the server list and persists the ISO code', async () => {
+    renderHeader()
+
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Delivery country' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'United Kingdom' }))
+
+    expect(screen.getByRole('combobox', { name: 'Delivery country' })).toHaveTextContent(
+      'Deliver to United Kingdom',
+    )
+    expect(localStorage.getItem('delivery-country:v1')).toBe('GB')
+  })
+
+  it('does not default to any country before one is chosen', async () => {
+    renderHeader()
+
+    expect(await screen.findByRole('combobox', { name: 'Delivery country' })).toHaveTextContent(
+      'Select a country',
+    )
+    expect(localStorage.getItem('delivery-country:v1')).toBeNull()
+  })
+
+  /** The email used to be printed beside the avatar, derived from the address itself. */
+  it('shows only the avatar for a signed-in buyer, never their email', async () => {
+    signInBuyerSession({ buyerIdentityId: 'buyer-1', email: 'ada.lovelace@example.com' })
+    renderHeader()
+
+    const account = await screen.findByRole('link', { name: 'Your account' })
+    expect(account).toHaveAttribute('href', '/account')
+    expect(screen.queryByText(/ada\.lovelace@example\.com/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Ada Lovelace/)).not.toBeInTheDocument()
   })
 
   it('links the wordmark home and offers the seller entry point', () => {

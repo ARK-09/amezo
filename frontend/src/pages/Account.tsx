@@ -14,6 +14,13 @@ export function Account() {
   const session = useSession()
   const signOut = useBuyerSignOut()
 
+  // Checked before the signed-out redirect below, and that order matters. Signing
+  // out empties the cached identity, so without this the page would fall through to
+  // "not signed in" and bounce to the sign-in form - sending someone who just left
+  // straight back to a login screen. Home is where signing out should land.
+  if (signOut.isSuccess) {
+    return <Navigate to="/" replace />
+  }
   if (session.isPending) {
     return <p className="mx-auto px-7 py-16 text-sm text-muted-foreground">Loading…</p>
   }
@@ -37,6 +44,16 @@ export function Account() {
           {signOut.isPending ? 'Signing out…' : 'Sign out'}
         </Button>
       </div>
+
+      {/* Sign-out used to fail silently here: the page is reachable by a seller
+          session, the endpoint it called was buyer-only, and a rejected mutation
+          showed nothing at all. The route is role-agnostic now, and a failure says
+          so rather than looking like a dead button. */}
+      {signOut.isError && (
+        <p className="mt-3 text-sm text-destructive" role="alert">
+          {signOut.error?.detail ?? "We couldn't sign you out. Please try again."}
+        </p>
+      )}
 
       {identity.identityType === 'SELLER' && (
         <p className="mt-4 text-sm text-muted-foreground">

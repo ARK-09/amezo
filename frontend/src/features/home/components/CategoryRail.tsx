@@ -1,43 +1,9 @@
-import type { LucideIcon } from 'lucide-react'
-import {
-  Baby,
-  Book,
-  Car,
-  Dumbbell,
-  Footprints,
-  Gamepad2,
-  Home,
-  Laptop,
-  Package,
-  Shirt,
-  Sparkles,
-  Tent,
-  Utensils,
-} from 'lucide-react'
 import { Link } from 'react-router'
 
+import { categoryImage } from '@/features/reference/categoryImage'
 import type { Category } from '@/features/reference/api/useCategories'
 
 import { SectionHeading } from './SectionHeading'
-
-// Keyed on category SLUGS, which are stable - a name can be edited, and keying on
-// the display text meant renaming "Apparel" silently dropped its icon. Anything the
-// marketplace adds later falls back to the generic parcel rather than breaking the
-// rail.
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  electronics: Laptop,
-  kitchen: Utensils,
-  footwear: Footprints,
-  outdoor: Tent,
-  apparel: Shirt,
-  books: Book,
-  toys: Gamepad2,
-  sports: Dumbbell,
-  baby: Baby,
-  beauty: Sparkles,
-  home: Home,
-  automotive: Car,
-}
 
 export function CategoryRail({
   categories,
@@ -67,17 +33,31 @@ export function CategoryRail({
   return (
     <section aria-labelledby="popular-categories">
       <SectionHeading id="popular-categories" title="Explore popular categories" viewAllTo="/search" />
-      <div className="-mx-7 flex gap-4 overflow-x-auto px-7 pb-1">
+      {/* Scrolls horizontally with no scrollbar painted under the tiles - see the
+          no-scrollbar utility in index.css. Swipe, wheel and keyboard scrolling all
+          still work; only the bar is hidden. */}
+      <div className="no-scrollbar -mx-7 flex gap-4 overflow-x-auto px-7 pb-1">
         {categories.map((category) => {
-          const Icon = CATEGORY_ICONS[category.slug] ?? Package
+          const image = categoryImage(category.slug)
           return (
             <Link
               key={category.slug}
               to={`/search?category=${encodeURIComponent(category.slug)}`}
               className="group flex w-[132px] shrink-0 flex-col items-center gap-3"
             >
-              <span className="flex aspect-square w-full items-center justify-center rounded-full border bg-muted transition-colors group-hover:border-primary/50 group-hover:bg-primary/5">
-                <Icon className="size-7 text-muted-foreground transition-colors group-hover:text-primary" aria-hidden />
+              <span className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-full border bg-muted transition-colors group-hover:border-primary/50">
+                {image ? (
+                  <img
+                    src={image}
+                    // The adjacent label already names the category, so a copy here
+                    // would just make a screen reader say it twice.
+                    alt=""
+                    loading="lazy"
+                    className="size-full object-cover transition-transform duration-200 group-hover:scale-105"
+                  />
+                ) : (
+                  <FallbackMark name={category.name} />
+                )}
               </span>
               <span className="text-center text-[13px] font-semibold">{category.name}</span>
             </Link>
@@ -85,5 +65,18 @@ export function CategoryRail({
         })}
       </div>
     </section>
+  )
+}
+
+/**
+ * For a category the marketplace adds later, before anyone draws artwork for it.
+ * Its initial on the muted tile beats a generic parcel icon repeated down the rail,
+ * because two unknown categories at least look different from each other.
+ */
+function FallbackMark({ name }: { name: string }) {
+  return (
+    <span className="text-2xl font-bold text-muted-foreground" aria-hidden>
+      {name.trim().charAt(0).toUpperCase() || '?'}
+    </span>
   )
 }

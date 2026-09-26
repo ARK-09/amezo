@@ -77,7 +77,7 @@ public class ProductService
         Map<UUID, CategoryResponse> categoriesById = categoryService.byId();
         if (productIds.isEmpty()) {
             return products.map(product -> ProductMapper.toSummary(
-                    product, categoriesById.get(product.getCategoryId()), null, null, false, null, null, null));
+                    product, categoriesById.get(product.getCategoryId()), null, null, false, null, null, null, 0L));
         }
 
         // Three batched lookups for the whole page, not per card: variants to reach
@@ -120,7 +120,10 @@ public class ProductService
                     inStockByProductId.getOrDefault(product.getId(), false),
                     defaultOffer,
                     defaultOffer != null ? defaultOffer.getVariantId() : null,
-                    summary != null ? summary.averageRating() : null);
+                    summary != null ? summary.averageRating() : null,
+                    // A product nobody has reviewed has no row in the aggregate at
+                    // all, which is zero reviews rather than an unknown number.
+                    summary != null && summary.count() != null ? summary.count() : 0L);
         });
     }
 

@@ -31,9 +31,11 @@ import java.util.List;
  *                    POST /orders (guest checkout), the OpenAPI spec path
  *                    (springdoc.api-docs.path, wherever that points),
  *                    POST /auth/{seller,buyer}/magic-link and /verify
- *   either role   - GET /sessions/current (SessionController)
+ *   either role   - GET /sessions/current, DELETE /sessions/current
+ *                    (SessionController - the role-agnostic sign-out)
  *   buyer only    - POST /reviews, the per-product review eligibility read
- *                    (GET under a product's reviews), DELETE /auth/buyer/session
+ *                    (GET under a product's reviews), the last-checkout-details
+ *                    read, DELETE /auth/buyer/session
  *   seller only   - every method under /sellers/me/** (own product list,
  *                    product create, orders, ship), plus product/variant/image
  *                    writes under /products/**, /variants/** and /images/**,
@@ -89,16 +91,23 @@ public class SecurityConfig {
                 // instead of the real ProblemDetail from ApiExceptionHandler.
                 .requestMatchers("/error").permitAll()
 
-                // Buyers and sellers alike - the only route either role reaches.
+                // Buyers and sellers alike - the routes either role reaches.
                 // A missing or expired cookie gets the 401 from
                 // ProblemDetailAuthenticationEntryPoint, which is the frontend's
                 // "not signed in" signal, not an error to show.
                 //
-                // DELETE /sessions/current had a rule here too and no controller
-                // behind it, so it answered 404 to an authenticated caller - the
-                // same dead-rule bug as the GET. Sign-out is
-                // DELETE /auth/seller/session; nothing calls a second one.
+                // DELETE has a controller behind it now (SessionController), so
+                // this pair is two live routes rather than the dead rule the
+                // DELETE used to be.
+                //
+                // Sign-out is authenticated() and not role-scoped on purpose.
+                // The role-prefixed sign-outs below scope to one identity type
+                // each, and that is what broke the account page: it is reachable
+                // by a seller session, so its buyer-only sign-out 403'd for
+                // exactly the people most likely to have both. Revoking a
+                // session needs no role - it deletes the row the cookie names.
                 .requestMatchers(HttpMethod.GET, "/sessions/current").authenticated()
+                .requestMatchers(HttpMethod.DELETE, "/sessions/current").authenticated()
 
                 // GET /orders/** had a rule here and no controller behind it, the
                 // same dead-rule shape that made /sessions/current answer 404. A
@@ -110,6 +119,12 @@ public class SecurityConfig {
                 // the door, the ownership check is the lock - a buyer session alone
                 // does not entitle anyone to review a stranger's purchase.
                 .requestMatchers(HttpMethod.POST, "/reviews").hasRole("BUYER")
+
+                // Reading back a buyer's own last delivery details to prefill
+                // checkout. Buyer-scoped even though POST /orders beside it is
+                // public: checking out needs no account, but reading what someone
+                // ordered before is reading their data.
+                .requestMatchers(HttpMethod.GET, "/checkout/last-details").hasRole("BUYER")
 
                 .requestMatchers(HttpMethod.DELETE, "/auth/seller/session").hasRole("SELLER")
                 .requestMatchers(HttpMethod.DELETE, "/auth/buyer/session").hasRole("BUYER")

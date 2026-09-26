@@ -2,7 +2,10 @@ import '@testing-library/jest-dom/vitest'
 
 import { afterAll, afterEach, beforeAll } from 'vitest'
 
+import { resetDeliveryCountryForTests } from '@/features/reference/deliveryCountry'
+
 import { server } from './msw/server'
+import { clearLastCheckoutDetails } from './msw/fixtures/checkoutDetails'
 import { resetWrittenReviews } from './msw/fixtures/productDetails'
 import { resetPurchases } from './msw/fixtures/purchases'
 import { clearSellerSession } from './msw/fixtures/sellerAuth'
@@ -33,4 +36,9 @@ afterEach(() => clearSellerSession())
 // like the rest - a leftover review would make the next test's product look reviewed.
 afterEach(() => resetWrittenReviews())
 afterEach(() => resetPurchases())
+// Same reasoning for the delivery-country preference and the stored last order:
+// both are module/browser state that would otherwise leak a prefilled checkout
+// form into the next test.
+afterEach(() => clearLastCheckoutDetails())
+afterEach(() => resetDeliveryCountryForTests())
 afterAll(() => server.close())

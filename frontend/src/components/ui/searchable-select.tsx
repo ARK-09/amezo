@@ -1,4 +1,5 @@
 import { Check, ChevronDown, Search } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -33,6 +34,9 @@ export function SearchableSelect<T>({
   invalid = false,
   fallbackLabel,
   id,
+  triggerClassName,
+  renderTrigger,
+  panelClassName,
 }: {
   items: T[]
   /** The selected key, or null for nothing selected. */
@@ -55,6 +59,16 @@ export function SearchableSelect<T>({
    */
   fallbackLabel?: string
   id?: string
+  /**
+   * Replaces the default bordered-field trigger styling. The header's delivery
+   * picker is a two-line label in a nav bar, not a form field, and reskinning it
+   * beats a second combobox with its own keyboard handling to keep in step.
+   */
+  triggerClassName?: string
+  /** Replaces the trigger's contents. Receives the selected label, or null. */
+  renderTrigger?: (selectedLabel: string | null) => ReactNode
+  /** Extra classes for the dropdown panel, for when it shouldn't match the trigger's width. */
+  panelClassName?: string
 }) {
   const generatedId = useId()
   const controlId = id ?? generatedId
@@ -140,19 +154,33 @@ export function SearchableSelect<T>({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex h-9 w-full items-center justify-between gap-2 rounded-md border px-3 text-left text-sm',
           'outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
-          invalid && 'border-destructive',
+          triggerClassName ??
+            cn(
+              'flex h-9 w-full items-center justify-between gap-2 rounded-md border px-3 text-left text-sm',
+              invalid && 'border-destructive',
+            ),
         )}
       >
-        <span className={cn('truncate', !selected && !fallbackLabel && 'text-muted-foreground')}>
-          {selected ? getLabel(selected) : (fallbackLabel ?? placeholder)}
-        </span>
-        <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        {renderTrigger ? (
+          renderTrigger(selected ? getLabel(selected) : null)
+        ) : (
+          <>
+            <span className={cn('truncate', !selected && !fallbackLabel && 'text-muted-foreground')}>
+              {selected ? getLabel(selected) : (fallbackLabel ?? placeholder)}
+            </span>
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          </>
+        )}
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 z-30 mt-1 w-full rounded-lg border bg-popover shadow-md">
+        <div
+          className={cn(
+            'absolute top-full left-0 z-30 mt-1 rounded-lg border bg-popover shadow-md',
+            panelClassName ?? 'w-full',
+          )}
+        >
           <div className="flex items-center gap-2 border-b px-2.5 py-2">
             <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
             <input
