@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { SiteFooter } from '@/components/layout/SiteFooter'
-import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
 import { clearSellerSession, signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 
 function renderFooter() {

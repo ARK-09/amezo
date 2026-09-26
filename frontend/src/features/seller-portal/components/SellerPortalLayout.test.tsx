@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
 import { signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 
 import { SellerPortalLayout } from './SellerPortalLayout'

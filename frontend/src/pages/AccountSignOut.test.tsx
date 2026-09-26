@@ -6,7 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { Account } from '@/pages/Account'
-import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
 import { createAppQueryClient } from '@/lib/api/queryClient'
 import { server } from '@/test/msw/server'
 import { currentSessionIdentity, signInBuyerSession, signInSellerSession } from '@/test/msw/fixtures/sellerAuth'

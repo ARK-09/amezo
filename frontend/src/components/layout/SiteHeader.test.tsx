@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import { SiteHeader } from '@/components/layout/SiteHeader'
 import { CartProvider } from '@/features/cart/context/CartContext'
-import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
 import { signInBuyerSession, signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 
 function LocationProbe() {

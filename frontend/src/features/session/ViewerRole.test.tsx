@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
 import { createAppQueryClient } from '@/lib/api/queryClient'
 import { Account } from '@/pages/Account'
 import { BuyerSignIn } from '@/pages/BuyerSignIn'

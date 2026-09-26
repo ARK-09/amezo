@@ -1,8 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { createContext, useContext, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { sessionKeys, useSession } from '@/features/session/api/useSession'
+
+import { SellerAuthContext, type SellerSession } from './SellerAuthContext'
 
 const STORAGE_KEY = 'seller:session'
 
@@ -11,19 +13,6 @@ const STORAGE_KEY = 'seller:session'
 // it would ask the API about a session that was never meant to exist and then
 // sign the demo user straight back out.
 const DEMO_AUTH = import.meta.env.VITE_DEMO_SELLER_AUTH === 'true'
-
-export interface SellerSession {
-  sellerId: string
-  email: string
-}
-
-interface SellerAuthContextValue {
-  seller: SellerSession | null
-  signIn: (session: SellerSession) => void
-  signOut: () => void
-}
-
-const SellerAuthContext = createContext<SellerAuthContextValue | null>(null)
 
 function storeSession(session: SellerSession) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
@@ -133,22 +122,4 @@ export function SellerAuthProvider({ children }: { children: ReactNode }) {
   return (
     <SellerAuthContext.Provider value={{ seller, signIn, signOut }}>{children}</SellerAuthContext.Provider>
   )
-}
-
-export function useSellerAuth() {
-  const ctx = useContext(SellerAuthContext)
-  if (!ctx) throw new Error('useSellerAuth must be used within a SellerAuthProvider')
-  return ctx
-}
-
-/**
- * The same flag, for chrome that renders on the buyer side. Returns `null`
- * instead of throwing when there is no provider: the buyer header and footer
- * only want to know whether a seller is signed in, and a test that mounts one
- * of them without the portal's provider is asking a fair question - the answer
- * is "no seller", not a crash. The real app wraps everything in
- * `SellerAuthProvider` (App.tsx), so in production this is never null.
- */
-export function useOptionalSellerAuth() {
-  return useContext(SellerAuthContext)
 }
