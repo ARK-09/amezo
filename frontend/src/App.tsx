@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router'
 
-import { CartProvider } from '@/features/cart/context/CartContext'
+import { CartProvider } from '@/features/cart/context/CartProvider'
 import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
 import { createAppQueryClient } from '@/lib/api/queryClient'
 import { router } from '@/router'

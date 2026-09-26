@@ -12,7 +12,7 @@ import {
 } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
-import { CartProvider } from '@/features/cart/context/CartContext'
+import { CartProvider } from '@/features/cart/context/CartProvider'
 import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
 import { routes } from '@/router'
 import { server } from '@/test/msw/server'

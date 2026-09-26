@@ -5,7 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { SiteHeader } from '@/components/layout/SiteHeader'
-import { CartProvider } from '@/features/cart/context/CartContext'
+import { CartProvider } from '@/features/cart/context/CartProvider'
 import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
 import { signInBuyerSession, signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 

@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
-import { CartProvider } from '@/features/cart/context/CartContext'
+import { CartProvider } from '@/features/cart/context/CartProvider'
 import { ProductTile } from '@/features/catalog/components/ProductTile'
 import { createAppQueryClient } from '@/lib/api/queryClient'
 import type { ProductSummary } from '@/features/search/schema/types'

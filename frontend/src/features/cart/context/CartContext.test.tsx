@@ -1,7 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { CartProvider, useCart } from './CartContext'
+import { useCart } from './CartContext'
+import { CartProvider } from './CartProvider'
 
 function setup() {
   return renderHook(() => useCart(), { wrapper: CartProvider })
