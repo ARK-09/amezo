@@ -1,8 +1,8 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
-import { MemoryRouter } from 'react-router'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createAppQueryClient } from '@/lib/api/queryClient'
@@ -19,6 +19,20 @@ function renderPage(initialEntry = '/seller/orders') {
       </MemoryRouter>
     </QueryClientProvider>,
   )
+}
+
+/** A real history, so a test can press Back the way a browser does. */
+function renderWithHistory(entries: string[]) {
+  const router = createMemoryRouter([{ path: '/seller/orders', Component: SellerOrders }], {
+    initialEntries: entries,
+    initialIndex: entries.length - 1,
+  })
+  render(
+    <QueryClientProvider client={createAppQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
+  return router
 }
 
 const line = { id: 'l1', productTitle: 'Backpack', variantLabel: 'Blue', quantity: 2, unitPrice: 25, lineTotal: 50 }
@@ -86,6 +100,35 @@ describe('SellerOrders', () => {
 
     expect(await screen.findByText('Jonas')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('Maya')).not.toBeInTheDocument())
+  })
+
+  it('leaves one history entry behind a typed search, and its own for a filter', async () => {
+    seedOrders()
+    const router = renderWithHistory(['/seller/orders'])
+    await screen.findByText('Maya')
+
+    await userEvent.type(screen.getByLabelText('Search orders'), 'jonas')
+    await waitFor(() => expect(router.state.location.search).toBe('?q=jonas'))
+    expect(await screen.findByText('Jonas')).toBeInTheDocument()
+
+    // Every keystroke used to push, so escaping a five-letter search took five
+    // Backs. One now lands on the list as it was before the typing started.
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    expect(router.state.location.search).toBe('')
+    expect(await screen.findByText('Maya')).toBeInTheDocument()
+
+    // A filter is a navigation, so it still leaves an entry to Back out of.
+    await userEvent.click(screen.getByLabelText('Filter by status'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Shipped' }))
+    await waitFor(() => expect(router.state.location.search).toBe('?status=SHIPPED'))
+
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    expect(router.state.location.search).toBe('')
+    expect(await screen.findByText('Maya')).toBeInTheDocument()
   })
 
   it('floors a fractional page param before it reaches the request', async () => {

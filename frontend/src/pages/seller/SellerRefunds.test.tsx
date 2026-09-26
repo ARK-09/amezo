@@ -87,6 +87,33 @@ describe('SellerRefunds', () => {
     expect(await screen.findByText('ref_4d90b12c')).toBeInTheDocument()
   })
 
+  it('leaves one history entry behind a typed search, and its own for a tab', async () => {
+    const router = renderWithHistory(['/seller/refunds'])
+    await screen.findByText('ref_4d90b12c')
+
+    await userEvent.type(screen.getByLabelText('Search refund requests'), 'tanaka')
+    await waitFor(() => expect(router.state.location.search).toBe('?q=tanaka'))
+    expect(await screen.findByText('ref_77a1e604')).toBeInTheDocument()
+
+    // Every keystroke used to push, so escaping a six-letter search took six
+    // Backs. One now lands on the queue as it was before the typing started.
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    expect(router.state.location.search).toBe('')
+    expect(await screen.findByText('ref_4d90b12c')).toBeInTheDocument()
+
+    // A tab is a navigation, so it still leaves an entry to Back out of.
+    await userEvent.click(screen.getByRole('tab', { name: 'Awaiting return' }))
+    await waitFor(() => expect(router.state.location.search).toBe('?status=AWAITING_RETURN'))
+
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    expect(router.state.location.search).toBe('')
+    expect(await screen.findByText('ref_4d90b12c')).toBeInTheDocument()
+  })
+
   it('approves a request from the drawer and moves it off the queue', async () => {
     renderPage()
     await screen.findByText('ref_4d90b12c')

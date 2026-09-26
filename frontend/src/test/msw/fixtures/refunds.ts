@@ -68,12 +68,24 @@ const SEED: RefundRequestDetail[] = [
     'Two of the three cases arrived with the charging contacts bent. Happy to keep the working one.',
     [{ orderLineId: 'l2', productTitle: 'Mechanical Keyboard, Hot-Swappable', variantLabel: 'White', quantity: 2, unitPrice: 149, lineTotal: 298 }],
   ),
+  // The request the buyer's order-1111 carries (see fixtures/buyerOrders.ts).
+  // It was seeded twice - here as ref-3 and again inside the buyer order as
+  // ref-1111, both claiming reference ref_90ce34aa - so settling it here left
+  // the buyer's copy frozen at AWAITING_RETURN. One record now, pointed at the
+  // buyer order id and line the buyer fixture derives from.
   make(
     'ref-3', 'ref_90ce34aa', 'Rhea Patel', 'r.patel@example.com', 'ord_19ff4c82',
     'AWAITING_RETURN', 'REFUND',
     'Headband cracked on the second day of use.',
-    [{ orderLineId: 'l3', productTitle: 'Wireless Noise-Cancelling Headphones', variantLabel: 'Midnight', quantity: 1, unitPrice: 129.99, lineTotal: 129.99 }],
-    { approvedAmount: 129.99, approvedAt: '2026-09-21T09:00:00Z', returnTrackingNumber: 'AZ-RET-88412' },
+    [{ orderLineId: 'line-1111-a', productTitle: 'Wireless Noise-Cancelling Headphones', variantLabel: 'Midnight', quantity: 1, unitPrice: 129.99, lineTotal: 129.99 }],
+    {
+      orderId: 'order-1111',
+      orderPlacedAt: '2026-09-17T09:00:00Z',
+      requestedAt: '2026-09-20T10:00:00Z',
+      approvedAmount: 129.99,
+      approvedAt: '2026-09-21T08:00:00Z',
+      returnTrackingNumber: 'AZ-RET-88412',
+    },
   ),
   make(
     'ref-4', 'ref_15b7d420', 'Diego Alvarez', 'd.alvarez@example.com', 'ord_2c9a6f40',

@@ -90,7 +90,7 @@ export function MyOrders() {
 
   const query = useBuyerOrders(filters)
 
-  function patch(next: Record<string, string | undefined>) {
+  function patch(next: Record<string, string | undefined>, replace = false) {
     const params = new URLSearchParams(searchParams)
     for (const [key, value] of Object.entries(next)) {
       if (value) params.set(key, value)
@@ -98,7 +98,16 @@ export function MyOrders() {
     }
     // Any filter change starts from the first page again.
     if (!('page' in next)) params.delete('page')
-    setSearchParams(params)
+    setSearchParams(params, { replace })
+  }
+
+  // A tab, a period or a page is a navigation the buyer may want to undo with
+  // Back; a keystroke is not. The first character pushes the one entry that
+  // Back escapes the search by, and every character after it replaces that
+  // entry - typing "laptop" used to leave six entries to press Back through.
+  function patchTerm(value: string) {
+    setTerm(value)
+    patch({ q: value }, Boolean(q))
   }
 
   const orders = query.data?.content ?? []
@@ -152,10 +161,7 @@ export function MyOrders() {
           <input
             type="search"
             value={term}
-            onChange={(e) => {
-              setTerm(e.target.value)
-              patch({ q: e.target.value })
-            }}
+            onChange={(e) => patchTerm(e.target.value)}
             placeholder="Search by order number or product name"
             aria-label="Search your orders"
             className="h-10 w-full rounded-full border bg-background pr-4 pl-[38px] text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"

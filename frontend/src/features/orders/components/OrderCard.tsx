@@ -1,7 +1,7 @@
 import { Check, ChevronDown, ImageIcon, RotateCcw, Star, Truck } from 'lucide-react'
 import { Link } from 'react-router'
 
-import { refundBadgeLabel } from '@/features/refunds/refundProgress'
+import { isRefundOpen, refundBadgeLabel } from '@/features/refunds/refundProgress'
 import { formatDeliveryDate, formatMediumDate } from '@/lib/formatDate'
 import { formatPrice } from '@/lib/formatPrice'
 import { cn } from '@/lib/utils'
@@ -45,7 +45,14 @@ export function OrderCard({
   const previewUnits = preview.reduce((sum, line) => sum + line.quantity, 0)
   const hiddenCount = Math.max(0, order.itemCount - previewUnits)
   const isMoving = headline.tone === 'moving'
-  const canRequestRefund = order.status === 'DELIVERED' && !order.openRefundRequestId
+  // openRefundRequestId carries the LATEST request, settled ones included - that is
+  // what the badge below needs. Treating its mere presence as "a refund is running"
+  // hid "Return or refund" forever once a request had been declined, even though the
+  // order detail's server-owned canRequestRefund said yes and /orders/:id/refund
+  // would have let the buyer straight in. Only an open request should block.
+  const hasOpenRefund =
+    order.openRefundRequestId != null && isRefundOpen(order.openRefundStatus ?? 'REQUESTED')
+  const canRequestRefund = order.status === 'DELIVERED' && !hasOpenRefund
 
   return (
     <article className="overflow-hidden rounded-xl border">

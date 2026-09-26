@@ -127,6 +127,40 @@ describe('MyOrders', () => {
     expect(await screen.findByText(HEADPHONES)).toBeInTheDocument()
   })
 
+  it('leaves one history entry behind a typed search term', async () => {
+    const router = renderWithHistory(['/orders'])
+    await screen.findByText(HEADPHONES)
+
+    await userEvent.type(await screen.findByLabelText('Search your orders'), 'laptop')
+    expect(await screen.findByText(LAPTOP)).toBeInTheDocument()
+
+    await act(async () => {
+      await router.navigate(-1)
+    })
+
+    // Every keystroke used to push its own entry, so Back walked out of
+    // "laptop" one letter at a time - six presses to leave the search.
+    expect(router.state.location.search).toBe('')
+    expect(await screen.findByText(HEADPHONES)).toBeInTheDocument()
+  })
+
+  it('keeps a filter change on the history stack', async () => {
+    const router = renderWithHistory(['/orders'])
+    await screen.findByText(HEADPHONES)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delivered' }))
+    await screen.findByText(LAPTOP)
+    expect(router.state.location.search).toBe('?group=delivered')
+
+    await act(async () => {
+      await router.navigate(-1)
+    })
+
+    // A tab is a real navigation: it still pushes, so Back undoes it.
+    expect(router.state.location.search).toBe('')
+    expect(await screen.findByText(HEADPHONES)).toBeInTheDocument()
+  })
+
   it('surfaces a failure with a retry rather than an empty list', async () => {
     server.use(
       http.get('http://localhost:8080/api/v1/orders', () =>
@@ -140,5 +174,38 @@ describe('MyOrders', () => {
 
     expect(await screen.findByText("Couldn't load your orders", {}, { timeout: 5000 })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  // openRefundRequestId holds the latest request even once it is settled, so a
+  // declined refund used to hide "Return or refund" for good - while the order
+  // detail's canRequestRefund said the buyer was still entitled to ask.
+  it('offers a refund again after an earlier request was declined', async () => {
+    server.use(
+      http.get('http://localhost:8080/api/v1/orders', () =>
+        HttpResponse.json({
+          content: [
+            {
+              id: 'order-declined',
+              reference: 'ord_declined',
+              placedAt: '2026-09-01T00:00:00Z',
+              status: 'DELIVERED',
+              total: 42,
+              currency: 'USD',
+              itemCount: 1,
+              seller: { id: 'seller-1', name: 'Aurora Audio', handle: 'aurora-audio' },
+              openRefundRequestId: 'ref-declined',
+              openRefundStatus: 'DECLINED',
+              previewLines: [],
+            },
+          ],
+          page: 0,
+          totalElements: 1,
+          totalPages: 1,
+        }),
+      ),
+    )
+    renderPage()
+
+    expect(await screen.findByRole('link', { name: /Return or refund/ })).toBeInTheDocument()
   })
 })

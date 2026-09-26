@@ -1,9 +1,10 @@
 import type { components } from '@/lib/api/schema'
 
+import { isRefundOpen, refundRequestsForOrder, summaryOfRefund } from './refunds'
+
 type BuyerOrderDetail = components['schemas']['BuyerOrderDetail']
+type BuyerOrderLine = components['schemas']['BuyerOrderLine']
 type BuyerOrderSummary = components['schemas']['BuyerOrderSummary']
-type RefundRequestDetail = components['schemas']['RefundRequestDetail']
-type RefundRequestSummary = components['schemas']['RefundRequestSummary']
 
 /**
  * Buyer order history for local development and tests.
@@ -14,6 +15,17 @@ type RefundRequestSummary = components['schemas']['RefundRequestSummary']
  * calls the real endpoint and shows the ordinary error until the backend
  * ships. Nothing here is compiled into the app.
  */
+
+/**
+ * What the store actually holds. None of the refund fields are in here: they
+ * are read off the refund store on every request instead. The order used to
+ * carry its own copy of them, which PATCH /api/v1/refund-requests never wrote
+ * back to, so a buyer's card went on badging "Refund requested" long after the
+ * seller had refunded or declined it.
+ */
+type StoredBuyerOrder = Omit<BuyerOrderDetail, 'lines' | 'refundRequests' | 'canRequestRefund'> & {
+  lines: Omit<BuyerOrderLine, 'refundRequestId' | 'refundStatus'>[]
+}
 
 const ADDRESS = {
   fullName: 'Rhea Patel',
@@ -47,40 +59,9 @@ function timeline(reached: number, dates: (string | null)[]) {
   }))
 }
 
-export const refundRequests: RefundRequestDetail[] = [
-  {
-    id: 'ref-1111',
-    reference: 'ref_90ce34aa',
-    status: 'AWAITING_RETURN',
-    resolution: 'REFUND',
-    payout: 'ORIGINAL_PAYMENT',
-    detail: 'Headband cracked on the second day of use.',
-    requestedAt: '2026-09-20T10:00:00Z',
-    requestedAmount: 129.99,
-    approvedAmount: 129.99,
-    currency: 'USD',
-    orderId: 'order-1111',
-    orderReference: 'ord_19ff4c82',
-    orderPlacedAt: '2026-09-17T09:00:00Z',
-    buyerName: 'Rhea Patel',
-    buyerEmail: 'r.patel@example.com',
-    seller: SELLER,
-    lines: [
-      {
-        orderLineId: 'line-1111-a',
-        productTitle: 'Wireless Noise-Cancelling Headphones',
-        variantLabel: 'Midnight',
-        quantity: 1,
-        unitPrice: 129.99,
-        lineTotal: 129.99,
-      },
-    ],
-    approvedAt: '2026-09-21T08:00:00Z',
-    returnTrackingNumber: 'AZ-RET-88412',
-  },
-]
-
-const SEED_ORDERS: Record<string, BuyerOrderDetail> = {
+// order-1111's refund lives in fixtures/refunds.ts as ref-3, raised against
+// this order id and this line id. It is not repeated here.
+const SEED_ORDERS: Record<string, StoredBuyerOrder> = {
   'order-1111': {
     id: 'order-1111',
     reference: 'ord_19ff4c82',
@@ -97,8 +78,6 @@ const SEED_ORDERS: Record<string, BuyerOrderDetail> = {
         quantity: 1,
         unitPrice: 129.99,
         lineTotal: 129.99,
-        refundRequestId: 'ref-1111',
-        refundStatus: 'AWAITING_RETURN',
       },
     ],
     subtotal: 129.99,
@@ -123,20 +102,6 @@ const SEED_ORDERS: Record<string, BuyerOrderDetail> = {
     shippingAddress: ADDRESS,
     billingAddress: null,
     payment: null,
-    refundRequests: refundRequests.map(({ id, reference, status, resolution, requestedAt, requestedAmount, approvedAmount, currency, orderId, orderReference, returnTrackingNumber }) => ({
-      id,
-      reference,
-      status,
-      resolution,
-      requestedAt,
-      requestedAmount,
-      approvedAmount,
-      currency,
-      orderId,
-      orderReference,
-      returnTrackingNumber,
-    })),
-    canRequestRefund: false,
     refundWindowEndsAt: null,
   },
   'order-2222': {
@@ -155,8 +120,6 @@ const SEED_ORDERS: Record<string, BuyerOrderDetail> = {
         quantity: 1,
         unitPrice: 899,
         lineTotal: 899,
-        refundRequestId: null,
-        refundStatus: null,
       },
     ],
     subtotal: 899,
@@ -181,20 +144,67 @@ const SEED_ORDERS: Record<string, BuyerOrderDetail> = {
     shippingAddress: ADDRESS,
     billingAddress: null,
     payment: null,
-    refundRequests: [],
-    canRequestRefund: true,
     refundWindowEndsAt: '2026-10-16T09:00:00Z',
   },
 }
 
-export let orderDetails: Record<string, BuyerOrderDetail> = structuredClone(SEED_ORDERS)
+let orders: Record<string, StoredBuyerOrder> = structuredClone(SEED_ORDERS)
 
-/** The refund POST mutates orders now, so each test starts from the seed. */
+/** Module state like the rest of the fixtures, so each test starts from the seed. */
 export function resetBuyerOrders() {
-  orderDetails = structuredClone(SEED_ORDERS)
+  orders = structuredClone(SEED_ORDERS)
 }
 
-function summaryOf(detail: BuyerOrderDetail): BuyerOrderSummary {
+export function findBuyerOrder(id: string): StoredBuyerOrder | undefined {
+  return orders[id]
+}
+
+/**
+ * The refund requests raised against this order, read from the refund store on
+ * every call the way fixtures/sellerOrders.ts does. One record answers both
+ * sides now: the seller settling a request moves the buyer's order with it.
+ */
+function refundsOn(order: StoredBuyerOrder) {
+  return refundRequestsForOrder(order.id)
+}
+
+export function buyerOrderDetailOf(order: StoredBuyerOrder): BuyerOrderDetail {
+  const raised = refundsOn(order)
+  return {
+    ...order,
+    lines: order.lines.map((line) => {
+      // The contract sets these "when this line is inside an open refund
+      // request", so settling one clears the line's "In refund" flag rather
+      // than leaving it lit for good. Latest first: one open request per line.
+      const open = raised.findLast(
+        (refund) =>
+          isRefundOpen(refund.status) &&
+          refund.lines.some((refundLine) => refundLine.orderLineId === line.id),
+      )
+      return {
+        ...line,
+        refundRequestId: open?.id ?? null,
+        refundStatus: open?.status ?? null,
+      }
+    }),
+    refundRequests: raised.map(summaryOfRefund),
+    // Server-owned eligibility, derived rather than a flag flipped once when a
+    // request was posted: the backend allows one *open* request per line, so a
+    // declined one lets the buyer ask again. refundWindowEndsAt stays a date
+    // the screen prints - comparing it to the wall clock would make the seed
+    // silently expire.
+    canRequestRefund:
+      order.status === 'DELIVERED' && !raised.some((refund) => isRefundOpen(refund.status)),
+  }
+}
+
+function summaryOf(order: StoredBuyerOrder): BuyerOrderSummary {
+  const detail = buyerOrderDetailOf(order)
+  // The card badges the request currently attached to the order, whatever its
+  // status - "a refund that has been approved or declined does not read the
+  // same as one nobody has looked at yet". Its status is whatever the store
+  // says now, not what it said when the order was seeded.
+  const current = detail.refundRequests?.at(-1)
   return {
     id: detail.id,
     reference: detail.reference,
@@ -206,24 +216,11 @@ function summaryOf(detail: BuyerOrderDetail): BuyerOrderSummary {
     seller: detail.seller,
     previewLines: detail.lines.slice(0, 2),
     shipment: detail.shipment,
-    openRefundRequestId: detail.refundRequests?.[0]?.id ?? null,
-    openRefundStatus: detail.refundRequests?.[0]?.status ?? null,
+    openRefundRequestId: current?.id ?? null,
+    openRefundStatus: current?.status ?? null,
   }
 }
 
 export function listBuyerOrders(): BuyerOrderSummary[] {
-  return Object.values(orderDetails).map(summaryOf)
-}
-
-/**
- * What POST /api/v1/refund-requests does to the order it was raised against:
- * the order stops being eligible, and the new request shows on it. The real
- * backend enforces one open request per line, so a mock that kept saying
- * "yes, you may refund this" would hide exactly that class of bug.
- */
-export function attachRefundToOrder(orderId: string, summary: RefundRequestSummary) {
-  const order = orderDetails[orderId]
-  if (!order) return
-  order.canRequestRefund = false
-  order.refundRequests = [...(order.refundRequests ?? []), summary]
+  return Object.values(orders).map(summaryOf)
 }

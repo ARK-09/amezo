@@ -122,5 +122,107 @@ describe('SellerDashboard', () => {
     expect(
       await screen.findByText("Couldn't load your dashboard", {}, { timeout: 5000 }),
     ).toBeInTheDocument()
+    // A failed metrics query is not a quiet window either: the charts say
+    // nothing rather than reporting no activity.
+    expect(screen.queryByText('No activity in this window.')).not.toBeInTheDocument()
+  })
+
+  it('holds a widget on its skeleton while the query is in flight, never on its empty copy', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/metrics/top-products', async () => {
+        await held
+        return HttpResponse.json([
+          {
+            productId: '22222222-2222-2222-2222-222222222222',
+            productRef: 'slow-arrival-desk-lamp',
+            title: 'Slow Arrival Desk Lamp',
+            thumbnailUrl: null,
+            units: 3,
+            revenue: 120,
+            share: 1,
+          },
+        ])
+      }),
+    )
+    renderPage()
+
+    const panel = (await screen.findByText('Top products')).closest('section')!
+    await waitFor(() =>
+      expect(panel.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0),
+    )
+    // The whole point: an unanswered query must not read as an answer of none.
+    expect(within(panel).queryByText('No sales in this window.')).not.toBeInTheDocument()
+
+    release()
+    expect(await within(panel).findByText('Slow Arrival Desk Lamp')).toBeInTheDocument()
+    expect(panel.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0)
+  })
+
+  it('shows the empty copy once a window really has come back with no sales', async () => {
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/metrics/top-products', () =>
+        HttpResponse.json([]),
+      ),
+    )
+    renderPage()
+
+    const panel = (await screen.findByText('Top products')).closest('section')!
+    expect(await within(panel).findByText('No sales in this window.')).toBeInTheDocument()
+    expect(panel.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0)
+  })
+
+  it('holds a queue widget on its skeleton before the queue is known to be empty', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/refund-requests', async () => {
+        await held
+        return HttpResponse.json({ content: [], page: 0, totalElements: 0, totalPages: 1 })
+      }),
+    )
+    renderPage()
+
+    const panel = (await screen.findByText('Refunds to review')).closest('section')!
+    await waitFor(() =>
+      expect(panel.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(5),
+    )
+    expect(within(panel).queryByText('Nothing waiting on a decision.')).not.toBeInTheDocument()
+
+    // Empty is a fact once the answer is in, so the copy is right then.
+    release()
+    expect(await within(panel).findByText('Nothing waiting on a decision.')).toBeInTheDocument()
+    expect(panel.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0)
+  })
+
+  it('keeps both chart cards on a window with no points instead of vanishing them', async () => {
+    const zero = { views: 0, orders: 0, revenue: 0, conversionRate: 0, averageOrderValue: 0 }
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/metrics', ({ request }) => {
+        const url = new URL(request.url)
+        return HttpResponse.json({
+          from: url.searchParams.get('from'),
+          to: url.searchParams.get('to'),
+          currency: 'USD',
+          totals: zero,
+          previousTotals: zero,
+          series: [],
+        })
+      }),
+    )
+    renderPage()
+
+    const revenue = (
+      await screen.findByRole('heading', { name: 'Revenue', level: 2 })
+    ).closest('section')!
+    expect(await within(revenue).findByText('No activity in this window.')).toBeInTheDocument()
+
+    const orders = screen.getByRole('heading', { name: 'Orders', level: 2 }).closest('section')!
+    expect(within(orders).getByText('No activity in this window.')).toBeInTheDocument()
   })
 })

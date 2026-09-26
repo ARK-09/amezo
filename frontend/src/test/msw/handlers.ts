@@ -8,10 +8,9 @@ import {
   signInBuyerSession,
 } from './fixtures/sellerAuth'
 import {
-  attachRefundToOrder,
+  buyerOrderDetailOf,
+  findBuyerOrder,
   listBuyerOrders,
-  orderDetails,
-  refundRequests,
 } from './fixtures/buyerOrders'
 import { systemCategories } from './fixtures/categories'
 import { currentLastCheckoutDetails } from './fixtures/checkoutDetails'
@@ -290,11 +289,11 @@ export const handlers = [
   }),
 
   http.get('http://localhost:8080/api/v1/orders/:orderId', ({ params }) => {
-    const detail = orderDetails[params.orderId as string]
-    if (!detail) {
+    const order = findBuyerOrder(params.orderId as string)
+    if (!order) {
       return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
     }
-    return HttpResponse.json(detail)
+    return HttpResponse.json(buyerOrderDetailOf(order))
   }),
 
   http.post('http://localhost:8080/api/v1/refund-requests', async ({ request }) => {
@@ -305,7 +304,7 @@ export const handlers = [
       payout: 'ORIGINAL_PAYMENT' | 'ALTERNATE_METHOD' | null
       detail: string
     }
-    const order = orderDetails[body.orderId]
+    const order = findBuyerOrder(body.orderId)
     if (!order) {
       return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
     }
@@ -355,32 +354,17 @@ export const handlers = [
         lines,
     }
 
-    // Into the refund store as well as onto the order. The order-side fields
-    // are derived from that store, and a request that only ever landed on the
-    // order was invisible to every other reader - including GET by id, which
-    // answered 404 for a request the buyer had just been shown.
+    // Only into the refund store. The order's refund fields - its request
+    // list, its per-line flags and canRequestRefund - are all read back out of
+    // it, so nothing has to be copied onto the order and nothing can go stale
+    // there when the seller settles this request.
     addRefundRequest(created)
-
-    attachRefundToOrder(order.id, {
-      id: created.id,
-      reference: created.reference,
-      status: created.status,
-      resolution: created.resolution,
-      requestedAt: created.requestedAt,
-      requestedAmount: created.requestedAmount,
-      approvedAmount: null,
-      currency: created.currency,
-      orderId: created.orderId,
-      orderReference: created.orderReference,
-    })
 
     return HttpResponse.json(created, { status: 201 })
   }),
 
   http.get('http://localhost:8080/api/v1/refund-requests/:refundRequestId', ({ params }) => {
-    const found =
-      findRefundRequest(params.refundRequestId as string) ??
-      refundRequests.find((r) => r.id === params.refundRequestId)
+    const found = findRefundRequest(params.refundRequestId as string)
     if (!found) {
       return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
     }

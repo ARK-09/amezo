@@ -76,6 +76,25 @@ function Panel({ title, action, children }: { title: string; action?: React.Reac
   )
 }
 
+/**
+ * The placeholder a queue widget shows while its query is in flight: five rows,
+ * because each queue asks for five, at the height the real rows settle at so
+ * the panel does not resize when the data lands.
+ *
+ * The queues used to fall straight through to their empty copy while loading,
+ * telling a seller "Nothing waiting." before anything had been answered - the
+ * same invented fact WidgetError keeps a failed widget from stating.
+ */
+function QueueSkeleton({ rowClass }: { rowClass: string }) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      {Array.from({ length: 5 }, (_, i) => (
+        <Skeleton key={i} className={`${rowClass} w-full`} />
+      ))}
+    </div>
+  )
+}
+
 export function SellerDashboard() {
   const [rangeKey, setRangeKey] = useState<RangeKey>('month')
   const range = useMemo(() => rangeFor(rangeKey), [rangeKey])
@@ -162,62 +181,82 @@ export function SellerDashboard() {
         </div>
       )}
 
-      {series.length > 0 && (
+      {/* Not gated on `series.length` any more: an empty window made both cards
+          vanish, and a card that disappears reads as a broken page rather than
+          a quiet month. Hidden only when the query failed, which the block
+          above already reports. */}
+      {!metrics.isError && (
         <div className="grid gap-4 lg:grid-cols-2">
           <Panel title="Revenue">
-            <ChartContainer config={REVENUE_CONFIG} className="h-[200px] w-full">
-              <AreaChart data={series} margin={{ left: 4, right: 4, top: 4 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  minTickGap={28}
-                  tickFormatter={formatShortDate}
-                />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(value) => formatShortDate(String(value))}
-                      formatter={(value) => formatPrice(Number(value))}
-                    />
-                  }
-                />
-                <Area
-                  dataKey="revenue"
-                  type="monotone"
-                  stroke="var(--color-revenue)"
-                  strokeWidth={2}
-                  fill="var(--color-revenue)"
-                  fillOpacity={0.12}
-                />
-              </AreaChart>
-            </ChartContainer>
+            {metrics.isLoading ? (
+              <Skeleton className="h-[200px] w-full" />
+            ) : series.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No activity in this window.
+              </p>
+            ) : (
+              <ChartContainer config={REVENUE_CONFIG} className="h-[200px] w-full">
+                <AreaChart data={series} margin={{ left: 4, right: 4, top: 4 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    minTickGap={28}
+                    tickFormatter={formatShortDate}
+                  />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(value) => formatShortDate(String(value))}
+                        formatter={(value) => formatPrice(Number(value))}
+                      />
+                    }
+                  />
+                  <Area
+                    dataKey="revenue"
+                    type="monotone"
+                    stroke="var(--color-revenue)"
+                    strokeWidth={2}
+                    fill="var(--color-revenue)"
+                    fillOpacity={0.12}
+                  />
+                </AreaChart>
+              </ChartContainer>
+            )}
           </Panel>
 
           <Panel title="Orders">
-            <ChartContainer config={ORDERS_CONFIG} className="h-[200px] w-full">
-              <BarChart data={series} margin={{ left: 4, right: 4, top: 4 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  minTickGap={28}
-                  tickFormatter={formatShortDate}
-                />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(value) => formatShortDate(String(value))}
-                    />
-                  }
-                />
-                <Bar dataKey="orders" fill="var(--color-orders)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ChartContainer>
+            {metrics.isLoading ? (
+              <Skeleton className="h-[200px] w-full" />
+            ) : series.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No activity in this window.
+              </p>
+            ) : (
+              <ChartContainer config={ORDERS_CONFIG} className="h-[200px] w-full">
+                <BarChart data={series} margin={{ left: 4, right: 4, top: 4 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    minTickGap={28}
+                    tickFormatter={formatShortDate}
+                  />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(value) => formatShortDate(String(value))}
+                      />
+                    }
+                  />
+                  <Bar dataKey="orders" fill="var(--color-orders)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
           </Panel>
         </div>
       )}
@@ -240,6 +279,7 @@ export function SellerDashboard() {
           ) : (
             <ShareList
               emptyLabel="No sales in this window."
+              isLoading={top.isLoading}
               rows={(top.data ?? []).map((product) => ({
                 key: product.productId,
                 label: product.title,
@@ -261,6 +301,7 @@ export function SellerDashboard() {
           ) : (
             <ShareList
               emptyLabel="No sales in this window."
+              isLoading={categories.isLoading}
               rows={(categories.data ?? []).map((row) => ({
                 key: row.category.slug,
                 label: row.category.name,
@@ -287,6 +328,8 @@ export function SellerDashboard() {
               error={shipQueue.error}
               onRetry={() => shipQueue.refetch()}
             />
+          ) : shipQueue.isLoading ? (
+            <QueueSkeleton rowClass="h-9" />
           ) : (shipQueue.data?.content ?? []).length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Nothing waiting.</p>
           ) : (
@@ -318,6 +361,8 @@ export function SellerDashboard() {
               error={lowStock.error}
               onRetry={() => lowStock.refetch()}
             />
+          ) : lowStock.isLoading ? (
+            <QueueSkeleton rowClass="h-5" />
           ) : (lowStock.data?.content ?? []).length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Everything is stocked.</p>
           ) : (
@@ -354,6 +399,8 @@ export function SellerDashboard() {
               error={refunds.error}
               onRetry={() => refunds.refetch()}
             />
+          ) : refunds.isLoading ? (
+            <QueueSkeleton rowClass="h-8" />
           ) : (refunds.data?.content ?? []).length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               Nothing waiting on a decision.
