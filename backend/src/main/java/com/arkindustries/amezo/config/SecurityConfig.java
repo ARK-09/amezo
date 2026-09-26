@@ -136,6 +136,12 @@ public class SecurityConfig {
                 // Listing the namespace once means a new endpoint under it is
                 // seller-only from the moment it exists.
                 .requestMatchers("/sellers/me/**").hasRole("SELLER")
+                // The same namespace under the /api/v1 prefix the contract uses
+                // for new endpoints. A separate line because the matcher above
+                // matches the path as written: without this, a new
+                // /api/v1/sellers/me/... route falls through to
+                // anyRequest().denyAll() and 403s however correct it is.
+                .requestMatchers("/api/v1/sellers/me/**").hasRole("SELLER")
                 .requestMatchers(HttpMethod.DELETE, "/products/*").hasRole("SELLER")
                 // Removing a variant or an image is a seller write like any other;
                 // the service resolves which product they belong to and 404s if it

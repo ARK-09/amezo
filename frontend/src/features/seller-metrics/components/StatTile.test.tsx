@@ -55,4 +55,23 @@ describe('StatTile change line', () => {
 
     expect(within(tile).getByText('New')).toHaveClass('text-[#b42318]')
   })
+
+  it('states an untracked measure as untracked, not as a zero or a missing window', () => {
+    const tile = renderTile({
+      label: 'Conversion rate',
+      value: undefined,
+      current: undefined,
+      unavailable: 'Not tracked yet',
+    })
+
+    expect(within(tile).getByText('Not tracked yet')).toBeInTheDocument()
+    // Three different facts, three different words. "No prior data" is about a
+    // missing previous window and "Flat" about two measured windows - neither
+    // is what "nothing measures this" means.
+    expect(within(tile).queryByText('No prior data')).not.toBeInTheDocument()
+    expect(within(tile).queryByText('Flat')).not.toBeInTheDocument()
+    expect(within(tile).queryByText('vs prev')).not.toBeInTheDocument()
+    // The dash is a shape; the fact reaches a screen reader as words.
+    expect(within(tile).getByText('Not available')).toBeInTheDocument()
+  })
 })

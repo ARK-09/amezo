@@ -32,8 +32,10 @@ import {
 } from '@/features/seller-portal/api/useSellerCatalog'
 import { useSellerRefundRequests } from '@/features/refunds/api/useRefundRequests'
 import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
+import { useMyStore } from '@/features/store-settings/api/useStoreProfile'
 import { formatShortDate } from '@/lib/formatDate'
 import { formatPrice } from '@/lib/formatPrice'
+import { cn } from '@/lib/utils'
 
 const RANGES = [
   { value: 'month', label: 'This month' },
@@ -44,6 +46,10 @@ const RANGES = [
 type RangeKey = (typeof RANGES)[number]['value']
 
 const LOW_STOCK = 10
+
+/** How many rows the top-products panel asks for. Also what tells a complete
+ *  list ("top 4 of 4") from a truncated one apart. */
+const TOP_PRODUCTS = 5
 
 /** The slots the seller can reorder, in the order a fresh browser sees them. */
 const CHART_PANELS = ['revenue', 'orders', 'top', 'category'] as const
@@ -58,6 +64,27 @@ function isoDay(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${date.getFullYear()}-${month}-${day}`
+}
+
+/** Inclusive, so a window of one calendar day counts as one day. */
+function dayCount(from: string, to: string): number {
+  const span = Date.parse(`${to}T12:00:00`) - Date.parse(`${from}T12:00:00`)
+  return Number.isNaN(span) ? 0 : Math.round(span / 86_400_000) + 1
+}
+
+/**
+ * "1 Sep – 30 Sep · compared with the previous 30 days".
+ *
+ * The second clause is not decoration: every measure on this page carries a
+ * delta, and without it the window those deltas are against is something the
+ * seller has to infer. It names the comparison window, not its result - when
+ * nothing was measured there, the tiles themselves say so.
+ */
+function rangeCaption(from: string, to: string): string {
+  const span = `${formatShortDate(from)} – ${formatShortDate(to)}`
+  const days = dayCount(from, to)
+  if (days <= 0) return span
+  return `${span} · compared with the previous ${days === 1 ? 'day' : `${days} days`}`
 }
 
 function rangeFor(key: RangeKey): MetricsRange {
@@ -79,6 +106,8 @@ const ORDERS_CONFIG = {
 
 function Panel({
   title,
+  subtitle,
+  headline,
   action,
   group,
   index,
@@ -87,6 +116,14 @@ function Panel({
   children,
 }: {
   title: string
+  /**
+   * The one fact about the panel that its chart cannot state - the peak day,
+   * the daily rate, how much of the catalogue a top-five covers. Omitted rather
+   * than blanked when the panel has nothing measured to say.
+   */
+  subtitle?: string
+  /** The panel's own headline figure, right-aligned against the title. */
+  headline?: string
   action?: React.ReactNode
   /** Which order this panel belongs to, so a chart cannot be dropped on a widget. */
   group: string
@@ -100,12 +137,25 @@ function Panel({
       {...panelDropProps(group, index, onMove)}
       className="flex flex-col rounded-xl border p-5"
     >
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
+      <div
+        className={cn(
+          'mb-4 flex flex-wrap justify-between gap-3',
+          // Top-aligned only when there is a second line to align against;
+          // a single-line header still centres on its buttons.
+          subtitle ? 'items-start' : 'items-center',
+        )}
+      >
+        <div className={cn('flex min-w-0 gap-2', subtitle ? 'items-start' : 'items-center')}>
           <PanelGrip group={group} index={index} />
-          <h2 className="min-w-0 truncate text-[15px] font-bold">{title}</h2>
+          <div className="min-w-0">
+            <h2 className="min-w-0 truncate text-[15px] font-bold">{title}</h2>
+            {subtitle && (
+              <p className="mt-[3px] truncate text-[13px] text-muted-foreground">{subtitle}</p>
+            )}
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
+          {headline && <span className="text-xl font-bold tabular-nums">{headline}</span>}
           {action}
           <PanelReorder title={title} index={index} count={count} onMove={onMove} />
         </div>
@@ -155,8 +205,14 @@ export function SellerDashboard() {
   const range = useMemo(() => rangeFor(rangeKey), [rangeKey])
 
   const metrics = useSellerMetrics(range)
-  const top = useSellerTopProducts(range, 5)
+  const top = useSellerTopProducts(range, TOP_PRODUCTS)
   const categories = useSellerCategoryBreakdown(range)
+
+  // The page is headed by the shop, not by the word "Dashboard" - the seller
+  // knows which screen they are on, and the one thing worth stating is which
+  // store these numbers belong to. Read-only reuse of the store-settings query,
+  // so both screens share one cache entry rather than fetching it twice.
+  const store = useMyStore()
 
   // The queue widgets are the existing lists with a filter, not endpoints of
   // their own.
@@ -214,8 +270,31 @@ export function SellerDashboard() {
       // already reports.
       if (metrics.isError) return null
       const isRevenue = key === 'revenue'
+      // Read off the series rather than asked for: the peak day and the daily
+      // rate are both facts about the points already on screen, so they cannot
+      // disagree with the chart beside them.
+      const peakDay = series.reduce((max, point) => Math.max(max, point.revenue), 0)
+      const perDay = series.length === 0 ? 0 : (totals?.orders ?? 0) / series.length
       return (
-        <Panel key={key} {...shared} title={isRevenue ? 'Revenue' : 'Orders'}>
+        <Panel
+          key={key}
+          {...shared}
+          title={isRevenue ? 'Revenue' : 'Orders per day'}
+          subtitle={
+            series.length === 0
+              ? undefined
+              : isRevenue
+                ? `Peak day ${formatPrice(peakDay)}`
+                : `${perDay.toFixed(1)} per day`
+          }
+          headline={
+            totals
+              ? isRevenue
+                ? formatPrice(totals.revenue)
+                : String(totals.orders)
+              : undefined
+          }
+        >
           {metrics.isLoading ? (
             <Skeleton className="h-[200px] w-full" />
           ) : series.length === 0 ? (
@@ -280,8 +359,26 @@ export function SellerDashboard() {
     }
 
     if (key === 'top') {
+      const topRows = top.data ?? []
       return (
-        <Panel key={key} {...shared} title="Top products" action={<PanelLink to="/seller/products">All products</PanelLink>}>
+        <Panel
+          key={key}
+          {...shared}
+          title="Top products by revenue"
+          // How many products sold at all is not something this endpoint
+          // reports - it returns the best N and stops. A short page is
+          // therefore the whole list and can be counted; a full one only
+          // proves there were at least that many, and says so in the same
+          // words the stock tile uses rather than naming a total nobody sent.
+          subtitle={
+            topRows.length === 0
+              ? undefined
+              : topRows.length < TOP_PRODUCTS
+                ? `Top ${topRows.length} of ${topRows.length} products selling`
+                : `Top ${topRows.length} of at least ${topRows.length} products selling`
+          }
+          action={<PanelLink to="/seller/products">All products</PanelLink>}
+        >
           {top.isError ? (
             <WidgetError
               title="Couldn't load top products"
@@ -292,7 +389,7 @@ export function SellerDashboard() {
             <TopProductsTable
               emptyLabel="No sales in this window."
               isLoading={top.isLoading}
-              rows={top.data ?? []}
+              rows={topRows}
               windowRevenue={totals?.revenue}
             />
           )}
@@ -300,8 +397,20 @@ export function SellerDashboard() {
       )
     }
 
+    const categoryRows = categories.data ?? []
     return (
-      <Panel key={key} {...shared} title="Revenue by category">
+      <Panel
+        key={key}
+        {...shared}
+        title="Sales by category"
+        // Uncapped, unlike top products: the breakdown returns every category
+        // with a sale, so this count is the whole truth and needs no hedging.
+        subtitle={
+          categoryRows.length === 0
+            ? undefined
+            : `${categoryRows.length} ${categoryRows.length === 1 ? 'category' : 'categories'} selling`
+        }
+      >
         {categories.isError ? (
           <WidgetError
             title="Couldn't load your categories"
@@ -312,7 +421,7 @@ export function SellerDashboard() {
           <CategoryDonut
             emptyLabel="No sales in this window."
             isLoading={categories.isLoading}
-            rows={categories.data ?? []}
+            rows={categoryRows}
             totalLabel={totals ? formatPrice(totals.revenue) : '—'}
           />
         )}
@@ -330,7 +439,7 @@ export function SellerDashboard() {
 
     if (key === 'ship') {
       return (
-        <Panel key={key} {...shared} title="Waiting to ship" action={<PanelLink to="/seller/orders?group=to_pack">Orders</PanelLink>}>
+        <Panel key={key} {...shared} title="Orders to ship" action={<PanelLink to="/seller/orders?group=to_pack">All orders</PanelLink>}>
           <WidgetList
             rows={shipQueue.data?.content ?? []}
             rowKey={(order) => order.id}
@@ -380,7 +489,7 @@ export function SellerDashboard() {
 
     if (key === 'lowStock') {
       return (
-        <Panel key={key} {...shared} title="Low stock" action={<PanelLink to="/seller/products?sort=stock_asc">Products</PanelLink>}>
+        <Panel key={key} {...shared} title="Low stock" action={<PanelLink to="/seller/products?sort=stock_asc">All products</PanelLink>}>
           <WidgetList
             rows={lowStock.data?.content ?? []}
             rowKey={(product) => product.id}
@@ -453,7 +562,7 @@ export function SellerDashboard() {
       <Panel
         key={key}
         {...shared}
-        title="Refunds to review"
+        title="Refund requests"
         action={
           <>
             {refundNote && <span className="text-[13px] text-muted-foreground">{refundNote}</span>}
@@ -504,12 +613,19 @@ export function SellerDashboard() {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold">Dashboard</h1>
+        <div className="min-w-0">
+          {/* A skeleton rather than "Dashboard" while the name is in flight:
+              the fallback would otherwise be printed and then replaced, which
+              reads as the page correcting itself. The fallback is still there
+              for a store profile that never arrives, so the page always has a
+              heading. */}
+          {store.isLoading ? (
+            <Skeleton className="h-7 w-44" />
+          ) : (
+            <h1 className="truncate text-xl font-bold">{store.data?.name ?? 'Dashboard'}</h1>
+          )}
           <p className="mt-1 text-sm text-muted-foreground">
-            {metrics.data
-              ? `${formatShortDate(metrics.data.from)} – ${formatShortDate(metrics.data.to)}`
-              : 'Loading…'}
+            {metrics.data ? rangeCaption(metrics.data.from, metrics.data.to) : 'Loading…'}
           </p>
         </div>
         <Tabs value={rangeKey} onValueChange={(value) => setRangeKey(value as RangeKey)}>
@@ -562,12 +678,19 @@ export function SellerDashboard() {
             flag={stockFlag}
             caption={stock?.complete ? `${stock.low} below ${LOW_STOCK} units` : undefined}
           />
+          {/* The design puts a conversion rate here, and there is nothing to
+              put. Conversion is orders over views, and nothing in this product
+              records a view - no impression, visit or page-view is stored
+              anywhere, so the API returns null for both rather than a zero that
+              would read as "nobody looked" or an estimate nobody measured. The
+              tile keeps its place and states the gap, because a seller who sees
+              three tiles where the design has four assumes the page is broken.
+              It becomes a number the day views are recorded; see
+              MetricTotals.views in the contract. */}
           <StatTile
-            label="Conversion"
-            value={`${(totals.conversionRate * 100).toFixed(1)}%`}
-            current={totals.conversionRate}
-            previous={previous?.conversionRate}
-            caption={`${totals.views.toLocaleString('en-GB')} store views`}
+            label="Conversion rate"
+            unavailable="Not tracked yet"
+            caption="Store views are not recorded"
           />
         </div>
       )}

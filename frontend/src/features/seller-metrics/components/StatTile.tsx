@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Minus, TriangleAlert } from 'lucide-react'
+import { ArrowDown, ArrowUp, CircleSlash, Minus, TriangleAlert } from 'lucide-react'
 
 import { changeVsPrevious } from '@/features/seller-metrics/changeVsPrevious'
 import { cn } from '@/lib/utils'
@@ -15,10 +15,12 @@ export function StatTile({
   invertTone = false,
   flag,
   caption,
+  unavailable,
 }: {
   label: string
-  value: string
-  current: number
+  /** Not needed when `unavailable` is set - there is no figure to print then. */
+  value?: string
+  current?: number
   previous?: number | null
   /** For measures where down is good. Nothing uses it yet; refunds will. */
   invertTone?: boolean
@@ -32,10 +34,18 @@ export function StatTile({
   flag?: string
   /** One more line under the change, for what the headline number leaves out. */
   caption?: string
+  /**
+   * The measure has no source at all, so there is nothing to print and nothing
+   * to compare - not a zero, which would be a measurement, and not "No prior
+   * data", which is about a missing previous window rather than a missing
+   * measure. Takes the place of both the value and the change line, and the
+   * text says what is not being tracked so the gap reads as a known one.
+   */
+  unavailable?: string
 }) {
   // Shared with the Top products table's "vs prev" column, so the two places
   // this dashboard compares windows cannot drift apart.
-  const change = changeVsPrevious(current, previous)
+  const change = changeVsPrevious(current ?? 0, previous)
   const muted = change.kind === 'unknown' || change.kind === 'flat'
   const good = invertTone ? !change.up : change.up
 
@@ -44,8 +54,28 @@ export function StatTile({
     // screen reader rather than as loose text on the page.
     <div role="group" aria-label={label} className="rounded-xl border p-5">
       <p className="text-xs font-bold tracking-[0.06em] text-muted-foreground uppercase">{label}</p>
-      <p className="mt-2 text-2xl font-bold tabular-nums">{value}</p>
-      {flag ? (
+      <p
+        className={cn(
+          'mt-2 text-2xl font-bold tabular-nums',
+          unavailable && 'text-muted-foreground',
+        )}
+      >
+        {unavailable ? (
+          <>
+            {/* A dash is a shape, not a word - a screen reader gets the fact. */}
+            <span aria-hidden>—</span>
+            <span className="sr-only">Not available</span>
+          </>
+        ) : (
+          value
+        )}
+      </p>
+      {unavailable ? (
+        <p className="mt-1 inline-flex items-center gap-1 text-[13px] font-medium text-muted-foreground">
+          <CircleSlash className="size-3.5" aria-hidden />
+          {unavailable}
+        </p>
+      ) : flag ? (
         <p className="mt-1 inline-flex items-center gap-1 text-[13px] font-medium text-[#8a5a00]">
           <TriangleAlert className="size-3.5" aria-hidden />
           {flag}

@@ -2635,17 +2635,26 @@ components:
       required: [date, views, orders, revenue]
       properties:
         date: { type: string, format: date }
-        views: { type: integer }
+        # Nullable, and null in every response today: nothing records a view.
+        # See MetricTotals.views.
+        views: { type: integer, nullable: true }
         orders: { type: integer }
         revenue: { type: number }
     MetricTotals:
       type: object
       required: [views, orders, revenue, conversionRate, averageOrderValue]
       properties:
-        views: { type: integer }
+        # Nullable because there is no view counter to read. No table, column or
+        # event in the schema records a view, an impression or a visit, so the
+        # honest answer is "not measured" rather than a 0 that would read as
+        # "nobody looked" or an estimate nobody took. Still required, so the
+        # absence is always stated rather than silently missing. Giving it a
+        # number means recording views first.
+        views: { type: integer, nullable: true }
         orders: { type: integer }
         revenue: { type: number }
-        conversionRate: { type: number }
+        # Orders over views, so it is null for exactly as long as views is.
+        conversionRate: { type: number, nullable: true }
         averageOrderValue: { type: number }
     SellerMetrics:
       type: object

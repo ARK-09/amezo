@@ -9,21 +9,22 @@ type CategoryShare = components['schemas']['CategoryShare']
 /**
  * Seller analytics for local development and tests.
  *
- * None of /api/v1/sellers/me/metrics exists on the backend, and `views` in
- * particular has nothing behind it at all - no impression is recorded anywhere
- * today. See docs/backend-handoff.md. The series below is deterministic rather
- * than random so a chart snapshot does not move between runs.
+ * `views` and `conversionRate` are null here because they are null on the
+ * backend: nothing in the schema records a view, an impression or a visit, so
+ * there is no number to serve. This mock deliberately does not supply one - a
+ * dashboard that looks complete against the mock and then loses a tile against
+ * the real API is worse than one that is honest in both. Everything else below
+ * is deterministic rather than random so a chart does not move between runs.
  */
 
 function pointFor(date: Date): MetricPoint {
   const day = Math.floor(date.getTime() / 86_400_000)
   const weekend = date.getDay() === 0 || date.getDay() === 6
-  const views = 380 + ((day * 37) % 160) + (weekend ? 95 : 0)
-  const orders = Math.max(2, Math.round(views * 0.034))
+  const orders = Math.max(2, Math.round((380 + ((day * 37) % 160) + (weekend ? 95 : 0)) * 0.034))
   const aov = 112 + ((day * 13) % 40)
   return {
     date: date.toISOString().slice(0, 10),
-    views,
+    views: null,
     orders,
     revenue: Math.round(orders * aov),
   }
@@ -41,14 +42,14 @@ function seriesBetween(from: string, to: string): MetricPoint[] {
 }
 
 function totalsOf(points: MetricPoint[]): MetricTotals {
-  const views = points.reduce((sum, p) => sum + p.views, 0)
   const orders = points.reduce((sum, p) => sum + p.orders, 0)
   const revenue = points.reduce((sum, p) => sum + p.revenue, 0)
   return {
-    views,
+    // Not measured, so not claimed - see the note at the top of this file.
+    views: null,
     orders,
     revenue,
-    conversionRate: views === 0 ? 0 : orders / views,
+    conversionRate: null,
     averageOrderValue: orders === 0 ? 0 : revenue / orders,
   }
 }
