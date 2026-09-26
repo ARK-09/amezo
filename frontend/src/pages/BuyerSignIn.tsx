@@ -5,7 +5,7 @@ import { Navigate } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useRequestBuyerMagicLink } from '@/features/session/api/useBuyerAuth'
-import { useSession } from '@/features/session/api/useSession'
+import { useViewerRole } from '@/features/session/api/useViewerRole'
 import { apiErrorMessage } from '@/lib/api/transient'
 
 /**
@@ -16,10 +16,14 @@ export function BuyerSignIn() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const { mutate, isPending, isError, error } = useRequestBuyerMagicLink()
-  const session = useSession()
+  const viewer = useViewerRole()
 
-  // Already signed in: nobody needs to be asked for an address they've just used.
-  if (session.data) {
+  // Already signed in as a buyer: nobody needs to be asked for an address
+  // they've just used. A seller is a different matter - they hold a seller
+  // session, not a buyer one, so this form is exactly what they came for, and
+  // bouncing them to the buyer account page answered a question they hadn't
+  // asked.
+  if (viewer.role === 'buyer') {
     return <Navigate to="/account" replace />
   }
 
@@ -62,7 +66,9 @@ export function BuyerSignIn() {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              No password. We'll email you a link that signs you in.
+              {viewer.role === 'seller'
+                ? "You're signed in as a seller. Signing in here gives you a separate buyer account."
+                : "No password. We'll email you a link that signs you in."}
             </p>
             {isError && (
               <p role="alert" className="text-sm text-destructive">

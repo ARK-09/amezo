@@ -2,10 +2,19 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
+import {
+  MemoryRouter,
+  Route,
+  RouterProvider,
+  Routes,
+  createMemoryRouter,
+  useLocation,
+} from 'react-router'
 import { describe, expect, it } from 'vitest'
 
-import { CartProvider } from '@/features/cart/context/CartContext'
+import { CartProvider } from '@/features/cart/context/CartProvider'
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
+import { routes } from '@/router'
 import { server } from '@/test/msw/server'
 
 import { Landing } from './Landing'
@@ -123,7 +132,10 @@ describe('Landing', () => {
     const tiles = within(await screen.findByRole('region', { name: 'Highlights' }))
     expect(await tiles.findByText('Aurora Audio')).toBeInTheDocument()
     const [, storeLink] = tiles.getAllByRole('link', { name: 'Shop now' })
-    expect(storeLink).toHaveAttribute('href', '/stores/Aurora%20Audio')
+    // By handle. The tile is handed the listing's store ref alongside the brand
+    // string, so the link goes straight there instead of costing a redirect hop
+    // through the legacy-name lookup.
+    expect(storeLink).toHaveAttribute('href', '/stores/aurora-audio')
   })
 
   it('runs the banner search against the catalog', async () => {
@@ -180,5 +192,71 @@ describe('Landing', () => {
     renderPage()
 
     expect((await screen.findAllByText(/still be starting up/)).length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * The landing page still mints `/stores/<display name>` links - PromoTiles is handed a
+ * brand string, not the listing's store ref - and links in that shape were handed out
+ * before stores had handles. The store route has to land them on the store rather than
+ * 404, and leave the reader on the handle URL.
+ */
+describe('legacy storefront URLs', () => {
+  /** The real route table, so a URL is matched the way the app matches it. */
+  function renderAt(initialEntry: string) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const testRouter = createMemoryRouter(routes, { initialEntries: [initialEntry] })
+    render(
+      <QueryClientProvider client={queryClient}>
+        {/* App.tsx puts this above the router, and the header reads the seller
+            flag from it - mounting `routes` directly has to supply it too. */}
+        <SellerAuthProvider>
+          <CartProvider>
+            <RouterProvider router={testRouter} />
+          </CartProvider>
+        </SellerAuthProvider>
+      </QueryClientProvider>,
+    )
+    return testRouter
+  }
+
+  it('lands a display-name link on the store and swaps the URL for its handle', async () => {
+    const testRouter = renderAt('/stores/Aurora%20Audio')
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Aurora Audio' }),
+    ).toBeInTheDocument()
+    expect(testRouter.state.location.pathname).toBe('/stores/aurora-audio')
+  })
+
+  it('takes a handle straight to the store, with no catalogue lookup', async () => {
+    let catalogRequests = 0
+    server.use(
+      http.get('http://localhost:8080/products', () => {
+        catalogRequests++
+        return HttpResponse.json({ content: [], page: 0, totalElements: 0, totalPages: 1 })
+      }),
+    )
+
+    const testRouter = renderAt('/stores/aurora-audio')
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Aurora Audio' }),
+    ).toBeInTheDocument()
+    expect(testRouter.state.location.pathname).toBe('/stores/aurora-audio')
+    // The lookup is the price of an old link, not of every storefront visit.
+    expect(catalogRequests).toBe(0)
+  })
+
+  /**
+   * A name nothing lists under is a dead link either way - but it has to die in the
+   * storefront's own not-found, not hang on a redirect that never comes.
+   */
+  it("falls through to the store's own error state for an unknown name", async () => {
+    const testRouter = renderAt('/stores/No%20Such%20Store')
+
+    expect(await screen.findByText("Couldn't load this store")).toBeInTheDocument()
+    // Left where it was: there is no handle to move it to.
+    expect(testRouter.state.location.pathname).toBe('/stores/No%20Such%20Store')
   })
 })

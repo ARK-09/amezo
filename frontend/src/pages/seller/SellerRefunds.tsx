@@ -1,0 +1,283 @@
+import { Search } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router'
+
+import { Button } from '@/components/ui/button'
+import { PaginationBar } from '@/components/ui/pagination'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  useSellerRefundRequests,
+  type RefundStatus,
+  type RefundRequestSummary,
+  type SellerRefundFilters,
+} from '@/features/refunds/api/useRefundRequests'
+import { RefundDecisionPanel } from '@/features/refunds/components/RefundDecisionPanel'
+import { useSellerRefundFacets } from '@/features/seller-portal/api/useSellerFacets'
+import { DetailDrawer } from '@/features/seller-portal/components/DetailDrawer'
+import { FacetTabs } from '@/features/seller-portal/components/FacetTabs'
+import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
+import { formatMediumDate } from '@/lib/formatDate'
+import { formatPrice } from '@/lib/formatPrice'
+
+const PAGE_SIZES = [5, 10, 20, 50] as const
+const DEFAULT_PAGE_SIZE = 10
+
+/**
+ * The design opens on what needs a decision, not on everything. Each value is a
+ * RefundStatus, which is both what ?status= takes and what the facets endpoint
+ * keys its counts by - so a tab needs no translation to become either.
+ */
+const TABS: { value: string; label: string }[] = [
+  { value: 'REQUESTED', label: 'Needs a decision' },
+  { value: 'AWAITING_RETURN', label: 'Awaiting return' },
+  { value: 'RETURN_RECEIVED', label: 'Return received' },
+  { value: 'REFUNDED', label: 'Refunded' },
+  { value: 'DECLINED', label: 'Declined' },
+  { value: 'all', label: 'All' },
+]
+
+/**
+ * ?page=abc, ?page=-5 and ?page=1.7 used to go straight into the request and
+ * into "Page NaN of 1". A page number is a whole one, zero or above, or it is 0.
+ */
+function pageParam(raw: string | null) {
+  const parsed = Number(raw ?? 0)
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0
+}
+
+/** Same for ?size=: one of the four the selector offers, or the default. */
+function sizeParam(raw: string | null) {
+  const parsed = Number(raw)
+  return PAGE_SIZES.includes(parsed as (typeof PAGE_SIZES)[number]) ? parsed : DEFAULT_PAGE_SIZE
+}
+
+export function SellerRefunds() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [openSnapshot, setOpenSnapshot] = useState<RefundRequestSummary | null>(null)
+
+  const status = searchParams.get('status') ?? 'REQUESTED'
+  const q = searchParams.get('q') ?? ''
+  const page = pageParam(searchParams.get('page'))
+  const size = sizeParam(searchParams.get('size'))
+
+  // The box is controlled so it can never disagree with the list: a tab switch
+  // or the Back button rewrites ?q= underneath it, and a defaultValue input
+  // went on showing the term it was mounted with. Re-seeded during render
+  // rather than from an effect - react(set-state-in-effect).
+  const [term, setTerm] = useState(q)
+  const [seededFrom, setSeededFrom] = useState(q)
+  if (seededFrom !== q) {
+    setSeededFrom(q)
+    setTerm(q)
+  }
+
+  const filters = useMemo<SellerRefundFilters>(
+    () => ({
+      status: status === 'all' ? undefined : (status as RefundStatus),
+      q: q || undefined,
+      page,
+      size,
+    }),
+    [status, q, page, size],
+  )
+
+  const query = useSellerRefundRequests(filters)
+  // A second request, on the search alone: the strip shows every bucket at
+  // once, so narrowing it by the tab being viewed would zero the other five.
+  // Its failure costs the numbers and nothing else.
+  const facetsQuery = useSellerRefundFacets(q || undefined)
+
+  // `replace` swaps the current history entry instead of pushing a new one.
+  function patch(next: Record<string, string | undefined>, replace = false) {
+    const params = new URLSearchParams(searchParams)
+    for (const [key, value] of Object.entries(next)) {
+      if (value) params.set(key, value)
+      else params.delete(key)
+    }
+    // Any other change - a tab, the search, the page size - starts again at
+    // the first page.
+    if (!('page' in next)) params.delete('page')
+    setSearchParams(params, { replace })
+  }
+
+  // A tab switch or a page is a navigation the seller may want to undo
+  // with Back; a keystroke is not. The first character pushes the one entry that
+  // Back escapes the search by, and every character after it replaces that entry
+  // - typing "tanaka" used to leave six entries to press Back through.
+  function patchTerm(value: string) {
+    setTerm(value)
+    patch({ q: value }, Boolean(q))
+  }
+
+  const rows = query.data?.content ?? []
+  const total = query.data?.totalElements ?? 0
+  const totalPages = query.data?.totalPages ?? 1
+  // A ?page= past the end comes back empty; don't also print a page number that
+  // doesn't exist, and let Previous walk back into the range that does.
+  const shownPage = Math.min(page, totalPages - 1)
+
+  // The design's header line. Drawn from the facets, which count every bucket,
+  // where the line it replaces counted only the tab being viewed. Without them
+  // it says what it always said. Refund buckets carry no money - the endpoint
+  // returns a null value for each - so there is no total to add.
+  const countOf = (key: string) => facetsQuery.data?.find((facet) => facet.key === key)?.count
+  const waiting = countOf('REQUESTED')
+  const allRequests = countOf('all')
+  const summary =
+    waiting !== undefined && allRequests !== undefined
+      ? `${waiting} waiting on you · ${allRequests} request${allRequests === 1 ? '' : 's'} total`
+      : query.isLoading
+        ? 'Loading…'
+        : `${total} request${total === 1 ? '' : 's'}`
+  // Snapshotted when the drawer opens. Acting on a record usually moves it
+  // out of the bucket being viewed - deriving the drawer from the current
+  // page meant it slammed shut the instant the action succeeded, before the
+  // seller saw the result.
+  const openRow = rows.find((row) => row.id === openId) ?? openSnapshot
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <h1 className="text-xl font-bold">Refunds</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{summary}</p>
+      </div>
+
+      <FacetTabs
+        label="Filter refund requests by status"
+        tabs={TABS}
+        value={status}
+        facets={facetsQuery.data}
+        isPending={facetsQuery.isPending}
+        onValueChange={(value) => patch({ status: value })}
+      />
+
+      <div className="relative max-w-[360px]">
+        <Search
+          className="absolute top-1/2 left-3 size-[15px] -translate-y-1/2 text-muted-foreground"
+          aria-hidden
+        />
+        <input
+          type="search"
+          value={term}
+          onChange={(e) => patchTerm(e.target.value)}
+          placeholder="Search buyer, order or product"
+          aria-label="Search refund requests"
+          className="h-9 w-full rounded-md border bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </div>
+
+      {query.isError && (
+        <div className="flex flex-col items-start gap-3 rounded-lg border p-6">
+          <p className="font-medium">Couldn't load refund requests</p>
+          <p className="text-sm text-muted-foreground">
+            {query.error?.detail ?? 'Something went wrong. Try again.'}
+          </p>
+          <Button variant="outline" onClick={() => query.refetch()}>
+            Try again
+          </Button>
+        </div>
+      )}
+
+      {query.isLoading && (
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      )}
+
+      {query.isSuccess && rows.length === 0 && (
+        <div className="flex flex-col items-center gap-2 rounded-lg border py-16 text-center">
+          <p className="font-medium">Nothing waiting on a decision.</p>
+          <p className="text-sm text-muted-foreground">
+            Requests appear here as buyers raise them.
+          </p>
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Request</TableHead>
+                <TableHead>Order</TableHead>
+                <TableHead>Requested</TableHead>
+                <TableHead>Wants</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-mono text-xs">{row.reference}</TableCell>
+                  <TableCell className="font-mono text-xs">{row.orderReference}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatMediumDate(row.requestedAt)}
+                  </TableCell>
+                  <TableCell>{row.resolution === 'REPLACEMENT' ? 'Replacement' : 'Refund'}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatPrice(row.approvedAmount ?? row.requestedAmount)}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={row.status} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" onClick={() => {
+                        setOpenId(row.id)
+                        setOpenSnapshot(row)
+                      }}>
+                      Review
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        // The same footer as every other paged list: range, Per page, and
+        // Prev · 1 2 3 · Next. A size change is a filter change, so patch()
+        // drops ?page= with it.
+        <PaginationBar
+          page={shownPage}
+          totalPages={totalPages}
+          onPageChange={(next) => patch({ page: next === 0 ? undefined : String(next) })}
+          range={{
+            totalElements: total,
+            pageSize: size,
+            sizes: PAGE_SIZES,
+            onSizeChange: (next) => patch({ size: String(next) }),
+          }}
+        />
+      )}
+
+      <DetailDrawer
+        open={Boolean(openId)}
+        onOpenChange={(next) => {
+          if (next) return
+          setOpenId(null)
+          setOpenSnapshot(null)
+        }}
+        title={openRow ? `Request ${openRow.reference}` : 'Refund request'}
+        description={openRow?.orderReference}
+        fullPageTo={`/seller/refunds/${openRow?.id ?? ''}`}
+      >
+        {openRow && <RefundDecisionPanel refundRequestId={openRow.id} />}
+      </DetailDrawer>
+    </div>
+  )
+}

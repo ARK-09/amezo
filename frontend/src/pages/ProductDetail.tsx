@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router'
 
 import { RatingBadge } from '@/components/RatingBadge'
+import { ProductFacts } from '@/features/catalog/components/ProductFacts'
+import { ProductSpecs } from '@/features/catalog/components/ProductSpecs'
 import { Button } from '@/components/ui/button'
 import { useAddToCart } from '@/features/catalog/api/useAddToCart'
 import { useIsOwnProduct } from '@/features/session/api/useIsOwnProduct'
@@ -67,7 +69,12 @@ export function ProductDetail() {
 
       {product && selectedVariant && (
         <>
-          <Breadcrumb category={product.category} brandName={product.brandName} title={product.title} />
+          <Breadcrumb
+            category={product.category}
+            brandName={product.brandName}
+            store={product.store}
+            title={product.title}
+          />
 
           <div className="flex flex-wrap items-start gap-8">
             <ImageGallery images={product.images} title={product.title} />
@@ -85,8 +92,15 @@ export function ProductDetail() {
                 {product.brandName && (
                   <span className="text-sm text-muted-foreground">
                     Sold by{' '}
+                    {/* By handle. `store` is optional in the contract, so a payload
+                        without one falls back to the display name, which /stores
+                        resolves - never to a slugified guess at the handle. */}
                     <Link
-                      to={`/stores/${encodeURIComponent(product.brandName)}`}
+                      to={
+                        product.store
+                          ? `/stores/${product.store.handle}`
+                          : `/stores/${encodeURIComponent(product.brandName)}`
+                      }
                       className="font-semibold text-foreground underline decoration-border underline-offset-[3px] hover:decoration-primary"
                     >
                       {product.brandName}
@@ -100,6 +114,8 @@ export function ProductDetail() {
                 selectedId={selectedVariant.id}
                 onSelect={selectVariant}
               />
+
+              <ProductFacts variant={selectedVariant} storeHandle={product.store?.handle} />
             </div>
 
             <BuyBox
@@ -117,9 +133,12 @@ export function ProductDetail() {
             <ProductTabs tab={tab} reviewCount={product.reviewSummary.count} onChange={setTab} />
 
             {tab === 'details' && (
-              <p className="max-w-[62ch] text-[14.5px] leading-relaxed text-muted-foreground">
-                {product.description}
-              </p>
+              <div>
+                <p className="mb-5 max-w-[62ch] text-[14.5px] leading-relaxed text-muted-foreground">
+                  {product.description}
+                </p>
+                <ProductSpecs attributes={product.attributes ?? []} />
+              </div>
             )}
 
             {tab === 'reviews' && (

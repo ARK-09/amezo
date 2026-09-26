@@ -5,6 +5,25 @@ import { seedProducts } from './products'
 type ProductDetail = components['schemas']['ProductDetail']
 type Review = components['schemas']['Review']
 
+/**
+ * The specification table under the Details tab. Only the two listings whose
+ * designs show one carry attributes, so the "a listing without them renders
+ * nothing" path stays exercised by every other product.
+ */
+const ATTRIBUTES: Record<string, { label: string; value: string }[]> = {
+  '11111111-1111-1111-1111-111111111111': [
+    { label: 'Battery life', value: '30 hours' },
+    { label: 'Connectivity', value: 'Bluetooth 5.3, USB-C' },
+    { label: 'Noise cancellation', value: 'Active, adaptive' },
+    { label: 'Weight', value: '250 g' },
+  ],
+  '22222222-2222-2222-2222-222222222222': [
+    { label: 'Display', value: '14" full HD' },
+    { label: 'Memory', value: '16 GB' },
+    { label: 'Chassis', value: 'Aluminium' },
+  ],
+}
+
 const DESCRIPTIONS: Record<string, string> = {
   '11111111-1111-1111-1111-111111111111':
     'Over-ear headphones with active noise cancellation, 30-hour battery life, and a foldable design for travel. Includes a hard case and USB-C fast charging.',
@@ -48,7 +67,11 @@ export const productDetails: Record<string, ProductDetail> = Object.fromEntries(
       sellerId: p.sellerId,
       title: p.title,
       brandName: p.brandName,
+      // The same store ref the summary carries, so the detail page links to the
+      // storefront by handle rather than by the display name beside it.
+      store: p.store,
       description: DESCRIPTIONS[p.id] ?? '',
+      attributes: ATTRIBUTES[p.id] ?? [],
       category: p.category,
       images: [],
       variants: variantsFor(p.id, p.priceFrom, p.inStock),
@@ -90,6 +113,29 @@ export function addWrittenReview(productId: string, review: Review) {
 
 export function writtenReviewsFor(productId: string): Review[] {
   return writtenReviews.get(productId) ?? []
+}
+
+/**
+ * PATCH /api/v1/reviews/{id}. Only the rating and the body are editable: the
+ * purchase a review belongs to is not, or a review could be moved onto a
+ * different product after the fact.
+ */
+export function updateWrittenReview(
+  reviewId: string,
+  patch: { rating?: number; body?: string | null },
+): Review | 'not-found' {
+  for (const [productId, reviews] of writtenReviews) {
+    const index = reviews.findIndex((review) => review.id === reviewId)
+    if (index === -1) continue
+    const updated = {
+      ...reviews[index],
+      ...(patch.rating != null ? { rating: patch.rating } : {}),
+      ...(patch.body !== undefined ? { body: patch.body } : {}),
+    }
+    writtenReviews.set(productId, reviews.map((r, i) => (i === index ? updated : r)))
+    return updated
+  }
+  return 'not-found'
 }
 
 export function resetWrittenReviews() {

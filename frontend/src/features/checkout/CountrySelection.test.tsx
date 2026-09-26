@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { CartProvider } from '@/features/cart/context/CartContext'
+import { CartProvider } from '@/features/cart/context/CartProvider'
 import { createAppQueryClient } from '@/lib/api/queryClient'
 import { STORAGE_KEY } from '@/features/cart/storage'
 import { Checkout } from '@/pages/Checkout'

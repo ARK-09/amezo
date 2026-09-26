@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
-import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
 import { issueMagicLinkToken } from '@/test/msw/fixtures/sellerAuth'
 
 import { SellerVerify } from './SellerVerify'

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { CartProvider } from '@/features/cart/context/CartContext'
+import { CartProvider } from '@/features/cart/context/CartProvider'
 import { STORAGE_KEY } from '@/features/cart/storage'
 import { createAppQueryClient } from '@/lib/api/queryClient'
 import { Checkout } from '@/pages/Checkout'

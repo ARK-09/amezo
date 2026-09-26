@@ -10,7 +10,11 @@ import { resetWrittenReviews } from './msw/fixtures/productDetails'
 import { resetPurchases } from './msw/fixtures/purchases'
 import { clearSellerSession } from './msw/fixtures/sellerAuth'
 import { resetSellerOrders } from './msw/fixtures/sellerOrders'
+import { resetBuyerOrders } from './msw/fixtures/buyerOrders'
+import { resetRefundRequests } from './msw/fixtures/refunds'
 import { resetSellerProducts } from './msw/fixtures/sellerProducts'
+import { resetStoreImages, resetStoreProfile } from './msw/fixtures/storeProfile'
+import { resetFollowedStores } from './msw/fixtures/stores'
 
 // jsdom doesn't implement ResizeObserver; radix-ui's Slider needs it to measure the track
 class ResizeObserverStub {
@@ -28,6 +32,11 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => server.resetHandlers())
 afterEach(() => localStorage.clear())
 afterEach(() => resetSellerProducts())
+afterEach(() => resetRefundRequests())
+afterEach(() => resetBuyerOrders())
+afterEach(() => resetStoreProfile())
+afterEach(() => resetStoreImages())
+afterEach(() => resetFollowedStores())
 afterEach(() => resetSellerOrders())
 // The mock session cookie is module state like the rest; a test that signs in
 // must not leave the next one signed in.

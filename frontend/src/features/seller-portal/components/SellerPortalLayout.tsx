@@ -1,4 +1,4 @@
-import { LogOut, Package, ShoppingBag, ShoppingCart } from 'lucide-react'
+import { LayoutDashboard, LogOut, Package, RotateCcw, ShoppingBag, ShoppingCart, Store } from 'lucide-react'
 import { Navigate, NavLink, Outlet } from 'react-router'
 
 import { BackendWakingBanner } from '@/components/layout/BackendWakingBanner'
@@ -8,8 +8,11 @@ import { useSellerAuth } from '@/features/seller-portal/context/SellerAuthContex
 import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
+  { to: '/seller/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/seller/products', label: 'Products', icon: Package },
   { to: '/seller/orders', label: 'Orders', icon: ShoppingCart },
+  { to: '/seller/refunds', label: 'Refunds', icon: RotateCcw },
+  { to: '/seller/store', label: 'Store settings', icon: Store },
 ]
 
 // Same flag SellerSignIn uses to bypass the real magic-link flow - see its

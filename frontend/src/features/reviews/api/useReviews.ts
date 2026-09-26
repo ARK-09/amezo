@@ -1,4 +1,11 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
+import type { QueryFunctionContext } from '@tanstack/react-query'
 
 import { REVIEWS_PAGE_SIZE } from '@/features/catalog/schema/types'
 import { apiClient, type ProblemDetail } from '@/lib/api/client'
@@ -38,28 +45,54 @@ export function useProductReviews(productRef: string, page: number, enabled: boo
 }
 
 /**
+ * A 401 here resolves as "not eligible" rather than throwing - a visitor who isn't
+ * signed in hasn't hit an error, they just aren't a buyer yet. Written once because
+ * two callers ask the question: the product page, about one product, and My Orders,
+ * about every product in an expanded order.
+ */
+async function fetchEligibility(
+  productRef: string,
+  signal: AbortSignal,
+): Promise<ReviewEligibility> {
+  const { data, error, response } = await apiClient.GET(
+    '/products/{productRef}/reviews/eligibility',
+    { signal, params: { path: { productRef } } },
+  )
+  if (response.status === 401) {
+    return { eligible: false, reason: 'NOT_PURCHASED', orderLineId: null, existingReview: null }
+  }
+  if (error) throw error
+  return data
+}
+
+/**
  * Whether the signed-in buyer may review this product.
  *
  * `enabled` is the caller's business: this only runs for a signed-in buyer, because
- * for anyone else the endpoint answers 401 and there is no form to offer. A 401 here
- * resolves as "not eligible" rather than throwing - a visitor who isn't signed in
- * hasn't hit an error, they just aren't a buyer yet.
+ * for anyone else the endpoint answers 401 and there is no form to offer.
  */
 export function useReviewEligibility(productRef: string, enabled: boolean) {
   return useQuery<ReviewEligibility, ProblemDetail>({
     queryKey: reviewKeys.eligibility(productRef),
-    queryFn: async ({ signal }) => {
-      const { data, error, response } = await apiClient.GET(
-        '/products/{productRef}/reviews/eligibility',
-        { signal, params: { path: { productRef } } },
-      )
-      if (response.status === 401) {
-        return { eligible: false, reason: 'NOT_PURCHASED', orderLineId: null, existingReview: null }
-      }
-      if (error) throw error
-      return data
-    },
+    queryFn: ({ signal }) => fetchEligibility(productRef, signal),
     enabled,
+  })
+}
+
+/**
+ * The same question for several products at once, for the Reviews block inside an
+ * expanded order. It has to be a request per product: an order line carries no
+ * review of its own, so this endpoint's `existingReview` is the only thing that
+ * tells a line already reviewed from one still waiting - and it is also where the
+ * review id for an edit comes from. Same key as the single-product hook, so the
+ * product page and the order share one cached answer.
+ */
+export function useReviewEligibilities(productRefs: string[]) {
+  return useQueries({
+    queries: productRefs.map((productRef) => ({
+      queryKey: reviewKeys.eligibility(productRef),
+      queryFn: ({ signal }: QueryFunctionContext) => fetchEligibility(productRef, signal),
+    })),
   })
 }
 
@@ -89,6 +122,35 @@ export function useCreateReview() {
       void queryClient.invalidateQueries({ queryKey: reviewKeys.all })
       void queryClient.invalidateQueries({ queryKey: ['catalog', 'product'] })
       // The listing card shows the average too.
+      void queryClient.invalidateQueries({ queryKey: ['search'] })
+    },
+  })
+}
+
+/**
+ * Editing a review already written. Author-only on the server, so this carries no
+ * authorisation of its own. Only the rating and the body go in the body: the
+ * purchase a review belongs to is not editable, or a review could be moved onto a
+ * different product after the fact.
+ *
+ * Invalidates exactly what writing one does - the same averages and the same
+ * eligibility answer are derived from it, and an edited rating moves both.
+ */
+export function useUpdateReview() {
+  const queryClient = useQueryClient()
+
+  return useMutation<Review, ProblemDetail, { reviewId: string; rating: number; body: string }>({
+    mutationFn: async ({ reviewId, rating, body }) => {
+      const { data, error } = await apiClient.PATCH('/api/v1/reviews/{reviewId}', {
+        params: { path: { reviewId } },
+        body: { rating, body: body.trim() || null },
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: reviewKeys.all })
+      void queryClient.invalidateQueries({ queryKey: ['catalog', 'product'] })
       void queryClient.invalidateQueries({ queryKey: ['search'] })
     },
   })

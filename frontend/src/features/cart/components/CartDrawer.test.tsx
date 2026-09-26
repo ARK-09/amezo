@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import { server } from '@/test/msw/server'
 
-import { CartProvider } from '../context/CartContext'
+import { CartProvider } from '../context/CartProvider'
 import type { CartLine } from '../schema/types'
 import { CartDrawer } from './CartDrawer'
 import { CartTrigger } from './CartTrigger'

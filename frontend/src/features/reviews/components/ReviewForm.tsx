@@ -1,4 +1,3 @@
-import { Star } from 'lucide-react'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 
@@ -6,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { apiErrorMessage } from '@/lib/api/transient'
 
 import { useCreateReview } from '../api/useReviews'
+import { RatingStars } from './RatingStars'
 
 /**
  * Writing a review. Only rendered when the server has said this buyer may - the
@@ -37,31 +37,15 @@ export function ReviewForm({
     <form onSubmit={submit} className="mb-5 flex flex-col gap-3 rounded-lg border p-4">
       <h3 className="text-sm font-bold">Write a review</h3>
 
-      {/* Radios, not buttons: a rating is one choice from five, which is what a
-          radio group is, and it gets keyboard support and a group label for free. */}
-      <fieldset className="flex items-center gap-1">
-        <legend className="mb-1.5 text-sm text-muted-foreground">Your rating</legend>
-        {[1, 2, 3, 4, 5].map((value) => (
-          <label key={value} className="cursor-pointer">
-            <input
-              type="radio"
-              name="rating"
-              value={value}
-              checked={rating === value}
-              onChange={() => setRating(value)}
-              className="peer sr-only"
-            />
-            <span className="sr-only">
-              {value} star{value === 1 ? '' : 's'}
-            </span>
-            <Star
-              aria-hidden
-              className="size-6 text-[#ffc53d] peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
-              fill={value <= rating ? 'currentColor' : 'none'}
-            />
-          </label>
-        ))}
-      </fieldset>
+      <RatingStars
+        name="rating"
+        legend="Your rating"
+        legendClassName="mb-1.5 text-sm text-muted-foreground"
+        value={rating}
+        onChange={setRating}
+        className="flex items-center gap-1"
+        starClassName="size-6 text-[#ffc53d]"
+      />
 
       <div>
         <label htmlFor="review-body" className="mb-1.5 block text-sm font-medium">

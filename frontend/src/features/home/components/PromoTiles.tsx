@@ -1,6 +1,9 @@
 import { Link } from 'react-router'
 
 import type { Category } from '@/features/reference/api/useCategories'
+import type { components } from '@/lib/api/schema'
+
+type StoreRef = components['schemas']['StoreRef']
 
 // The design's three campaign tiles (groceries, a phone launch, a clearance
 // push) are merchandising this app has no campaign API to fill. They keep
@@ -14,7 +17,16 @@ const LIGHT_STRIPES =
 const ORANGE_STRIPES =
   'repeating-linear-gradient(45deg,rgba(255,255,255,0.14) 0 10px,rgba(255,255,255,0.02) 10px 20px)'
 
-export function PromoTiles({ category, brand }: { category?: Category; brand?: string }) {
+export function PromoTiles({
+  category,
+  brand,
+  store,
+}: {
+  category?: Category
+  brand?: string
+  /** The listing's store, so the tile links by handle instead of costing a redirect. */
+  store?: StoreRef
+}) {
   if (!category && !brand) return null
 
   return (
@@ -48,8 +60,11 @@ export function PromoTiles({ category, brand }: { category?: Category; brand?: s
             <div className="mt-1.5 text-[26px] font-extrabold">{brand}</div>
             <div className="text-sm font-medium text-muted-foreground">Visit the storefront</div>
           </div>
+          {/* By handle when the listing carried one. `store` is optional in the
+              contract, so the display-name URL stays the fallback - the route
+              resolves it - rather than slugifying a key that is the server's to mint. */}
           <Link
-            to={`/stores/${encodeURIComponent(brand)}`}
+            to={store ? `/stores/${store.handle}` : `/stores/${encodeURIComponent(brand)}`}
             className="relative w-fit rounded-lg border border-foreground px-[18px] py-2.5 text-xs font-semibold transition-colors hover:bg-accent"
           >
             Shop now

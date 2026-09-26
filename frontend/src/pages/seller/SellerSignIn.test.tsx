@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthContext'
+import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
 import { signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 import { server } from '@/test/msw/server'
 

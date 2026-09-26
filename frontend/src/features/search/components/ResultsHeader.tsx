@@ -6,33 +6,31 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-import { PAGE_SIZE, SORT_OPTIONS } from '../schema/types'
+import { SORT_OPTIONS } from '../schema/types'
 import type { SortOption } from '../schema/types'
 
+/**
+ * The total and the sort. The shown range belongs to the pager below the grid,
+ * which owns the page size and so is the only one that can count it - this
+ * header's own arithmetic printed "1585 - 1584 over 42" for a typed ?page=99.
+ */
 export function ResultsHeader({
   q,
-  page,
   totalElements,
-  resultCount,
   sort,
   onSortChange,
 }: {
   q: string
-  page: number
   totalElements: number
-  resultCount: number
   sort: SortOption
   onSortChange: (sort: SortOption) => void
 }) {
-  const start = totalElements === 0 ? 0 : page * PAGE_SIZE + 1
-  const end = page * PAGE_SIZE + resultCount
-
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-sm text-muted-foreground">
         {q ? (
           <>
-            {start} - {end} over {totalElements} results for &ldquo;{q}&rdquo;
+            {totalElements} results for &ldquo;{q}&rdquo;
           </>
         ) : (
           <>{totalElements} products</>

@@ -11,7 +11,13 @@ export const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'newest', label: 'Newest' },
 ]
 
-export const PAGE_SIZE = 16
+/** The sizes the design's Per page select offers, and the one it opens on. */
+export const PAGE_SIZES = [5, 10, 20, 50] as const
+// 20, not the 10 the seller tables default to. Those are tables, where ten rows
+// is a screenful; this is a grid about six cards wide, so ten leaves two thin
+// rows and pages a shopper who is browsing. 20 is the nearest offered size to
+// the 16 this page used before the selector existed.
+export const DEFAULT_SIZE = 20
 
 export interface SearchFilters {
   q: string
@@ -21,6 +27,8 @@ export interface SearchFilters {
   inStockOnly: boolean
   sort: SortOption
   page: number
+  /** One of PAGE_SIZES: the grid's page size is the shopper's, not a constant. */
+  size: number
 }
 
 export const DEFAULT_FILTERS: SearchFilters = {
@@ -31,4 +39,5 @@ export const DEFAULT_FILTERS: SearchFilters = {
   inStockOnly: false,
   sort: 'relevance',
   page: 0,
+  size: DEFAULT_SIZE,
 }

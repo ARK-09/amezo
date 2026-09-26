@@ -1,8 +1,10 @@
 import type { components } from '@/lib/api/schema'
 
 import { categoryBySlug } from './categories'
+import { STORE_PROFILE_ID } from './storeProfile'
 
 type ProductSummary = components['schemas']['ProductSummary']
+type StoreRef = components['schemas']['StoreRef']
 
 /**
  * Two sellers, so the "a seller cannot buy their own product" rule has something to
@@ -10,6 +12,38 @@ type ProductSummary = components['schemas']['ProductSummary']
  */
 export const SELLER_ONE = 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa'
 export const SELLER_TWO = 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb'
+
+/**
+ * The store each brand trades as. The catalogue always carried this
+ * relationship, but only as brandName - a display string the storefront matched
+ * on, so a rename broke every link and two sellers sharing a brand name shared
+ * a page. Written down as a StoreRef it becomes a key.
+ *
+ * 'Aurora Audio' is the demo seller's own store, so it carries the id
+ * fixtures/storeProfile.ts holds: one store, two sides of the same counter.
+ */
+const STORE_BY_BRAND: Record<string, StoreRef> = {
+  'Aurora Audio': { id: STORE_PROFILE_ID, name: 'Aurora Audio', handle: 'aurora-audio' },
+  Vexel: { id: 'cccccccc-3333-3333-3333-cccccccccccc', name: 'Vexel', handle: 'vexel' },
+  'Hearth & Home': {
+    id: 'dddddddd-4444-4444-4444-dddddddddddd',
+    name: 'Hearth & Home',
+    handle: 'hearth-and-home',
+  },
+  Northpeak: { id: 'eeeeeeee-5555-5555-5555-eeeeeeeeeeee', name: 'Northpeak', handle: 'northpeak' },
+}
+
+/** Every store the catalogue lists for, in the order the brands first appear. */
+export function seedStoreRefs(): StoreRef[] {
+  return Object.values(STORE_BY_BRAND)
+}
+
+/** Throws rather than shipping a product whose brand belongs to no store. */
+function storeForBrand(brandName: string): StoreRef {
+  const found = STORE_BY_BRAND[brandName]
+  if (!found) throw new Error(`No mock store for brand '${brandName}' - add it to STORE_BY_BRAND`)
+  return found
+}
 
 /** The slug each product is reachable by, derived the way the backend derives it. */
 function slugFor(title: string): string {
@@ -19,10 +53,10 @@ function slugFor(title: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-/** slug, sellerId and the default-variant fields are filled in by seedProducts. */
+/** slug, store, sellerId and the default-variant fields are filled in by seedProducts. */
 type BaseProduct = Omit<
   ProductSummary,
-  'slug' | 'sellerId' | 'defaultVariantId' | 'defaultVariantPrice'
+  'slug' | 'store' | 'sellerId' | 'defaultVariantId' | 'defaultVariantPrice'
 >
 
 const BASE_PRODUCTS: BaseProduct[] = [
@@ -103,6 +137,9 @@ const BASE_PRODUCTS: BaseProduct[] = [
 export const seedProducts: ProductSummary[] = BASE_PRODUCTS.map((product, index) => ({
   ...product,
   slug: slugFor(product.title),
+  // brandName stays as it is - it is what a card prints, and still required by
+  // the contract. store is the same fact as a key, for linking and filtering.
+  store: storeForBrand(product.brandName),
   // Alternating owners: half the catalog belongs to each seller, so a test signed
   // in as SELLER_ONE has both its own products and somebody else's on screen.
   sellerId: index % 2 === 0 ? SELLER_ONE : SELLER_TWO,

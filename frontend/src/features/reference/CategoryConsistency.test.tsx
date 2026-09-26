@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
-import { CartProvider } from '@/features/cart/context/CartContext'
+import { CartProvider } from '@/features/cart/context/CartProvider'
 import { createAppQueryClient } from '@/lib/api/queryClient'
 import { ProductDetail } from '@/pages/ProductDetail'
 import { SearchResults } from '@/pages/SearchResults'
@@ -70,9 +70,9 @@ describe('categories across screens', () => {
   it("names the categories a store actually lists, not the whole system list", async () => {
     wrap(
       <Routes>
-        <Route path="/stores/:brand" element={<StoreFront />} />
+        <Route path="/stores/:handle" element={<StoreFront />} />
       </Routes>,
-      '/stores/Aurora%20Audio',
+      '/stores/aurora-audio',
     )
 
     expect(await screen.findByRole('button', { name: 'Electronics' })).toBeInTheDocument()

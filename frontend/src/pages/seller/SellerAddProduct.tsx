@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { CategorySelect } from '@/features/reference/components/CategorySelect'
 import {
   type StagedImageUpload,
@@ -12,6 +14,20 @@ import {
 } from '@/features/seller-portal/api/useSellerProducts'
 
 const MAX_IMAGES = 7
+
+/** The design's own limit; the API sets none. Same field, same count as editing. */
+const TITLE_LIMIT = 120
+
+/**
+ * The two statuses a new listing can be created with. ARCHIVED is not one of
+ * them: it is what deleting a product does.
+ */
+type WritableStatus = 'ACTIVE' | 'DRAFT'
+
+const STATUS_HINT: Record<WritableStatus, string> = {
+  ACTIVE: 'Visible in search and on your store page as soon as you save.',
+  DRAFT: 'Saved to your catalogue but hidden from shoppers until you activate it.',
+}
 
 interface VariantRow {
   label: string
@@ -30,6 +46,38 @@ function emptyVariant(): VariantRow {
   return { label: '', sku: '', price: '', stockQty: '' }
 }
 
+/**
+ * A numeric field's value, or null when the field holds nothing usable. Number('')
+ * is 0, which is how a cleared price used to be submitted as a real $0.00 variant,
+ * and Number('12px') is NaN, which serialises to null against a number column.
+ * Both are a missing value, not a zero.
+ */
+function parseNumber(value: string): number | null {
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    return null
+  }
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * Price has to be above 0. Unlike stock, a zero price is never something a seller
+ * means - a free item is a promotion, not a $0.00 offer - and it is exactly what
+ * the empty-field bug produced, so accepting a typed 0 would leave that same
+ * mispriced listing one stray keystroke away.
+ */
+function parsePrice(value: string): number | null {
+  const parsed = parseNumber(value)
+  return parsed !== null && parsed > 0 ? parsed : null
+}
+
+/** Stock 0 is a real answer - a variant can be listed with nothing on the shelf. */
+function parseStock(value: string): number | null {
+  const parsed = parseNumber(value)
+  return parsed !== null && Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
 export function SellerAddProduct() {
   const navigate = useNavigate()
   const { mutateAsync: createProduct, isPending } = useCreateProduct()
@@ -37,6 +85,9 @@ export function SellerAddProduct() {
   const [title, setTitle] = useState('')
   const [brandName, setBrandName] = useState('')
   const [description, setDescription] = useState('')
+  // A listing has to be creatable as a draft: without it the only way to reach
+  // DRAFT is to publish the half-finished product first and unpublish it after.
+  const [status, setStatus] = useState<WritableStatus>('ACTIVE')
   // A category SLUG chosen from the system list - never typed. null until chosen.
   const [categorySlug, setCategorySlug] = useState<string | null>(null)
   const [variants, setVariants] = useState<VariantRow[]>([emptyVariant()])
@@ -93,18 +144,33 @@ export function SellerAddProduct() {
       return
     }
 
+    // Parsed before the request rather than with Number() inside it: an empty
+    // price field is missing, not $0.00, and a product listed at zero is one
+    // nobody meant to publish. Checked here as well as by the inputs' `required`,
+    // which a whitespace-only value satisfies.
+    const priced: { label: string; sku: string; price: number; stockQty: number }[] = []
+    for (const [index, v] of variants.entries()) {
+      const price = parsePrice(v.price)
+      const stockQty = parseStock(v.stockQty)
+      if (price === null || stockQty === null) {
+        setSubmitError(
+          price === null
+            ? `Variant ${index + 1} needs a price above 0.`
+            : `Variant ${index + 1} needs a stock quantity of 0 or more.`,
+        )
+        return
+      }
+      priced.push({ label: v.label, sku: v.sku, price, stockQty })
+    }
+
     try {
       const { id } = await createProduct({
         title,
         brandName: brandName || null,
         description: description || null,
         categorySlug,
-        variants: variants.map((v) => ({
-          label: v.label,
-          sku: v.sku,
-          price: Number(v.price),
-          stockQty: Number(v.stockQty),
-        })),
+        status,
+        variants: priced,
       })
 
       const failedUploads: string[] = []
@@ -130,7 +196,20 @@ export function SellerAddProduct() {
 
   return (
     <div className="mx-auto max-w-2xl p-6">
-      <h1 className="mb-5 text-xl font-bold">Add product</h1>
+      <div className="mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-bold">Add product</h1>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="status"
+              checked={status === 'ACTIVE'}
+              onCheckedChange={(on) => setStatus(on ? 'ACTIVE' : 'DRAFT')}
+            />
+            <Label htmlFor="status">Active</Label>
+          </div>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">{STATUS_HINT[status]}</p>
+      </div>
 
       <form onSubmit={submit} className="flex flex-col gap-6">
         <div className="flex flex-col gap-3">
@@ -138,7 +217,16 @@ export function SellerAddProduct() {
             <label htmlFor="title" className="mb-1.5 block text-sm font-medium">
               Title
             </label>
-            <Input id="title" required value={title} onChange={(e) => setTitle(e.target.value)} />
+            <Input
+              id="title"
+              required
+              maxLength={TITLE_LIMIT}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {title.length}/{TITLE_LIMIT} characters
+            </p>
           </div>
           <div>
             <label htmlFor="brand" className="mb-1.5 block text-sm font-medium">

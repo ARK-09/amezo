@@ -8,7 +8,8 @@ import { createAppQueryClient } from '@/lib/api/queryClient'
 import { signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 import { server } from '@/test/msw/server'
 
-import { SellerAuthProvider, useSellerAuth } from './SellerAuthContext'
+import { useSellerAuth } from './SellerAuthContext'
+import { SellerAuthProvider } from './SellerAuthProvider'
 
 const URL = 'http://localhost:8080/sessions/current'
 const STORED = { sellerId: 'seller-1', email: 'stored@example.com' }

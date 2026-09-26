@@ -294,6 +294,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/reviews/{reviewId}:
+    patch:
+      operationId: updateReview
+      description: >-
+        Edit a review already written. Only its author may, and only the rating
+        and the body are editable - the purchase it belongs to is not, or a
+        review could be moved onto a different product after the fact.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                body: { type: string, nullable: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /products/{productRef}/reviews/eligibility:
     get:
       operationId: getReviewEligibility
@@ -579,6 +613,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/products/{productId}/images/order:
+    put:
+      operationId: reorderProductImages
+      description: >-
+        The whole ordering at once, as the resource it is - not a per-image
+        position PATCH, which cannot express a swap without a transient
+        duplicate position. The first id is the cover. Any id missing from the
+        list, or any image not belonging to this product, is a 422.
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageIds]
+              properties:
+                imageIds:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SellerImage' }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /products/{productId}/images/confirm:
     post:
       operationId: sellerConfirmImage
@@ -684,7 +757,7 @@ paths:
       parameters:
         - name: status
           in: query
-          schema: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+          schema: { $ref: '#/components/schemas/OrderStatus' }
         - name: page
           in: query
           schema: { type: integer, default: 0 }
@@ -779,6 +852,786 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  # ---------------------------------------------------------------------------
+  # /api/v1 — everything designed in this round. Existing unversioned paths above
+  # stay where they are until the backend serves them under the prefix too (see
+  # docs/backend-handoff.md); nothing new is added without a version.
+  # ---------------------------------------------------------------------------
+
+  /api/v1/orders:
+    get:
+      operationId: listBuyerOrders
+      description: >-
+        The signed-in buyer's own orders, newest first. One entry per seller
+        order, so a checkout that split across two sellers shows two rows.
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OrderStatus' }
+        - name: group
+          in: query
+          description: Coarse filter the My Orders tabs use, applied on top of status.
+          schema: { type: string, enum: [all, in_progress, delivered, refunds] }
+        - name: q
+          in: query
+          description: Matches order reference and product titles.
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuyerOrderSummaryPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/orders/{orderId}:
+    get:
+      operationId: getBuyerOrder
+      description: 404 (not 403) when the order exists but is not the caller's.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuyerOrderDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/refund-requests:
+    get:
+      operationId: listBuyerRefundRequests
+      description: The signed-in buyer's own refund requests.
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/RefundStatus' }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRequestPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    post:
+      operationId: createRefundRequest
+      description: >-
+        Buyer session required, and every line must belong to the caller's own
+        order. 409 when a line already has an open request, 422 when the return
+        window has closed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRefundRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRequestDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/refund-requests/{refundRequestId}:
+    get:
+      operationId: getRefundRequest
+      description: Readable by the buyer who raised it and by the seller who owes it.
+      parameters:
+        - name: refundRequestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRequestDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    patch:
+      operationId: updateRefundRequest
+      description: >-
+        The state machine lives on the resource rather than on action URLs.
+        Seller moves REQUESTED to APPROVED/AWAITING_RETURN/DECLINED, then to
+        RETURN_RECEIVED, REFUNDED or REPLACEMENT_SENT. Buyer may only CANCEL,
+        and only while REQUESTED. An illegal transition is 409.
+      parameters:
+        - name: refundRequestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRefundRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRequestDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/sellers/me/refund-requests:
+    get:
+      operationId: sellerListRefundRequests
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/RefundStatus' }
+        - name: q
+          in: query
+          description: Matches buyer name, buyer email, order reference and product title.
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRequestPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/sellers/me/store:
+    get:
+      operationId: getMyStore
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreProfile'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    patch:
+      operationId: updateMyStore
+      description: >-
+        Partial update; an omitted field is left as it is. 409 when the handle
+        is already taken, so the seller learns which field collided.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStoreProfile'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreProfile'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/stores/{handle}:
+    get:
+      operationId: getPublicStore
+      description: Public storefront header. Replaces deriving a store from brandName.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/StoreHandle' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicStore'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/sellers/me/store/images:
+    post:
+      operationId: createStoreImageUploadUrl
+      description: >-
+        A presigned slot for the storefront cover or logo, mirroring the
+        product-image flow (POST for a URL, PUT the bytes to it, then confirm).
+        Store images had no upload path at all, so coverUrl and logoUrl were
+        writable on the profile with no way to produce a URL to write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slot, contentType]
+              properties:
+                slot: { type: string, enum: [COVER, LOGO] }
+                contentType: { type: string }
+                fileSizeBytes: { type: integer }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, uploadUrl, expiresAt]
+                properties:
+                  id: { type: string, format: uuid }
+                  uploadUrl: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/sellers/me/store/images/confirm:
+    post:
+      operationId: confirmStoreImage
+      description: >-
+        Promotes an uploaded slot to the live storefront and returns the updated
+        profile, so the caller does not have to re-read it to learn the URL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, slot]
+              properties:
+                id: { type: string, format: uuid }
+                slot: { type: string, enum: [COVER, LOGO] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreProfile'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/stores/{handle}/products:
+    get:
+      operationId: getStoreProducts
+      description: >-
+        A store's own listings, paged and filtered server-side. Replaces reading
+        a page of GET /products and matching on brandName in the browser, which
+        capped a storefront at whatever fitted in one catalogue page and matched
+        a display string rather than a key.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/StoreHandle' }
+        - name: q
+          in: query
+          description: Searches within this store only - title, brand and category.
+          schema: { type: string }
+        - name: category
+          in: query
+          description: A category slug from GET /categories.
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [relevance, priceAsc, priceDesc, rating] }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductSummaryPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/stores/{handle}/messages:
+    post:
+      operationId: messageStore
+      description: >-
+        Send the seller a question about their store. Accepted for delivery
+        rather than answered inline - where the seller reads it (email today, an
+        inbox later) is the platform's business, not the buyer's.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/StoreHandle' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                subject: { type: string, maxLength: 120 }
+                body: { type: string, minLength: 10, maxLength: 2000 }
+      responses:
+        '202':
+          description: Accepted
+        '401':
+          description: >-
+            Buyer session required. The seller answers to the address on the
+            caller's account, and an endpoint that emails sellers on behalf of
+            anonymous callers is a spam relay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/stores/{handle}/follow:
+    put:
+      operationId: followStore
+      description: >-
+        Follow this store. Idempotent - following an already-followed store
+        succeeds rather than erroring, so a double click cannot desync the
+        button from the server.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/StoreHandle' }
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    delete:
+      operationId: unfollowStore
+      description: Stop following. Idempotent in the same way as PUT.
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/StoreHandle' }
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/sellers/me/orders/facets:
+    get:
+      operationId: getSellerOrderFacets
+      description: >-
+        Counts and bucket values for the order tabs. A separate resource rather
+        than a field on the list, because the tabs show every bucket at once:
+        embedding them in a filtered response would zero every tab but the one
+        being viewed. Honours q and the date range, and deliberately ignores
+        status - that is what the tabs are choosing between.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacetList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/sellers/me/refund-requests/facets:
+    get:
+      operationId: getSellerRefundFacets
+      description: Counts for the refund queue's tabs. Ignores status, as above.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacetList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/orders/facets:
+    get:
+      operationId: getBuyerOrderFacets
+      description: >-
+        Counts for the buyer's order tabs. Keyed by the same group values GET
+        /api/v1/orders takes, not by raw status - the tabs are groups.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: period
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacetList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/sellers/me/metrics:
+    get:
+      operationId: getSellerMetrics
+      description: >-
+        Totals plus a daily series for the window, and the same totals for the
+        immediately preceding window of equal length so the UI can show deltas
+        without a second call.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: interval
+          in: query
+          schema: { type: string, enum: [day, week, month], default: day }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerMetrics'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/sellers/me/metrics/top-products:
+    get:
+      operationId: getSellerTopProducts
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 5 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TopProduct' }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/sellers/me/metrics/category-breakdown:
+    get:
+      operationId: getSellerCategoryBreakdown
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CategoryShare' }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/sellers/me/products:
+    get:
+      operationId: sellerListProductsV1
+      description: >-
+        The seller's catalog with the filtering the products screen needs.
+        Supersedes the unversioned GET /sellers/me/products, which takes no
+        parameters and is capped at one page of 100.
+      parameters:
+        - name: q
+          in: query
+          description: Matches title, brand and SKU.
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ProductStatus' }
+        - name: categorySlug
+          in: query
+          schema: { type: string }
+        - name: stockBelow
+          in: query
+          description: Only products whose total stock is under this, for the low-stock widget.
+          schema: { type: integer }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [newest, oldest, title_asc, title_desc, stock_asc, price_asc, price_desc]
+            default: newest
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerProductRowPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/sellers/me/orders:
+    get:
+      operationId: sellerListOrdersV1
+      parameters:
+        # Narrows the queue to orders containing this product, for the drawer's
+        # "Active orders" block. Without it that block would mean reading the
+        # whole queue and filtering in the browser.
+        - name: productId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: q
+          in: query
+          description: Matches order reference, recipient name and buyer email.
+          schema: { type: string }
+        # The tab buckets. Coarser than status because the design's tabs are
+        # coarser: "With Amezo" is the three carrier states at once, which a
+        # single status cannot express. Facet keys are these values, so a tab
+        # becomes a filter with no translation table. Given with status, both
+        # apply.
+        - name: group
+          in: query
+          schema:
+            type: string
+            enum: [all, to_pack, ready_for_pickup, with_amezo, delivered, refunded]
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OrderStatus' }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [newest, oldest, total_desc, total_asc], default: newest }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerOrderRowPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/sellers/me/orders/{orderId}:
+    get:
+      operationId: sellerGetOrderV1
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerOrderRowDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    patch:
+      operationId: sellerUpdateOrder
+      description: >-
+        Advances the order. Replaces POST /sellers/me/orders/{orderId}/ship,
+        which put the verb in the path. PLACED to PACKED takes parcels;
+        PACKED/PLACED to SHIPPED takes a tracking number. Any other transition
+        is 409.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSellerOrder'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellerOrderRowDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
 components:
   schemas:
     Category:
@@ -834,6 +1687,10 @@ components:
         slug: { type: string }
         title: { type: string }
         brandName: { type: string }
+        # The store that lists this product. Cards link by store.handle; before
+        # this existed the storefront had to scan the catalogue and match on
+        # brandName, which is a display string and not a key.
+        store: { $ref: '#/components/schemas/StoreRef' }
         category: { $ref: '#/components/schemas/Category' }
         priceFrom: { type: number }
         thumbnailUrl: { type: string, nullable: true }
@@ -861,6 +1718,18 @@ components:
         page: { type: integer }
         totalElements: { type: integer }
         totalPages: { type: integer }
+    ProductAttribute:
+      type: object
+      description: >-
+        One row of the specification table under a product's Details tab -
+        "Battery life / 30 hours". Seller-authored and free text on both sides:
+        the marketplace spans categories that share no attribute vocabulary, so
+        the platform does not enumerate them.
+      required: [label, value]
+      properties:
+        label: { type: string, maxLength: 60 }
+        value: { type: string, maxLength: 200 }
+
     ProductImage:
       type: object
       required: [id, url, position]
@@ -932,6 +1801,7 @@ components:
         brandName: { type: string, nullable: true }
         description: { type: string, nullable: true }
         category: { $ref: '#/components/schemas/Category' }
+        status: { $ref: '#/components/schemas/ProductStatus' }
         variants:
           type: array
           items: { $ref: '#/components/schemas/SellerVariant' }
@@ -949,6 +1819,9 @@ components:
         brandName: { type: string }
         description: { type: string }
         categorySlug: { type: string }
+        # Publishing and unpublishing a listing. ARCHIVED is the soft delete that
+        # DELETE /products/{productRef} performs, so it is not offered here.
+        status: { type: string, enum: [ACTIVE, DRAFT] }
     UpdateVariantRequest:
       type: object
       description: Every field optional - an omitted field is left as it is.
@@ -983,7 +1856,7 @@ components:
         buyerEmail: { type: string }
         placedAt: { type: string, format: date-time }
         total: { type: number }
-        status: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+        status: { $ref: '#/components/schemas/OrderStatus' }
     SellerOrderSummaryPage:
       type: object
       required: [content, page, totalElements, totalPages]
@@ -1071,7 +1944,7 @@ components:
         buyerEmail: { type: string }
         placedAt: { type: string, format: date-time }
         total: { type: number }
-        status: { type: string, enum: [PLACED, SHIPPED, DELIVERED] }
+        status: { $ref: '#/components/schemas/OrderStatus' }
         trackingNumber: { type: string, nullable: true }
         shippedAt: { type: string, format: date-time, nullable: true }
         lines:
@@ -1087,6 +1960,9 @@ components:
         # A slug from GET /categories. The server refuses anything that isn't a live
         # system category, so a client cannot invent one by posting a name.
         categorySlug: { type: string }
+        # Omitted means ACTIVE. DRAFT saves the listing without showing it to
+        # shoppers, which is the only way to stage one before publishing.
+        status: { type: string, enum: [ACTIVE, DRAFT] }
         variants:
           type: array
           minItems: 1
@@ -1128,7 +2004,14 @@ components:
         sellerId: { type: string, format: uuid }
         title: { type: string }
         brandName: { type: string, nullable: true }
+        # The store that lists this product, so the page can link to the storefront
+        # by handle. brandName is a display string and cannot address anything.
+        store: { $ref: '#/components/schemas/StoreRef' }
         description: { type: string, nullable: true }
+        # The specification table. Ordered as the seller entered them.
+        attributes:
+          type: array
+          items: { $ref: '#/components/schemas/ProductAttribute' }
         category: { $ref: '#/components/schemas/Category' }
         images:
           type: array
@@ -1206,3 +2089,600 @@ components:
             properties:
               field: { type: string }
               reason: { type: string }
+
+    # --- /api/v1 shapes -------------------------------------------------------
+
+    # Supersedes the three-value status on the unversioned seller endpoints.
+    # PACKED is the handover step the seller screens add; IN_TRANSIT and
+    # OUT_FOR_DELIVERY are what the buyer's tracking timeline shows once a
+    # carrier is scanning.
+    OrderStatus:
+      type: string
+      description: >-
+        Read-only. PLACED through DELIVERED is the fulfilment lifecycle the
+        seller drives; CANCELLED and REFUNDED are outcomes the server decides.
+
+        REFUNDED is DERIVED, never written: the server reports it when the
+        order's refund request reaches REFUNDED. Refunds are modelled once, by
+        refund_request, with their own state machine, approval and return steps
+        and money. An order status a client could also write would be a second
+        source of truth that nothing reconciles the first time somebody settles
+        a refund through the queue instead. See SellerOrderTransition for what a
+        seller may actually write.
+      enum:
+        [PLACED, PACKED, SHIPPED, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, CANCELLED, REFUNDED]
+
+    SellerOrderTransition:
+      type: string
+      description: >-
+        The statuses a seller may write, which is deliberately narrower than
+        OrderStatus. The three carrier states are system-driven, and REFUNDED is
+        derived from the refund request rather than declared here.
+      enum: [PACKED, SHIPPED, CANCELLED]
+    ProductStatus:
+      type: string
+      enum: [ACTIVE, DRAFT, ARCHIVED]
+    RefundStatus:
+      type: string
+      enum:
+        [REQUESTED, APPROVED, AWAITING_RETURN, RETURN_RECEIVED, REFUNDED, REPLACEMENT_SENT, DECLINED, CANCELLED]
+    RefundResolution:
+      type: string
+      enum: [REFUND, REPLACEMENT]
+    # The design offers "the card you paid with" or "that card is closed, contact
+    # me" - not store credit, which the marketplace has no concept of.
+    RefundPayout:
+      type: string
+      enum: [ORIGINAL_PAYMENT, ALTERNATE_METHOD]
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: number }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+
+    # How the order was paid. Nothing stores this yet - checkout takes no
+    # payment - so every screen treats it as optional and simply omits the row.
+    PaymentSummary:
+      type: object
+      required: [brand, last4]
+      properties:
+        brand: { type: string }
+        last4: { type: string, minLength: 4, maxLength: 4 }
+
+    OrderTimelineEntry:
+      type: object
+      required: [code, label, completed]
+      properties:
+        code: { type: string, enum: [PLACED, PACKED, SHIPPED, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED] }
+        label: { type: string }
+        at: { type: string, format: date-time, nullable: true }
+        # True while `at` is a projection rather than something that happened.
+        estimated: { type: boolean, default: false }
+        completed: { type: boolean }
+        detail: { type: string, nullable: true }
+
+    ShipmentInfo:
+      type: object
+      properties:
+        carrier: { type: string, nullable: true }
+        trackingNumber: { type: string, nullable: true }
+        trackingUrl: { type: string, nullable: true }
+        shippedAt: { type: string, format: date-time, nullable: true }
+        estimatedDeliveryAt: { type: string, format: date-time, nullable: true }
+        deliveredAt: { type: string, format: date-time, nullable: true }
+        deliveryNote: { type: string, nullable: true }
+
+    BuyerOrderLine:
+      type: object
+      required: [id, productRef, productTitle, variantLabel, quantity, unitPrice, lineTotal]
+      properties:
+        id: { type: string, format: uuid }
+        productRef: { type: string }
+        productTitle: { type: string }
+        variantLabel: { type: string }
+        thumbnailUrl: { type: string, nullable: true }
+        quantity: { type: integer }
+        unitPrice: { type: number }
+        lineTotal: { type: number }
+        # Set when this line is inside an open refund request.
+        refundRequestId: { type: string, format: uuid, nullable: true }
+        refundStatus:
+          oneOf:
+            - $ref: '#/components/schemas/RefundStatus'
+          nullable: true
+
+    StoreRef:
+      type: object
+      required: [name, handle]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        handle: { $ref: '#/components/schemas/StoreHandle' }
+
+    BuyerOrderSummary:
+      type: object
+      required: [id, reference, placedAt, status, total, currency, itemCount, seller]
+      properties:
+        id: { type: string, format: uuid }
+        # Short human reference the screens print; the uuid stays the key.
+        reference: { type: string }
+        placedAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        total: { type: number }
+        currency: { type: string }
+        itemCount: { type: integer }
+        seller: { $ref: '#/components/schemas/StoreRef' }
+        previewLines:
+          type: array
+          items: { $ref: '#/components/schemas/BuyerOrderLine' }
+        shipment: { $ref: '#/components/schemas/ShipmentInfo' }
+        openRefundRequestId: { type: string, format: uuid, nullable: true }
+        # The list needs the status, not just the id: the card prints a badge
+        # for it, and a refund that has been approved or declined does not read
+        # the same as one nobody has looked at yet.
+        openRefundStatus:
+          oneOf:
+            - $ref: '#/components/schemas/RefundStatus'
+          nullable: true
+    BuyerOrderSummaryPage:
+      type: object
+      required: [content, page, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/BuyerOrderSummary' }
+        page: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+
+    BuyerOrderDetail:
+      type: object
+      required:
+        [id, reference, placedAt, status, seller, lines, subtotal, shipping, tax, total, currency, timeline, shippingAddress]
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string }
+        placedAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        seller: { $ref: '#/components/schemas/StoreRef' }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/BuyerOrderLine' }
+        subtotal: { type: number }
+        shipping: { type: number }
+        tax: { type: number }
+        total: { type: number }
+        currency: { type: string }
+        timeline:
+          type: array
+          items: { $ref: '#/components/schemas/OrderTimelineEntry' }
+        shipment: { $ref: '#/components/schemas/ShipmentInfo' }
+        shippingAddress: { $ref: '#/components/schemas/Address' }
+        billingAddress:
+          oneOf:
+            - $ref: '#/components/schemas/Address'
+          nullable: true
+        payment:
+          oneOf:
+            - $ref: '#/components/schemas/PaymentSummary'
+          nullable: true
+        refundRequests:
+          type: array
+          items: { $ref: '#/components/schemas/RefundRequestSummary' }
+        # Server-owned, so no screen re-derives the return window from dates.
+        canRequestRefund: { type: boolean }
+        refundWindowEndsAt: { type: string, format: date-time, nullable: true }
+
+    RefundRequestLine:
+      type: object
+      required: [orderLineId, productTitle, variantLabel, quantity, unitPrice, lineTotal]
+      properties:
+        orderLineId: { type: string, format: uuid }
+        productTitle: { type: string }
+        variantLabel: { type: string }
+        quantity: { type: integer }
+        unitPrice: { type: number }
+        lineTotal: { type: number }
+    RefundRequestSummary:
+      type: object
+      required: [id, reference, status, resolution, requestedAt, requestedAmount, currency]
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string }
+        status: { $ref: '#/components/schemas/RefundStatus' }
+        resolution: { $ref: '#/components/schemas/RefundResolution' }
+        requestedAt: { type: string, format: date-time }
+        requestedAmount: { type: number }
+        approvedAmount: { type: number, nullable: true }
+        currency: { type: string }
+        orderId: { type: string, format: uuid }
+        orderReference: { type: string }
+        returnTrackingNumber: { type: string, nullable: true }
+    RefundRequestDetail:
+      type: object
+      required:
+        [id, reference, status, resolution, payout, detail, requestedAt, requestedAmount, currency, orderId, orderReference, lines]
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string }
+        status: { $ref: '#/components/schemas/RefundStatus' }
+        resolution: { $ref: '#/components/schemas/RefundResolution' }
+        payout: { $ref: '#/components/schemas/RefundPayout' }
+        detail: { type: string }
+        requestedAt: { type: string, format: date-time }
+        requestedAmount: { type: number }
+        approvedAmount: { type: number, nullable: true }
+        currency: { type: string }
+        orderId: { type: string, format: uuid }
+        orderReference: { type: string }
+        orderPlacedAt: { type: string, format: date-time }
+        buyerName: { type: string, nullable: true }
+        buyerEmail: { type: string, nullable: true }
+        seller: { $ref: '#/components/schemas/StoreRef' }
+        paymentMethod: { type: string, nullable: true }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/RefundRequestLine' }
+        # The seller's own account of what happened, newest last.
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/RefundEvent' }
+        approvedAt: { type: string, format: date-time, nullable: true }
+        declinedAt: { type: string, format: date-time, nullable: true }
+        declineReason: { type: string, nullable: true }
+        returnReceivedAt: { type: string, format: date-time, nullable: true }
+        refundedAt: { type: string, format: date-time, nullable: true }
+        replacementSentAt: { type: string, format: date-time, nullable: true }
+        returnTrackingNumber: { type: string, nullable: true }
+    RefundRequestPage:
+      type: object
+      required: [content, page, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/RefundRequestSummary' }
+        page: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    CreateRefundRequest:
+      type: object
+      required: [orderId, lines, resolution, detail]
+      properties:
+        orderId: { type: string, format: uuid }
+        lines:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [orderLineId, quantity]
+            properties:
+              orderLineId: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1 }
+        resolution: { $ref: '#/components/schemas/RefundResolution' }
+        # Required only when resolution is REFUND.
+        payout:
+          oneOf:
+            - $ref: '#/components/schemas/RefundPayout'
+          nullable: true
+        detail: { type: string, minLength: 20 }
+    UpdateRefundRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/RefundStatus' }
+        # The outcome the SELLER settles on, which need not be the one the buyer
+        # asked for - a replacement request can be settled with money, and the
+        # reverse. Without it the seller's choice could not be recorded at all
+        # and had to be inferred from whether an amount was approved.
+        resolution: { $ref: '#/components/schemas/RefundResolution' }
+        approvedAmount: { type: number }
+        declineReason: { type: string }
+        returnTrackingNumber: { type: string }
+        # Shown to the buyer on the request's timeline. It is recorded against
+        # the transition it accompanied - see RefundEvent.
+        note: { type: string }
+
+    RefundEvent:
+      type: object
+      description: >-
+        One step in a refund's history. The timeline is a read of these, not a
+        reconstruction from scattered timestamps, which is the only way a note
+        can be attached to the step it was written for.
+      required: [status, at]
+      properties:
+        status: { $ref: '#/components/schemas/RefundStatus' }
+        at: { type: string, format: date-time }
+        note: { type: string, nullable: true }
+
+    StoreStatus:
+      type: string
+      enum: [OPEN, VACATION, CLOSED]
+    StoreHandle:
+      type: string
+      description: >-
+        The store's URL segment (amezo.com/stores/{handle}). Lowercase letters,
+        digits and inner dashes only - never a leading or trailing dash, so the
+        printed URL never ends in one. Case-insensitive on lookup and unique
+        across stores; PATCH /api/v1/sellers/me/store answers 409 when taken.
+      pattern: '^[a-z0-9][a-z0-9-]{0,37}[a-z0-9]$'
+      minLength: 2
+      maxLength: 39
+      example: northwind-supply
+    StoreProfile:
+      type: object
+      required: [id, name, handle, status]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        handle: { $ref: '#/components/schemas/StoreHandle' }
+        tagline: { type: string, nullable: true }
+        location: { type: string, nullable: true }
+        foundedYear: { type: integer, nullable: true }
+        supportEmail: { type: string, nullable: true }
+        about: { type: string, nullable: true }
+        coverUrl: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/StoreStatus' }
+        vacationNote: { type: string, nullable: true }
+        updatedAt: { type: string, format: date-time }
+    UpdateStoreProfile:
+      type: object
+      properties:
+        name: { type: string }
+        handle: { $ref: '#/components/schemas/StoreHandle' }
+        tagline: { type: string }
+        location: { type: string }
+        foundedYear: { type: integer }
+        supportEmail: { type: string }
+        about: { type: string }
+        coverUrl: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/StoreStatus' }
+        vacationNote: { type: string }
+    Facet:
+      type: object
+      description: >-
+        One tab. `key` is whatever the matching list endpoint accepts for that
+        bucket, so a tab needs no translation table to become a filter.
+      required: [key, count]
+      properties:
+        key: { type: string }
+        count: { type: integer }
+        # Money in this bucket, where the design prints it. Absent where a
+        # bucket has no meaningful total rather than sent as zero.
+        value: { type: number, nullable: true }
+        currency: { type: string, nullable: true }
+
+    FacetList:
+      type: object
+      required: [facets]
+      properties:
+        facets:
+          type: array
+          items: { $ref: '#/components/schemas/Facet' }
+
+    StorePolicies:
+      type: object
+      description: >-
+        Seller-authored copy shown on the storefront. Free text, not enforced by
+        the platform - a null field is simply not shown rather than rendered as
+        a promise the seller never made.
+      properties:
+        shipping: { type: string, nullable: true }
+        returns: { type: string, nullable: true }
+        warranty: { type: string, nullable: true }
+        shipsFrom: { type: string, nullable: true }
+
+    PublicStore:
+      type: object
+      required: [id, name, handle, status, productCount]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        handle: { $ref: '#/components/schemas/StoreHandle' }
+        tagline: { type: string, nullable: true }
+        location: { type: string, nullable: true }
+        about: { type: string, nullable: true }
+        coverUrl: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/StoreStatus' }
+        vacationNote: { type: string, nullable: true }
+        productCount: { type: integer }
+        inStockCount: { type: integer }
+        averageRating: { type: number, nullable: true }
+        ratingCount: { type: integer }
+        policies: { $ref: '#/components/schemas/StorePolicies' }
+        # The categories this store actually lists, for the storefront's filter
+        # chips. Not derivable client-side once the listings are paged - a page
+        # of results only knows its own page - and the system category list would
+        # offer categories this seller does not sell.
+        categories:
+          type: array
+          items: { $ref: '#/components/schemas/Category' }
+        # When the seller joined Amezo - the storefront prints "Since 2021".
+        # Distinct from StoreProfile.foundedYear, which is when the business began.
+        joinedAt: { type: string, format: date-time, nullable: true }
+        # Share of ratings the platform counts as positive, 0-100. Null until
+        # there are enough ratings to say anything honest.
+        positiveRatingPct: { type: number, nullable: true }
+        # The UI buckets this into "Under 2h" and the like. A number, not a
+        # display string, so the wording stays the client's business.
+        medianResponseMinutes: { type: integer, nullable: true }
+        # Whether the CALLER follows this store. Null for a signed-out visitor,
+        # who is not following it and cannot be asked to.
+        following: { type: boolean, nullable: true }
+
+    SellerProductRow:
+      type: object
+      required: [id, productRef, title, category, status, variantCount, totalStock, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        productRef: { type: string }
+        title: { type: string }
+        brandName: { type: string, nullable: true }
+        thumbnailUrl: { type: string, nullable: true }
+        imageCount: { type: integer }
+        category: { $ref: '#/components/schemas/Category' }
+        status: { $ref: '#/components/schemas/ProductStatus' }
+        variantCount: { type: integer }
+        totalStock: { type: integer }
+        priceFrom: { type: number }
+        priceTo: { type: number }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SellerProductRowPage:
+      type: object
+      required: [content, page, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/SellerProductRow' }
+        page: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+
+    SellerOrderLine:
+      type: object
+      required: [id, productTitle, variantLabel, quantity, unitPrice, lineTotal]
+      properties:
+        id: { type: string, format: uuid }
+        productRef: { type: string, nullable: true }
+        productTitle: { type: string }
+        variantLabel: { type: string }
+        sku: { type: string, nullable: true }
+        quantity: { type: integer }
+        unitPrice: { type: number }
+        lineTotal: { type: number }
+    SellerOrderRow:
+      type: object
+      required: [id, reference, buyerEmail, recipientName, placedAt, status, itemCount, total, currency]
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string }
+        buyerEmail: { type: string }
+        recipientName: { type: string }
+        placedAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        itemCount: { type: integer }
+        total: { type: number }
+        currency: { type: string }
+        destination: { type: string, nullable: true }
+        # No trackingNumber here. The seller's table has no tracking column, and
+        # carrying a second copy beside SellerOrderRowDetail.shipment.trackingNumber
+        # is how the three shapes drifted apart in the first place.
+        hasOpenRefund: { type: boolean }
+    SellerOrderRowPage:
+      type: object
+      required: [content, page, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/SellerOrderRow' }
+        page: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    SellerOrderRowDetail:
+      type: object
+      required:
+        [id, reference, buyerEmail, recipientName, placedAt, status, lines, subtotal, shipping, total, currency, shippingAddress]
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string }
+        buyerEmail: { type: string }
+        recipientName: { type: string }
+        placedAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/SellerOrderLine' }
+        subtotal: { type: number }
+        shipping: { type: number }
+        tax: { type: number }
+        total: { type: number }
+        currency: { type: string }
+        shippingAddress: { $ref: '#/components/schemas/Address' }
+        shipment: { $ref: '#/components/schemas/ShipmentInfo' }
+        packedAt: { type: string, format: date-time, nullable: true }
+        parcels: { type: integer, nullable: true }
+        refundRequests:
+          type: array
+          items: { $ref: '#/components/schemas/RefundRequestSummary' }
+    HandoverMethod:
+      type: string
+      enum: [AMEZO_PICKUP, HUB_DROPOFF, LOCKER_DROP]
+    UpdateSellerOrder:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/SellerOrderTransition' }
+        # PLACED -> PACKED
+        parcels: { type: integer, minimum: 1 }
+        packedBy: { type: string }
+        # PACKED -> SHIPPED. The tracking number is issued by the platform on
+        # handover, not typed by the seller, so it is not writable here.
+        handoverMethod: { $ref: '#/components/schemas/HandoverMethod' }
+        hub: { type: string }
+        # Shown to the buyer on the order's timeline.
+        note: { type: string }
+        # When it actually happened, for a seller recording yesterday's handover
+        # today. Omitted means now. The server refuses a future one.
+        occurredAt: { type: string, format: date-time }
+
+    MetricPoint:
+      type: object
+      required: [date, views, orders, revenue]
+      properties:
+        date: { type: string, format: date }
+        views: { type: integer }
+        orders: { type: integer }
+        revenue: { type: number }
+    MetricTotals:
+      type: object
+      required: [views, orders, revenue, conversionRate, averageOrderValue]
+      properties:
+        views: { type: integer }
+        orders: { type: integer }
+        revenue: { type: number }
+        conversionRate: { type: number }
+        averageOrderValue: { type: number }
+    SellerMetrics:
+      type: object
+      required: [from, to, currency, totals, series]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        currency: { type: string }
+        totals: { $ref: '#/components/schemas/MetricTotals' }
+        # The immediately preceding window of equal length, for the deltas.
+        previousTotals:
+          oneOf:
+            - $ref: '#/components/schemas/MetricTotals'
+          nullable: true
+        series:
+          type: array
+          items: { $ref: '#/components/schemas/MetricPoint' }
+    TopProduct:
+      type: object
+      required: [productId, productRef, title, units, revenue, share]
+      properties:
+        productId: { type: string, format: uuid }
+        productRef: { type: string }
+        title: { type: string }
+        thumbnailUrl: { type: string, nullable: true }
+        units: { type: integer }
+        revenue: { type: number }
+        share: { type: number }
+        # The same product's revenue in the window immediately before this one,
+        # so the table can print a delta. Null when it did not sell then - which
+        # is a fact, not a zero.
+        previousRevenue: { type: number, nullable: true }
+    CategoryShare:
+      type: object
+      required: [category, revenue, units, share]
+      properties:
+        category: { $ref: '#/components/schemas/Category' }
+        revenue: { type: number }
+        units: { type: integer }
+        share: { type: number }

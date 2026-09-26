@@ -2,12 +2,32 @@ import { useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router'
 
 import type { SearchFilters, SortOption } from '../schema/types'
-import { DEFAULT_FILTERS } from '../schema/types'
+import { DEFAULT_FILTERS, PAGE_SIZES } from '../schema/types'
+
+/**
+ * ?page=abc, ?page=-5 and ?page=1.7 used to reach the request as NaN or as an
+ * offset that answers with nothing. A page number is a whole one, zero or
+ * above, or it is 0 - the same reading the seller and buyer lists give it.
+ */
+function pageParam(raw: string | null) {
+  const parsed = Number(raw ?? 0)
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : DEFAULT_FILTERS.page
+}
+
+/**
+ * Same treatment for ?size=: junk is the default, and ?size=10000 is a request
+ * for the whole catalogue in one response. Only the offered sizes count.
+ */
+function sizeParam(raw: string | null) {
+  const parsed = Number(raw)
+  return PAGE_SIZES.some((size) => size === parsed) ? parsed : DEFAULT_FILTERS.size
+}
 
 function parseFilters(params: URLSearchParams): SearchFilters {
   const priceMin = params.get('priceMin')
   const priceMax = params.get('priceMax')
   const page = params.get('page')
+  const size = params.get('size')
   const sort = params.get('sort')
 
   return {
@@ -17,7 +37,8 @@ function parseFilters(params: URLSearchParams): SearchFilters {
     priceMax: priceMax ? Number(priceMax) : undefined,
     inStockOnly: params.get('inStockOnly') === 'true',
     sort: (sort as SortOption | null) ?? DEFAULT_FILTERS.sort,
-    page: page ? Number(page) : DEFAULT_FILTERS.page,
+    page: pageParam(page),
+    size: sizeParam(size),
   }
 }
 
@@ -30,6 +51,7 @@ function toParams(filters: SearchFilters): URLSearchParams {
   if (filters.inStockOnly) params.set('inStockOnly', 'true')
   if (filters.sort !== DEFAULT_FILTERS.sort) params.set('sort', filters.sort)
   if (filters.page > 0) params.set('page', String(filters.page))
+  if (filters.size !== DEFAULT_FILTERS.size) params.set('size', String(filters.size))
   return params
 }
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -7,29 +7,37 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { server } from '@/test/msw/server'
 
+import { sellerProductKeys } from '@/features/seller-portal/api/useSellerProducts'
+
 import {
   findSellerProductDetail,
+  listSellerProductRows,
   resetSellerProductDetails,
   resetSellerProducts,
   TAKEN_SKU,
 } from '@/test/msw/fixtures/sellerProducts'
 
 
-import { SellerProductDetail } from './SellerProductDetail'
+import { SellerProductDetail } from '@/pages/seller/SellerProductDetail'
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111'
 
 function renderPage(productId = PRODUCT_ID) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/seller/products/${productId}`]}>
-        <Routes>
-          <Route path="/seller/products/:productId" element={<SellerProductDetail />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
+  return {
+    // Handed back so a test can trigger the background refetch a window refocus
+    // would; there is no other way to reach the client the page renders against.
+    queryClient,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[`/seller/products/${productId}`]}>
+          <Routes>
+            <Route path="/seller/products/:productId" element={<SellerProductDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ),
+  }
 }
 
 describe('SellerProductDetail', () => {
@@ -90,6 +98,39 @@ describe('SellerProductDetail', () => {
     expect(findSellerProductDetail(PRODUCT_ID)!.category.slug).toBe('outdoor')
   })
 
+  /**
+   * A refetch - window refocus, or an invalidation from somewhere else on the page
+   * - hands back a new object for the same product. Seeding off that object rather
+   * than off its identity replaced a half-typed title with the server's old one.
+   */
+  it('keeps unsaved edits through a background refetch', async () => {
+    const { queryClient } = renderPage()
+    const title = await screen.findByDisplayValue('Trail Backpack')
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    const price = screen.getByLabelText(`Price for ${detail.variants[0].sku}`)
+
+    await userEvent.clear(title)
+    await userEvent.type(title, 'Trail Backpack 40')
+    await userEvent.clear(price)
+    await userEvent.type(price, '59.9')
+
+    // The product moved on the server while the seller typed - another tab, another
+    // device - so the refetch brings back a genuinely new object rather than the
+    // identical one react-query's structural sharing would hand straight back.
+    detail.variants[0].stockQty += 3
+    detail.images = [
+      { id: 'image-1', url: 'https://cdn.example/1.jpg', position: 0, status: 'STORED' },
+    ]
+    void queryClient.refetchQueries({ queryKey: sellerProductKeys.detail(PRODUCT_ID) })
+    // The gallery is what shows the new data reached the form at all: every field
+    // above it is seeded state, which is precisely what must not move.
+    expect(await screen.findByRole('button', { name: 'Remove image 1' })).toBeInTheDocument()
+
+    expect(title).toHaveValue('Trail Backpack 40')
+    // The variant rows seed the same way, and lost edits the same way.
+    expect(price).toHaveValue(59.9)
+  })
+
   it('saves one variant without touching the others', async () => {
     renderPage()
     const detail = findSellerProductDetail(PRODUCT_ID)!
@@ -120,6 +161,35 @@ describe('SellerProductDetail', () => {
     await waitFor(() => {
       expect(findSellerProductDetail(PRODUCT_ID)!.variants[0].stockQty).toBe(0)
     })
+  })
+
+  /** Number('') is 0, so clearing the price used to save the variant at $0.00. */
+  it('refuses a cleared price instead of saving it as zero', async () => {
+    renderPage()
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    const priceBefore = detail.variants[0].price
+    const price = await screen.findByLabelText(`Price for ${detail.variants[0].sku}`)
+
+    await userEvent.clear(price)
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a price above 0')
+    expect(findSellerProductDetail(PRODUCT_ID)!.variants[0].price).toBe(priceBefore)
+  })
+
+  /** A typed 0 is the same mispriced listing, so it is refused the same way. */
+  it('refuses a price of zero', async () => {
+    renderPage()
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    const priceBefore = detail.variants[0].price
+    const price = await screen.findByLabelText(`Price for ${detail.variants[0].sku}`)
+
+    await userEvent.clear(price)
+    await userEvent.type(price, '0')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a price above 0')
+    expect(findSellerProductDetail(PRODUCT_ID)!.variants[0].price).toBe(priceBefore)
   })
 
   it('shows the API error inline when a SKU is already taken', async () => {
@@ -227,7 +297,127 @@ describe('SellerProductDetail', () => {
     expect(await screen.findByRole('button', { name: /Add image/ })).toBeDisabled()
     expect(screen.getByText('Remove one to add another')).toBeInTheDocument()
   })
+
+  /**
+   * Unpublishing. Until this switch existed nothing in the app could set a status
+   * at all, so a listing could only ever be live or deleted.
+   */
+  it('takes a product to draft and back, sending only the status', async () => {
+    const patches = capturePatchBodies()
+    renderPage()
+
+    const toggle = await screen.findByRole('switch', { name: 'Active' })
+    expect(toggle).toBeChecked()
+
+    await userEvent.click(toggle)
+    expect(screen.getByText(/hidden from shoppers until you activate it/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.status).toBe('DRAFT')
+    })
+    // Only what changed: the PATCH must not carry the title along with it.
+    expect(patches.at(-1)).toEqual({ status: 'DRAFT' })
+    expect(screen.getByRole('switch', { name: 'Active' })).not.toBeChecked()
+    // Where the seller sees the result of this: their own catalogue row.
+    expect(listSellerProductRows()[0].status).toBe('DRAFT')
+
+    await userEvent.click(screen.getByRole('switch', { name: 'Active' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.status).toBe('ACTIVE')
+    })
+    expect(patches.at(-1)).toEqual({ status: 'ACTIVE' })
+    expect(listSellerProductRows()[0].status).toBe('ACTIVE')
+  })
+
+  /** A product already stored as a draft has to open as one. */
+  it('opens a draft product with the switch off', async () => {
+    findSellerProductDetail(PRODUCT_ID)!.status = 'DRAFT'
+    renderPage()
+
+    expect(await screen.findByRole('switch', { name: 'Active' })).not.toBeChecked()
+  })
+
+  it('counts the characters in the title against the limit', async () => {
+    renderPage()
+    const title = await screen.findByDisplayValue('Trail Backpack')
+
+    expect(screen.getByText('14/120 characters')).toBeInTheDocument()
+    await userEvent.type(title, ' 40L')
+    expect(screen.getByText('18/120 characters')).toBeInTheDocument()
+  })
+
+  /** Which image buyers see in search, said rather than left to be counted out. */
+  it('marks the first image as the cover', async () => {
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    detail.images = storedImages(3)
+    renderPage()
+
+    const first = (await screen.findByRole('button', { name: 'Remove image 1' })).closest('li')!
+    expect(within(first).getByText('Cover')).toBeInTheDocument()
+    expect(screen.getAllByText('Cover')).toHaveLength(1)
+  })
+
+  it('duplicates a variant with -COPY on the SKU', async () => {
+    renderPage()
+    const source = findSellerProductDetail(PRODUCT_ID)!.variants[0]
+
+    await userEvent.click(await screen.findByRole('button', { name: `Duplicate ${source.sku}` }))
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.variants).toHaveLength(3)
+    })
+    // The copy carries the row's numbers, and its SKU is the one field that
+    // cannot be shared - so it arrives suffixed, ready to be edited.
+    expect(findSellerProductDetail(PRODUCT_ID)!.variants.at(-1)).toMatchObject({
+      label: source.label,
+      sku: `${source.sku}-COPY`,
+      price: source.price,
+      stockQty: source.stockQty,
+    })
+    expect(await screen.findByDisplayValue(`${source.sku}-COPY`)).toBeInTheDocument()
+  })
+
+  /** A typed price the API would refuse is refused here rather than copied. */
+  it('refuses to duplicate a variant whose price has been cleared', async () => {
+    renderPage()
+    const source = findSellerProductDetail(PRODUCT_ID)!.variants[0]
+
+    await userEvent.clear(await screen.findByLabelText(`Price for ${source.sku}`))
+    await userEvent.click(screen.getByRole('button', { name: `Duplicate ${source.sku}` }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a price above 0')
+    expect(findSellerProductDetail(PRODUCT_ID)!.variants).toHaveLength(2)
+  })
+
+  it('closes the variants section with the listing totals', async () => {
+    renderPage()
+
+    expect(await screen.findByText('Price range')).toBeInTheDocument()
+    // The two seeded variants: $49.99/5 and $59.99/6.
+    expect(screen.getByText('$49.99 – $59.99')).toBeInTheDocument()
+    expect(screen.getByText('11')).toBeInTheDocument()
+    expect(screen.getByText('0/7')).toBeInTheDocument()
+  })
 })
+
+/**
+ * The PATCH body itself, since only the request says which fields a save carried -
+ * the fixture store shows the result either way. Falls through to the default
+ * handler afterwards, so the save still behaves normally.
+ */
+function capturePatchBodies() {
+  const bodies: Record<string, unknown>[] = []
+  server.use(
+    http.patch('http://localhost:8080/products/:productId', async ({ request }) => {
+      bodies.push((await request.clone().json()) as Record<string, unknown>)
+      return undefined
+    }),
+  )
+  return bodies
+}
 
 /**
  * Editing a product is where a seller with a phone full of photos actually adds
@@ -390,6 +580,84 @@ describe('SellerProductDetail images', () => {
     expect(screen.getByText(/expired\.jpg/)).toHaveTextContent('403')
   })
 
+  /**
+   * Editing is the only place an order can be fixed after the fact, and unlike
+   * the create form nothing here is staged: the new order has to reach the API.
+   */
+  it('moves an image later and sends the whole ordering', async () => {
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    detail.images = storedImages(3)
+    const [first, second] = detail.images.map((image) => image.id)
+    const orders = captureOrderBodies()
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Move image 1 later' }))
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.images.map((i) => i.id)[0]).toBe(second)
+    })
+    // The whole list, not just the pair that moved - the endpoint renumbers from
+    // what it is given, so anything left out would be dropped.
+    expect(orders.at(-1)).toEqual([second, first, 'image-2'])
+    expect(findSellerProductDetail(PRODUCT_ID)!.images.map((i) => i.position)).toEqual([0, 1, 2])
+  })
+
+  /** The cover is the first image, so it follows a reorder rather than sticking. */
+  it('moves the cover badge with the image that becomes first', async () => {
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    detail.images = storedImages(2)
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Move image 2 earlier' }))
+
+    await waitFor(() => {
+      expect(findSellerProductDetail(PRODUCT_ID)!.images[0].id).toBe('image-1')
+    })
+    const cover = (await screen.findByText('Cover')).closest('li')!
+    // Queried directly: the thumbnails carry an empty alt, so they are decorative
+    // and have no img role to find them by.
+    expect(cover.querySelector('img')).toHaveAttribute('src', 'https://cdn.example/1.jpg')
+    expect(screen.getAllByText('Cover')).toHaveLength(1)
+  })
+
+  it('cannot move the first image earlier or the last one later', async () => {
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    detail.images = storedImages(2)
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'Move image 1 earlier' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Move image 2 later' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Move image 1 later' })).toBeEnabled()
+  })
+
+  it('surfaces a refused reorder instead of leaving the gallery rearranged', async () => {
+    const detail = findSellerProductDetail(PRODUCT_ID)!
+    detail.images = storedImages(2)
+    server.use(
+      http.put('http://localhost:8080/api/v1/products/:productId/images/order', () =>
+        HttpResponse.json(
+          {
+            type: 'about:blank',
+            title: 'Unprocessable Entity',
+            status: 422,
+            detail: 'The list must name every image of this product exactly once.',
+            errors: [{ field: 'imageIds', reason: 'must name every image exactly once' }],
+          },
+          { status: 422 },
+        ),
+      ),
+    )
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Move image 1 later' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('must name every image')
+    expect(findSellerProductDetail(PRODUCT_ID)!.images.map((i) => i.id)).toEqual([
+      'image-0',
+      'image-1',
+    ])
+  })
+
   it('reports a whole batch that fails', async () => {
     server.use(
       http.post('http://localhost:8080/products/:productId/images/upload-url', () =>
@@ -415,6 +683,22 @@ describe('SellerProductDetail images', () => {
     expect(findSellerProductDetail(PRODUCT_ID)!.images).toHaveLength(0)
   })
 })
+
+/** The ordering the form PUT, which is the only place the whole list shows up. */
+function captureOrderBodies() {
+  const orders: string[][] = []
+  server.use(
+    http.put(
+      'http://localhost:8080/api/v1/products/:productId/images/order',
+      async ({ request }) => {
+        const { imageIds } = (await request.clone().json()) as { imageIds: string[] }
+        orders.push(imageIds)
+        return undefined
+      },
+    ),
+  )
+  return orders
+}
 
 function fakeImage(name: string): File {
   return new File(['x'], name, { type: 'image/jpeg' })

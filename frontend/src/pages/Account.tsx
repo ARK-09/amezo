@@ -1,14 +1,16 @@
-import { Navigate } from 'react-router'
+import { ChevronRight, Package, Store } from 'lucide-react'
+import { Link, Navigate } from 'react-router'
 
 import { Avatar } from '@/components/Avatar'
 import { displayNameFor } from '@/lib/displayName'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { useBuyerSignOut } from '@/features/session/api/useBuyerAuth'
 import { useSession } from '@/features/session/api/useSession'
 
 /**
- * Where the header's avatar goes. Small on purpose - there is no buyer order history
- * API, so this is the identity and a way out, not a dashboard pretending to more.
+ * Where the header's avatar goes. The identity, a way out, and the entry point
+ * to order history.
  */
 export function Account() {
   const session = useSession()
@@ -22,13 +24,20 @@ export function Account() {
     return <Navigate to="/" replace />
   }
   if (session.isPending) {
-    return <p className="mx-auto px-7 py-16 text-sm text-muted-foreground">Loading…</p>
+    // Centred in the space the page will fill, so the spinner does not sit at
+    // the top of an empty screen and then jump when the account loads under it.
+    return (
+      <div className="flex flex-1 items-center justify-center px-7 py-16">
+        <Spinner className="size-6 text-primary" />
+      </div>
+    )
   }
   if (!session.data) {
     return <Navigate to="/sign-in" replace />
   }
 
   const identity = session.data
+  const isSeller = identity.identityType === 'SELLER'
 
   return (
     <div className="mx-auto w-full max-w-[640px] flex-1 px-7 py-10">
@@ -45,6 +54,44 @@ export function Account() {
         </Button>
       </div>
 
+      {/* A seller has no buyer order history, and /orders calls a buyer-only
+          endpoint: offering it here sent them to a page that reported their
+          perfectly good session as expired. The portal is the destination that
+          actually exists for them - the same one the header now offers. */}
+      {isSeller ? (
+        <Link
+          to="/seller/dashboard"
+          className="mt-4 flex items-center gap-4 rounded-xl border p-5 transition-colors hover:border-primary/50 hover:bg-accent"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Store className="size-5" aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">Seller dashboard</span>
+            <span className="block text-sm text-muted-foreground">
+              Your listings, orders and refunds live in the seller portal
+            </span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        </Link>
+      ) : (
+        <Link
+          to="/orders"
+          className="mt-4 flex items-center gap-4 rounded-xl border p-5 transition-colors hover:border-primary/50 hover:bg-accent"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Package className="size-5" aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">Your orders</span>
+            <span className="block text-sm text-muted-foreground">
+              Track deliveries, request a refund and buy again
+            </span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        </Link>
+      )}
+
       {/* Sign-out used to fail silently here: the page is reachable by a seller
           session, the endpoint it called was buyer-only, and a rejected mutation
           showed nothing at all. The route is role-agnostic now, and a failure says
@@ -55,10 +102,8 @@ export function Account() {
         </p>
       )}
 
-      {identity.identityType === 'SELLER' && (
-        <p className="mt-4 text-sm text-muted-foreground">
-          You're signed in as a seller. Your listings live in the seller portal.
-        </p>
+      {isSeller && (
+        <p className="mt-4 text-sm text-muted-foreground">You're signed in as a seller.</p>
       )}
     </div>
   )

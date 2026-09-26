@@ -24,10 +24,13 @@ test('header search is available on a non-search page', async ({ page }) => {
   await expect(page).toHaveURL(/\/search\?q=keyboard$/)
 })
 
-test('delivery city persists across a reload', async ({ page }) => {
+// The header's delivery picker is a country from GET /countries now, not one of
+// a handful of hardcoded cities, and the dev server has no backend behind it -
+// so this covers the control being present and labelled, and leaves the
+// selection itself to SiteHeader.test.tsx where the list is mocked.
+test('header offers a delivery country picker', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: /Deliver to Dubai/ }).click()
-  await page.getByRole('option', { name: 'Doha' }).click()
-  await page.reload()
-  await expect(page.getByRole('button', { name: /Deliver to Doha/ })).toBeVisible()
+  const picker = page.getByRole('combobox', { name: 'Delivery country' })
+  await expect(picker).toBeVisible()
+  await expect(picker).toContainText('Select a country')
 })

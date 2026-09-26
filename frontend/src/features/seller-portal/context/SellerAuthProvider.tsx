@@ -1,8 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { createContext, useContext, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { sessionKeys, useSession } from '@/features/session/api/useSession'
+
+import { SellerAuthContext, type SellerSession } from './SellerAuthContext'
 
 const STORAGE_KEY = 'seller:session'
 
@@ -11,19 +13,6 @@ const STORAGE_KEY = 'seller:session'
 // it would ask the API about a session that was never meant to exist and then
 // sign the demo user straight back out.
 const DEMO_AUTH = import.meta.env.VITE_DEMO_SELLER_AUTH === 'true'
-
-export interface SellerSession {
-  sellerId: string
-  email: string
-}
-
-interface SellerAuthContextValue {
-  seller: SellerSession | null
-  signIn: (session: SellerSession) => void
-  signOut: () => void
-}
-
-const SellerAuthContext = createContext<SellerAuthContextValue | null>(null)
 
 function storeSession(session: SellerSession) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
@@ -100,6 +89,11 @@ export function SellerAuthProvider({ children }: { children: ReactNode }) {
     // content). If any API call 401s, the cookie is gone/expired, so drop
     // the local flag too and let the route guard redirect to sign-in.
     function onUnauthorized() {
+      // Except in demo mode, where there is no cookie to lose: the boot check
+      // above already opts out, but this listener did not, so the 401 that
+      // GET /sessions/current returns for a visitor signed the demo seller
+      // straight back out again.
+      if (DEMO_AUTH) return
       forgetStoredSession()
       setSeller(null)
     }
@@ -128,10 +122,4 @@ export function SellerAuthProvider({ children }: { children: ReactNode }) {
   return (
     <SellerAuthContext.Provider value={{ seller, signIn, signOut }}>{children}</SellerAuthContext.Provider>
   )
-}
-
-export function useSellerAuth() {
-  const ctx = useContext(SellerAuthContext)
-  if (!ctx) throw new Error('useSellerAuth must be used within a SellerAuthProvider')
-  return ctx
 }
