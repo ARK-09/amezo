@@ -54,14 +54,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-  /products/{productId}:
+  /products/{productRef}:
     get:
       operationId: getProduct
       parameters:
-        - name: productId
+        - name: productRef
           in: path
           required: true
-          schema: { type: string, format: uuid }
+          schema: { type: string }
       responses:
         '200':
           description: OK
@@ -78,7 +78,7 @@ paths:
     delete:
       operationId: sellerDeleteProduct
       parameters:
-        - name: productId
+        - name: productRef
           in: path
           required: true
           schema: { type: string, format: uuid }
@@ -95,7 +95,7 @@ paths:
       operationId: sellerUpdateProduct
       description: Partial update of a product's own fields - an omitted field is left as it is.
       parameters:
-        - name: productId
+        - name: productRef
           in: path
           required: true
           schema: { type: string, format: uuid }
@@ -118,14 +118,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-  /products/{productId}/reviews:
+  /products/{productRef}/reviews:
     get:
       operationId: getProductReviews
       parameters:
-        - name: productId
+        - name: productRef
           in: path
           required: true
-          schema: { type: string, format: uuid }
+          schema: { type: string }
         - name: page
           in: query
           schema: { type: integer, default: 0 }
@@ -219,6 +219,155 @@ paths:
   /auth/seller/session:
     delete:
       operationId: sellerSignOut
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /categories:
+    get:
+      operationId: listCategories
+      description: >
+        The selectable system categories, in merchandising order. Retired ones are
+        left out. No search parameter: the list is a dozen rows that change about
+        never, so clients fetch it once and filter in memory rather than issuing a
+        request per keystroke.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /countries:
+    get:
+      operationId: listCountries
+      description: ISO 3166-1 alpha-2, ordered by name - the order a selector shows.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Country' }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /reviews:
+    post:
+      operationId: createReview
+      description: >
+        Buyer session required, and the order line must be the caller's own purchase.
+        Not nested under the product: the line names what was bought and the server
+        derives the product from it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /products/{productRef}/reviews/eligibility:
+    get:
+      operationId: getReviewEligibility
+      description: >
+        Whether the signed-in buyer may review this product, and the purchase to
+        submit against. Buyer-scoped, so it is its own request rather than a field on
+        the public product response.
+      parameters:
+        - name: productRef
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewEligibility'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /auth/buyer/magic-link:
+    post:
+      operationId: buyerMagicLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /auth/buyer/verify:
+    post:
+      operationId: buyerVerify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuyerSession'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /auth/buyer/session:
+    delete:
+      operationId: buyerSignOut
       responses:
         '204':
           description: No Content
@@ -587,14 +736,32 @@ paths:
                 $ref: '#/components/schemas/ProblemDetail'
 components:
   schemas:
+    Category:
+      type: object
+      required: [slug, name]
+      properties:
+        # The stable machine value. It travels in ?category= filters and in product
+        # writes, and it does NOT change when the display name is edited.
+        slug: { type: string }
+        # What every screen prints. Shipped alongside the slug so no surface needs
+        # the category list loaded just to turn one into the other.
+        name: { type: string }
+    Country:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string, minLength: 2, maxLength: 2 }
+        name: { type: string }
     ProductSummary:
       type: object
-      required: [id, title, brandName, category, priceFrom, inStock]
+      required: [id, slug, title, brandName, category, priceFrom, inStock, sellerId]
       properties:
         id: { type: string, format: uuid }
+        # What the card links to, in place of the id.
+        slug: { type: string }
         title: { type: string }
         brandName: { type: string }
-        category: { type: string }
+        category: { $ref: '#/components/schemas/Category' }
         priceFrom: { type: number }
         thumbnailUrl: { type: string, nullable: true }
         avgRating: { type: number, nullable: true }
@@ -604,6 +771,9 @@ components:
         # (priceFrom can belong to a sold-out variant).
         defaultVariantId: { type: string, format: uuid, nullable: true }
         defaultVariantPrice: { type: number, nullable: true }
+        # Lets the card refuse to add a seller's own product to their cart. The rule
+        # is enforced in checkout; this is what stops the button lying about it.
+        sellerId: { type: string, format: uuid }
     ProductSummaryPage:
       type: object
       required: [content, page, totalElements, totalPages]
@@ -649,12 +819,13 @@ components:
         expiresAt: { type: string, format: date-time }
     SellerProductSummary:
       type: object
-      required: [id, title, category, variantCount, createdAt]
+      required: [id, slug, title, category, variantCount, createdAt]
       properties:
         id: { type: string, format: uuid }
+        slug: { type: string }
         title: { type: string }
         thumbnailUrl: { type: string, nullable: true }
-        category: { type: string }
+        category: { $ref: '#/components/schemas/Category' }
         variantCount: { type: integer }
         createdAt: { type: string, format: date-time }
     SellerVariant:
@@ -676,13 +847,14 @@ components:
         status: { type: string, enum: [PENDING, STORED] }
     SellerProductDetail:
       type: object
-      required: [id, title, category, variants, images]
+      required: [id, slug, title, category, variants, images]
       properties:
         id: { type: string, format: uuid }
+        slug: { type: string }
         title: { type: string }
         brandName: { type: string, nullable: true }
         description: { type: string, nullable: true }
-        category: { type: string }
+        category: { $ref: '#/components/schemas/Category' }
         variants:
           type: array
           items: { $ref: '#/components/schemas/SellerVariant' }
@@ -691,12 +863,15 @@ components:
           items: { $ref: '#/components/schemas/SellerImage' }
     UpdateProductRequest:
       type: object
-      description: Every field optional - an omitted field is left as it is.
+      description: >
+        Every field optional - an omitted field is left as it is. Editing the title
+        does NOT move the product's slug: links already handed out point at the old
+        one.
       properties:
         title: { type: string }
         brandName: { type: string }
         description: { type: string }
-        category: { type: string }
+        categorySlug: { type: string }
     UpdateVariantRequest:
       type: object
       description: Every field optional - an omitted field is left as it is.
@@ -766,6 +941,9 @@ components:
         city: { type: string }
         state: { type: string }
         postalCode: { type: string }
+        # An ISO 3166-1 alpha-2 code from GET /countries. Validated on the server, so
+        # a client that skips the selector cannot store "XX" or the plausible-but-
+        # wrong "UK".
         country: { type: string, minLength: 2, maxLength: 2 }
     CheckoutLine:
       type: object
@@ -824,27 +1002,34 @@ components:
           items: { $ref: '#/components/schemas/OrderLineDetail' }
     CreateProductRequest:
       type: object
-      required: [title, category, variants]
+      required: [title, categorySlug, variants]
       properties:
         title: { type: string }
         brandName: { type: string, nullable: true }
         description: { type: string, nullable: true }
-        category: { type: string }
+        # A slug from GET /categories. The server refuses anything that isn't a live
+        # system category, so a client cannot invent one by posting a name.
+        categorySlug: { type: string }
         variants:
           type: array
           minItems: 1
           items: { $ref: '#/components/schemas/CreateVariantRequest' }
     VariantOffer:
       type: object
-      required: [id, productId, productTitle, variantLabel, price, stockQty]
+      required: [id, productId, productSlug, productTitle, variantLabel, price, stockQty, sellerId]
       properties:
         id: { type: string }
         productId: { type: string, format: uuid }
+        # What the drawer links back to.
+        productSlug: { type: string }
         productTitle: { type: string }
         variantLabel: { type: string }
         thumbnailUrl: { type: string, nullable: true }
         price: { type: number }
         stockQty: { type: integer }
+        # Lets the cart mark a line its viewer cannot buy because they are its
+        # seller, instead of staying silent until the order is refused.
+        sellerId: { type: string, format: uuid }
     ReviewSummary:
       type: object
       required: [averageRating, count]
@@ -854,15 +1039,20 @@ components:
     ProductDetail:
       type: object
       required:
-        [id, title, brandName, description, category, sellerId, sellerName, images, variants, reviewSummary]
+        [id, slug, sellerId, title, brandName, description, category, images, variants, reviewSummary]
       properties:
         id: { type: string, format: uuid }
-        title: { type: string }
-        brandName: { type: string }
-        description: { type: string }
-        category: { type: string }
+        # The page is addressed by slug; the id is still what the cart, the reviews
+        # and the images are keyed by internally.
+        slug: { type: string }
+        # For the own-product check on the buy box. sellerName is gone: it was in this
+        # contract but never returned by the API, and nothing renders it - a field
+        # that only exists in the spec is worse than an absent one.
         sellerId: { type: string, format: uuid }
-        sellerName: { type: string }
+        title: { type: string }
+        brandName: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        category: { $ref: '#/components/schemas/Category' }
         images:
           type: array
           items: { $ref: '#/components/schemas/ProductImage' }
@@ -873,14 +1063,47 @@ components:
           $ref: '#/components/schemas/ReviewSummary'
     Review:
       type: object
-      required: [id, rating, body, variantLabel, createdAt, reviewerFirstName]
+      required: [id, rating, createdAt]
       properties:
         id: { type: string, format: uuid }
-        rating: { type: integer }
-        body: { type: string }
-        variantLabel: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        # A star rating on its own is a legitimate review.
+        body: { type: string, nullable: true }
+        variantLabel: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
-        reviewerFirstName: { type: string }
+        # The buyer's own name. Null when their identity has only ever supplied an
+        # email, which the UI shows as an anonymous reviewer rather than a blank.
+        reviewerName: { type: string, nullable: true }
+    CreateReviewRequest:
+      type: object
+      required: [orderLineId, rating]
+      properties:
+        # The purchase being reviewed. The server derives the product from it, so a
+        # valid line cannot be used to review something else.
+        orderLineId: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        body: { type: string, nullable: true }
+    ReviewEligibility:
+      type: object
+      required: [eligible]
+      properties:
+        eligible: { type: boolean }
+        reason:
+          type: string
+          nullable: true
+          enum: [NOT_PURCHASED, ALREADY_REVIEWED]
+        # The purchase to submit against - present exactly when eligible is true.
+        orderLineId: { type: string, format: uuid, nullable: true }
+        existingReview:
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/Review' }]
+    BuyerSession:
+      type: object
+      required: [buyerIdentityId, email]
+      properties:
+        buyerIdentityId: { type: string, format: uuid }
+        email: { type: string }
+        fullName: { type: string, nullable: true }
     ReviewPage:
       type: object
       required: [content, page, totalElements, totalPages]

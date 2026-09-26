@@ -1,6 +1,9 @@
 import { Navigate, createBrowserRouter } from 'react-router'
 
 import { BuyerLayout } from '@/components/layout/BuyerLayout'
+import { Account } from '@/pages/Account'
+import { BuyerSignIn } from '@/pages/BuyerSignIn'
+import { BuyerVerify } from '@/pages/BuyerVerify'
 import { Checkout } from '@/pages/Checkout'
 import { OrderConfirmation } from '@/pages/OrderConfirmation'
 import { SellerPortalLayout } from '@/features/seller-portal/components/SellerPortalLayout'
@@ -22,9 +25,15 @@ export const router = createBrowserRouter([
     children: [
       { path: '/', element: <Landing /> },
       { path: '/search', element: <SearchResults /> },
-      { path: '/products/:productId', element: <ProductDetail /> },
+      // The segment is a slug. A legacy id still resolves and the page redirects to
+      // the slug URL, so old links land on the product instead of an error.
+      { path: '/products/:productRef', element: <ProductDetail /> },
       { path: '/stores/:brand', element: <StoreFront /> },
       { path: '/checkout', element: <Checkout /> },
+      { path: '/sign-in', element: <BuyerSignIn /> },
+      // Where the buyer magic-link email points - see BuyerAuthService.
+      { path: '/verify', element: <BuyerVerify /> },
+      { path: '/account', element: <Account /> },
       { path: '/orders/:orderId/confirmation', element: <OrderConfirmation /> },
     ],
   },

@@ -6,16 +6,21 @@ import type { ProductDetail } from '../schema/types'
 
 export const productKeys = {
   all: ['catalog', 'product'] as const,
-  detail: (productId: string) => [...productKeys.all, productId] as const,
+  detail: (productRef: string) => [...productKeys.all, productRef] as const,
 }
 
-export function useProduct(productId: string) {
+/**
+ * One product, addressed by slug. A legacy id still resolves - the API accepts
+ * either - so an old bookmark loads the product and the page redirects to its slug
+ * rather than 404ing.
+ */
+export function useProduct(productRef: string) {
   return useQuery<ProductDetail, ProblemDetail>({
-    queryKey: productKeys.detail(productId),
+    queryKey: productKeys.detail(productRef),
     queryFn: async ({ signal }) => {
-      const { data, error } = await apiClient.GET('/products/{productId}', {
+      const { data, error } = await apiClient.GET('/products/{productRef}', {
         signal,
-        params: { path: { productId } },
+        params: { path: { productRef } },
       })
       if (error) throw error
       return data

@@ -1,30 +1,49 @@
 import type { LucideIcon } from 'lucide-react'
-import { Baby, Book, Dumbbell, Footprints, Gamepad2, Laptop, Package, Shirt, Tent, Utensils } from 'lucide-react'
+import {
+  Baby,
+  Book,
+  Car,
+  Dumbbell,
+  Footprints,
+  Gamepad2,
+  Home,
+  Laptop,
+  Package,
+  Shirt,
+  Sparkles,
+  Tent,
+  Utensils,
+} from 'lucide-react'
 import { Link } from 'react-router'
+
+import type { Category } from '@/features/reference/api/useCategories'
 
 import { SectionHeading } from './SectionHeading'
 
-// Keyed on the category names the catalog actually returns; anything the
-// marketplace adds later falls back to the generic parcel icon rather than
-// breaking the rail.
+// Keyed on category SLUGS, which are stable - a name can be edited, and keying on
+// the display text meant renaming "Apparel" silently dropped its icon. Anything the
+// marketplace adds later falls back to the generic parcel rather than breaking the
+// rail.
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  Electronics: Laptop,
-  Kitchen: Utensils,
-  Footwear: Footprints,
-  Outdoor: Tent,
-  Apparel: Shirt,
-  Clothing: Shirt,
-  Books: Book,
-  Toys: Gamepad2,
-  Sports: Dumbbell,
-  Baby: Baby,
+  electronics: Laptop,
+  kitchen: Utensils,
+  footwear: Footprints,
+  outdoor: Tent,
+  apparel: Shirt,
+  books: Book,
+  toys: Gamepad2,
+  sports: Dumbbell,
+  baby: Baby,
+  beauty: Sparkles,
+  home: Home,
+  automotive: Car,
 }
 
 export function CategoryRail({
   categories,
   isLoading,
 }: {
-  categories: string[]
+  categories: Category[]
   isLoading: boolean
 }) {
   if (isLoading) {
@@ -50,17 +69,17 @@ export function CategoryRail({
       <SectionHeading id="popular-categories" title="Explore popular categories" viewAllTo="/search" />
       <div className="-mx-7 flex gap-4 overflow-x-auto px-7 pb-1">
         {categories.map((category) => {
-          const Icon = CATEGORY_ICONS[category] ?? Package
+          const Icon = CATEGORY_ICONS[category.slug] ?? Package
           return (
             <Link
-              key={category}
-              to={`/search?category=${encodeURIComponent(category)}`}
+              key={category.slug}
+              to={`/search?category=${encodeURIComponent(category.slug)}`}
               className="group flex w-[132px] shrink-0 flex-col items-center gap-3"
             >
               <span className="flex aspect-square w-full items-center justify-center rounded-full border bg-muted transition-colors group-hover:border-primary/50 group-hover:bg-primary/5">
                 <Icon className="size-7 text-muted-foreground transition-colors group-hover:text-primary" aria-hidden />
               </span>
-              <span className="text-center text-[13px] font-semibold">{category}</span>
+              <span className="text-center text-[13px] font-semibold">{category.name}</span>
             </Link>
           )
         })}

@@ -2,6 +2,7 @@ package com.arkindustries.amezo.catalog;
 
 import com.arkindustries.amezo.identity.Seller;
 import com.arkindustries.amezo.identity.SellerRepository;
+import com.arkindustries.amezo.support.Fixtures;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -36,6 +37,9 @@ class ProductRepositorySearchTest {
     private ProductRepository productRepository;
 
     @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
     private SellerRepository sellerRepository;
 
     @Autowired
@@ -53,7 +57,8 @@ class ProductRepositorySearchTest {
         return productRepository.save(Product.builder()
                 .sellerId(sellerId)
                 .title(title)
-                .category(category)
+                .categoryId(Fixtures.categoryId(categoryRepository, category))
+                .slug(Fixtures.uniqueSlug(title))
                 .build());
     }
 
@@ -83,7 +88,7 @@ class ProductRepositorySearchTest {
                 .title("Wireless Mouse")
                 .brandName("Logitech")
                 .description("Ergonomic wireless mouse with USB receiver")
-                .category("electronics")
+                .categoryId(Fixtures.categoryId(categoryRepository, "electronics")).slug(Fixtures.uniqueSlug("fixture"))
                 .build());
 
         productRepository.save(Product.builder()
@@ -91,7 +96,7 @@ class ProductRepositorySearchTest {
                 .title("Braided USB Cable")
                 .brandName("Anker")
                 .description("Fast charging cable")
-                .category("electronics")
+                .categoryId(Fixtures.categoryId(categoryRepository, "electronics")).slug(Fixtures.uniqueSlug("fixture"))
                 .build());
 
         Page<Product> results = searchAll("wireless");
@@ -111,7 +116,7 @@ class ProductRepositorySearchTest {
         productRepository.save(Product.builder()
                 .sellerId(seller.getId())
                 .title("Standing Desk")
-                .category("furniture")
+                .categoryId(Fixtures.categoryId(categoryRepository, "furniture")).slug(Fixtures.uniqueSlug("fixture"))
                 .build());
 
         Page<Product> results = searchAll(null);
@@ -129,7 +134,10 @@ class ProductRepositorySearchTest {
                 null, "furniture", null, null, false, "relevance", PageRequest.of(0, 10));
 
         assertThat(results.getContent()).extracting(Product::getId).contains(desk.getId());
-        assertThat(results.getContent()).allSatisfy(p -> assertThat(p.getCategory()).isEqualTo("furniture"));
+        // The filter takes a slug and joins category, so the assertion checks the
+        // FK rather than a name column that no longer exists on product.
+        UUID furniture = Fixtures.categoryId(categoryRepository, "furniture");
+        assertThat(results.getContent()).allSatisfy(p -> assertThat(p.getCategoryId()).isEqualTo(furniture));
     }
 
     @Test

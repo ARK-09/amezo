@@ -14,6 +14,8 @@ import com.arkindustries.amezo.identity.SellerRepository;
 import com.arkindustries.amezo.identity.Session;
 import com.arkindustries.amezo.identity.SessionRepository;
 import jakarta.servlet.http.Cookie;
+import com.arkindustries.amezo.catalog.CategoryRepository;
+import com.arkindustries.amezo.support.Fixtures;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -56,6 +58,9 @@ class SellerOrderApiTest {
 
     @Autowired
     private SellerRepository sellerRepository;
+
+    @Autowired
+    private CategoryRepository categoryRepository;
 
     @Autowired
     private SessionRepository sessionRepository;
@@ -200,7 +205,7 @@ class SellerOrderApiTest {
         BuyerIdentity buyer = buyer("buyer3@example.com");
 
         Product product = productRepository.save(
-                Product.builder().sellerId(me.getId()).title("Trail Backpack").category("outdoor").build());
+                Product.builder().sellerId(me.getId()).title("Trail Backpack").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant variant = variantRepository.save(
                 Variant.builder().productId(product.getId()).label("Blue / M").sku("SKU-D1").build());
         Offer offer = offerRepository.save(
@@ -310,7 +315,7 @@ class SellerOrderApiTest {
     // behind it or the insert fails with a foreign-key violation.
     private UUID seedOfferId(UUID sellerId) {
         Product product = productRepository.save(
-                Product.builder().sellerId(sellerId).title("Test Product").category("test").build());
+                Product.builder().sellerId(sellerId).title("Test Product").categoryId(Fixtures.categoryId(categoryRepository, "test")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant variant = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("Test Variant").sku("SKU-" + UUID.randomUUID()).build());
         Offer offer = offerRepository.save(

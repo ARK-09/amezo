@@ -1,5 +1,6 @@
 package com.arkindustries.amezo.catalog;
 
+import com.arkindustries.amezo.catalog.dto.CategoryResponse;
 import com.arkindustries.amezo.catalog.dto.CreateProductRequest;
 import com.arkindustries.amezo.catalog.dto.CreateProductResponse;
 import com.arkindustries.amezo.catalog.dto.CreateVariantRequest;
@@ -69,6 +70,7 @@ public class SellerProductService {
     private final VariantRepository variantRepository;
     private final OfferRepository offerRepository;
     private final ImageRepository imageRepository;
+    private final CategoryService categoryService;
     private final CurrentSeller currentSeller;
     private final OfferOrderHistoryQuery offerOrderHistory;
     private final S3Presigner s3Presigner;
@@ -83,6 +85,7 @@ public class SellerProductService {
             VariantRepository variantRepository,
             OfferRepository offerRepository,
             ImageRepository imageRepository,
+            CategoryService categoryService,
             CurrentSeller currentSeller,
             OfferOrderHistoryQuery offerOrderHistory,
             S3Presigner s3Presigner,
@@ -95,6 +98,7 @@ public class SellerProductService {
         this.variantRepository = variantRepository;
         this.offerRepository = offerRepository;
         this.imageRepository = imageRepository;
+        this.categoryService = categoryService;
         this.currentSeller = currentSeller;
         this.offerOrderHistory = offerOrderHistory;
         this.s3Presigner = s3Presigner;
@@ -116,25 +120,34 @@ public class SellerProductService {
                 .findByProductIdInAndStatusOrderByPositionAsc(productIds, ImageStatus.STORED).stream()
                 .collect(Collectors.toMap(Image::getProductId, Image::getS3Key, (first, second) -> first));
 
+        Map<UUID, CategoryResponse> categoriesById = categoryService.byId();
+
         return products.map(product -> new SellerProductSummaryResponse(
                 product.getId(),
+                product.getSlug(),
                 product.getTitle(),
                 thumbnails.containsKey(product.getId())
                         ? imageUrls.forKey(thumbnails.get(product.getId()))
                         : null,
-                product.getCategory(),
+                categoriesById.get(product.getCategoryId()),
                 variantCounts.getOrDefault(product.getId(), 0L).intValue(),
                 product.getCreatedAt()));
     }
 
     @Transactional
     public CreateProductResponse create(CreateProductRequest request) {
+        // Resolved before anything is written: a slug that isn't a live system
+        // category fails the whole create, rather than leaving a product filed
+        // under something a client invented.
+        Category category = categoryService.requireSelectable(request.categorySlug());
+
         Product product = productRepository.save(Product.builder()
                 .sellerId(currentSeller.sellerId())
                 .title(request.title())
+                .slug(Slugs.uniqueSlug(request.title(), productRepository::existsBySlug))
                 .brandName(request.brandName())
                 .description(request.description())
-                .category(request.category())
+                .categoryId(category.getId())
                 .build());
 
         for (CreateVariantRequest variantRequest : request.variants()) {
@@ -192,10 +205,11 @@ public class SellerProductService {
 
         return new SellerProductDetailResponse(
                 product.getId(),
+                product.getSlug(),
                 product.getTitle(),
                 product.getBrandName(),
                 product.getDescription(),
-                product.getCategory(),
+                categoryService.byIdOrThrow(product.getCategoryId()),
                 variantResponses,
                 imageResponses);
     }
@@ -206,6 +220,9 @@ public class SellerProductService {
         Product product = ownedProduct(productId);
 
         if (request.title() != null) {
+            // The slug is NOT regenerated. Every link already handed out points at
+            // the old one, and a renamed product is the same product - see
+            // Product.slug.
             product.setTitle(request.title());
         }
         if (request.brandName() != null) {
@@ -214,8 +231,8 @@ public class SellerProductService {
         if (request.description() != null) {
             product.setDescription(request.description());
         }
-        if (request.category() != null) {
-            product.setCategory(request.category());
+        if (request.categorySlug() != null) {
+            product.setCategoryId(categoryService.requireSelectable(request.categorySlug()).getId());
         }
         productRepository.save(product);
 

@@ -46,8 +46,8 @@ export function useDeleteProduct() {
   const queryClient = useQueryClient()
   return useMutation<void, ProblemDetail, string>({
     mutationFn: async (productId) => {
-      const { error } = await apiClient.DELETE('/products/{productId}', {
-        params: { path: { productId } },
+      const { error } = await apiClient.DELETE('/products/{productRef}', {
+        params: { path: { productRef: productId } },
       })
       if (error) throw error
     },
@@ -108,8 +108,10 @@ export function useUpdateProduct(productId: string) {
   const queryClient = useQueryClient()
   return useMutation<SellerProductDetail, ProblemDetail, UpdateProductRequest>({
     mutationFn: async (body) => {
-      const { data, error } = await apiClient.PATCH('/products/{productId}', {
-        params: { path: { productId } },
+      // Writes address the product by id, not by slug: a slug is for links, and a
+      // rename must not be able to retarget an edit.
+      const { data, error } = await apiClient.PATCH('/products/{productRef}', {
+        params: { path: { productRef: productId } },
         body,
       })
       if (error) throw error

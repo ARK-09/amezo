@@ -16,4 +16,6 @@ interface ReviewWithVariantLabelProjection {
     Instant getCreatedAt();
 
     String getVariantLabel();
+
+    String getReviewerName();
 }

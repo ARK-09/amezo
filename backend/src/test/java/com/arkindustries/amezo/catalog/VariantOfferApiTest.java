@@ -2,6 +2,7 @@ package com.arkindustries.amezo.catalog;
 
 import com.arkindustries.amezo.identity.Seller;
 import com.arkindustries.amezo.identity.SellerRepository;
+import com.arkindustries.amezo.support.Fixtures;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -39,6 +40,9 @@ class VariantOfferApiTest {
 
     @Autowired
     private SellerRepository sellerRepository;
+
+    @Autowired
+    private CategoryRepository categoryRepository;
 
     @Autowired
     private ProductRepository productRepository;
@@ -88,7 +92,7 @@ class VariantOfferApiTest {
     void variantWithoutAnOfferIsOmittedSinceItCannotBePriced() throws Exception {
         Seller seller = sellerRepository.save(Seller.builder().email("nooffer@example.com").build());
         Product product = productRepository.save(Product.builder()
-                .sellerId(seller.getId()).title("Unpriced").category("misc").build());
+                .sellerId(seller.getId()).title("Unpriced").categoryId(Fixtures.categoryId(categoryRepository, "misc")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant orphan = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("only").sku("sku-" + UUID.randomUUID()).build());
 
@@ -112,7 +116,7 @@ class VariantOfferApiTest {
                 .sellerId(seller.getId())
                 .title(title)
                 .brandName(brand)
-                .category("kitchen")
+                .categoryId(Fixtures.categoryId(categoryRepository, "kitchen")).slug(Fixtures.uniqueSlug("fixture"))
                 .build());
         Variant variant = variantRepository.save(Variant.builder()
                 .productId(product.getId())

@@ -8,16 +8,17 @@ import { CartProvider } from '@/features/cart/context/CartContext'
 
 import { ProductDetail } from './ProductDetail'
 
-function renderPage(productId: string) {
+/** productRef is a slug, or a legacy id - the page accepts both. */
+function renderPage(productRef: string) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   return render(
     <QueryClientProvider client={queryClient}>
       <CartProvider>
-        <MemoryRouter initialEntries={[`/products/${productId}`]}>
+        <MemoryRouter initialEntries={[`/products/${productRef}`]}>
           <Routes>
-            <Route path="/products/:productId" element={<ProductDetail />} />
+            <Route path="/products/:productRef" element={<ProductDetail />} />
           </Routes>
         </MemoryRouter>
       </CartProvider>
@@ -25,12 +26,13 @@ function renderPage(productId: string) {
   )
 }
 
+const HEADPHONES_SLUG = 'wireless-noise-cancelling-headphones'
+const COOKWARE_SLUG = 'ceramic-non-stick-cookware-set-10-piece'
 const HEADPHONES_ID = '11111111-1111-1111-1111-111111111111'
-const COOKWARE_ID = '33333333-3333-3333-3333-333333333333'
 
 describe('ProductDetail', () => {
   it('renders product info and defaults to the Details tab', async () => {
-    renderPage(HEADPHONES_ID)
+    renderPage(HEADPHONES_SLUG)
 
     expect(await screen.findByRole('heading', { name: /Wireless Noise-Cancelling Headphones/ })).toBeInTheDocument()
     expect(screen.getByText(/over-ear headphones/i)).toBeInTheDocument()
@@ -43,7 +45,7 @@ describe('ProductDetail', () => {
   })
 
   it('switches price when a different variant is selected', async () => {
-    renderPage(HEADPHONES_ID)
+    renderPage(HEADPHONES_SLUG)
     await screen.findByRole('heading', { name: /Wireless/ })
 
     // price and subtotal both read $129.99 at qty 1 - two matches, both correct
@@ -55,7 +57,7 @@ describe('ProductDetail', () => {
   })
 
   it('switches to the Reviews tab and lists reviews', async () => {
-    renderPage(HEADPHONES_ID)
+    renderPage(HEADPHONES_SLUG)
     await screen.findByRole('heading', { name: /Wireless/ })
 
     await userEvent.click(screen.getByRole('tab', { name: /Reviews/ }))
@@ -63,7 +65,7 @@ describe('ProductDetail', () => {
   })
 
   it('shows no reviews for a product with none', async () => {
-    renderPage(COOKWARE_ID)
+    renderPage(COOKWARE_SLUG)
     await screen.findByRole('heading', { name: /Cookware/ })
 
     await userEvent.click(screen.getByRole('tab', { name: /Reviews/ }))
@@ -71,7 +73,7 @@ describe('ProductDetail', () => {
   })
 
   it('adds the selected variant and quantity to the cart', async () => {
-    renderPage(HEADPHONES_ID)
+    renderPage(HEADPHONES_SLUG)
     await screen.findByRole('heading', { name: /Wireless/ })
 
     await userEvent.click(screen.getByRole('button', { name: 'Increase quantity' }))

@@ -34,7 +34,11 @@ describe('SellerAddProduct', () => {
     renderPage()
 
     await userEvent.type(screen.getByLabelText('Title'), 'Trail Backpack')
-    await userEvent.type(screen.getByLabelText('Category'), 'outdoor')
+    // Chosen from the system list. There is no field to type a category into any
+    // more, which is the point of the change.
+    await userEvent.click(screen.getByRole('combobox', { name: 'Category' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Search category' }), 'Outdoor')
+    await userEvent.click(await screen.findByRole('option', { name: 'Outdoor' }))
     await userEvent.type(screen.getByLabelText('Variant 1 label'), 'Standard')
     await userEvent.type(screen.getByLabelText('Variant 1 SKU'), 'SKU-1')
     await userEvent.type(screen.getByLabelText('Variant 1 price'), '19.99')

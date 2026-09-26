@@ -41,7 +41,18 @@ async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('City'), 'Springfield')
   await user.type(screen.getByLabelText('State'), 'IL')
   await user.type(screen.getByLabelText('Postal code'), '62704')
-  await user.type(screen.getByLabelText('Country (2-letter code)'), 'US')
+  await chooseCountry(user, 'United States')
+}
+
+/**
+ * The country is chosen from the system list, not typed - so the test picks it the
+ * way a buyer does: open the combobox, search, click the result. A test that could
+ * still type a code would be testing a field that no longer exists.
+ */
+async function chooseCountry(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(screen.getByRole('combobox', { name: 'Country' }))
+  await user.type(screen.getByRole('textbox', { name: 'Search country' }), name)
+  await user.click(await screen.findByRole('option', { name }))
 }
 
 describe('Checkout', () => {

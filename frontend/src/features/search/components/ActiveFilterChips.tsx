@@ -2,6 +2,7 @@ import { X } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { categoryName, type Category } from '@/features/reference/api/useCategories'
 import { formatPrice } from '@/lib/formatPrice'
 
 import type { SearchFilters } from '../schema/types'
@@ -10,17 +11,26 @@ type FilterKey = 'q' | 'category' | 'price' | 'inStockOnly'
 
 export function ActiveFilterChips({
   filters,
+  categories,
   onRemove,
   onClearAll,
 }: {
   filters: SearchFilters
+  /**
+   * The system list, so a category chip reads as its display name. filters.category
+   * holds the slug - that is what the URL carries - and a chip saying "home-garden"
+   * would be showing a machine value to a shopper.
+   */
+  categories: Category[]
   onRemove: (key: FilterKey) => void
   onClearAll: () => void
 }) {
   const chips: { key: FilterKey; label: string }[] = []
 
   if (filters.q) chips.push({ key: 'q', label: `"${filters.q}"` })
-  if (filters.category) chips.push({ key: 'category', label: filters.category })
+  if (filters.category) {
+    chips.push({ key: 'category', label: categoryName(categories, filters.category) })
+  }
   if (filters.priceMin !== undefined || filters.priceMax !== undefined) {
     const min = filters.priceMin !== undefined ? formatPrice(filters.priceMin) : 'Any'
     const max = filters.priceMax !== undefined ? formatPrice(filters.priceMax) : 'Any'

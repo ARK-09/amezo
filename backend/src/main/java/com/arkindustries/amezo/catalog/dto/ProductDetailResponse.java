@@ -4,18 +4,24 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Deliberately narrower than docs/api-design.md's original sketch: no
- * sellerId/sellerName here (not asked for in this pass, and it would add a
- * third cross-feature dependency on identity for a field nobody requested -
- * flagging the omission rather than silently matching the older spec).
- * Per-variant image lists from that same original sketch are also dropped;
- * this task asked for one top-level, product-scoped images list.
+ * sellerId is now included - the Add-to-cart button has to know whether the
+ * signed-in seller is looking at their own listing. It is the product's own
+ * seller_id column, so this adds no cross-feature dependency on identity;
+ * sellerName still isn't here, and would.
+ *
+ * slug travels alongside id because the page is reached by slug and the id is
+ * still what the cart, the reviews and the images are keyed by internally.
+ *
+ * Per-variant image lists from docs/api-design.md's original sketch remain
+ * dropped; this API has one top-level, product-scoped images list.
  */
 public record ProductDetailResponse(
         UUID id,
+        String slug,
+        UUID sellerId,
         String title,
         String brandName,
-        String category,
+        CategoryResponse category,
         String description,
         List<ImageResponse> images,
         List<VariantDetailResponse> variants,

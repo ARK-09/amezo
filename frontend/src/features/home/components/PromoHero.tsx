@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import type { ProductSummary } from '@/features/search/schema/types'
 import { formatPrice } from '@/lib/formatPrice'
 import { cn } from '@/lib/utils'
+import type { Category } from '@/features/reference/api/useCategories'
 
 const SLIDE_COUNT = 4
 const ROTATE_MS = 6000
@@ -20,7 +21,7 @@ export function PromoHero({
   sideCategory,
 }: {
   products: ProductSummary[]
-  sideCategory?: string
+  sideCategory?: Category
 }) {
   const slides = products.slice(0, SLIDE_COUNT)
   const [index, setIndex] = useState(0)
@@ -93,13 +94,13 @@ export function PromoHero({
                 EXPLORE
               </div>
               <div className="text-[40px] leading-none font-extrabold tracking-[-0.03em] text-primary">
-                {sideCategory}
+                {sideCategory.name}
               </div>
               <Link
-                to={`/search?category=${encodeURIComponent(sideCategory)}`}
+                to={`/search?category=${encodeURIComponent(sideCategory.slug)}`}
                 className="mt-[18px] inline-block rounded-lg border border-foreground px-4 py-2 text-xs font-semibold transition-colors hover:bg-accent"
               >
-                Browse {sideCategory}
+                Browse {sideCategory.name}
               </Link>
             </div>
           </div>

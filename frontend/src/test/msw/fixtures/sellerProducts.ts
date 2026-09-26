@@ -1,5 +1,7 @@
 import type { components } from '@/lib/api/schema'
 
+import { categoryBySlug } from './categories'
+
 type SellerProductSummary = components['schemas']['SellerProductSummary']
 type SellerProductDetail = components['schemas']['SellerProductDetail']
 type SellerVariant = components['schemas']['SellerVariant']
@@ -11,41 +13,46 @@ type SellerVariant = components['schemas']['SellerVariant']
 const DEMO_SEED: SellerProductSummary[] = [
   {
     id: '11111111-1111-1111-1111-111111111111',
+    slug: 'wireless-noise-cancelling-headphones',
     title: 'Wireless Noise-Cancelling Headphones',
     thumbnailUrl: null,
-    category: 'Electronics',
+    category: categoryBySlug('electronics'),
     variantCount: 2,
     createdAt: '2026-09-20T09:00:00.000Z',
   },
   {
     id: '22222222-2222-2222-2222-222222222222',
+    slug: '14-ultrabook-laptop-16gb-ram',
     title: '14" Ultrabook Laptop, 16GB RAM',
     thumbnailUrl: null,
-    category: 'Electronics',
+    category: categoryBySlug('electronics'),
     variantCount: 1,
     createdAt: '2026-09-19T09:00:00.000Z',
   },
   {
     id: '33333333-3333-3333-3333-333333333333',
+    slug: 'ceramic-non-stick-cookware-set-10-piece',
     title: 'Ceramic Non-Stick Cookware Set (10-piece)',
     thumbnailUrl: null,
-    category: 'Kitchen',
+    category: categoryBySlug('kitchen'),
     variantCount: 1,
     createdAt: '2026-09-18T09:00:00.000Z',
   },
   {
     id: '55555555-5555-5555-5555-555555555555',
+    slug: 'mechanical-keyboard-hot-swappable',
     title: 'Mechanical Keyboard, Hot-Swappable',
     thumbnailUrl: null,
-    category: 'Electronics',
+    category: categoryBySlug('electronics'),
     variantCount: 2,
     createdAt: '2026-09-17T09:00:00.000Z',
   },
   {
     id: '66666666-6666-6666-6666-666666666666',
+    slug: 'stainless-steel-water-bottle-32oz',
     title: 'Stainless Steel Water Bottle, 32oz',
     thumbnailUrl: null,
-    category: 'Outdoor',
+    category: categoryBySlug('outdoor'),
     variantCount: 1,
     createdAt: '2026-09-16T09:00:00.000Z',
   },
@@ -75,6 +82,7 @@ export const TAKEN_SKU = 'ALREADY-TAKEN'
 function detailFor(summary: SellerProductSummary): SellerProductDetail {
   return {
     id: summary.id,
+    slug: summary.slug,
     title: summary.title,
     brandName: 'Demo Brand',
     description: 'Demo description.',

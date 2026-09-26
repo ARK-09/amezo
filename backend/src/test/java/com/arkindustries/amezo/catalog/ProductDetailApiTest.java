@@ -6,6 +6,7 @@ import com.arkindustries.amezo.catalog.dto.VariantDetailResponse;
 import com.arkindustries.amezo.identity.Seller;
 import com.arkindustries.amezo.identity.SellerRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.arkindustries.amezo.support.Fixtures;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -44,6 +45,9 @@ class ProductDetailApiTest {
     private SellerRepository sellerRepository;
 
     @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
     private ProductRepository productRepository;
 
     @Autowired
@@ -65,7 +69,7 @@ class ProductDetailApiTest {
                 .title("Trail Backpack")
                 .brandName("Northpeak")
                 .description("40L hiking backpack")
-                .category("outdoor")
+                .categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture"))
                 .build());
 
         Variant inStockVariant = variantRepository.save(Variant.builder()
@@ -100,7 +104,9 @@ class ProductDetailApiTest {
 
         assertThat(response.title()).isEqualTo("Trail Backpack");
         assertThat(response.brandName()).isEqualTo("Northpeak");
-        assertThat(response.category()).isEqualTo("outdoor");
+        // category is now the {slug, name} pair, not a bare string.
+        assertThat(response.category().slug()).isEqualTo("outdoor");
+        assertThat(response.category().name()).isEqualTo("Outdoor");
         assertThat(response.description()).isEqualTo("40L hiking backpack");
 
         assertThat(response.images()).extracting(ImageResponse::position).containsExactly(1, 2);

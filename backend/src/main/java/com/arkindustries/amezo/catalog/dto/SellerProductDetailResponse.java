@@ -12,10 +12,11 @@ import java.util.UUID;
  */
 public record SellerProductDetailResponse(
         UUID id,
+        String slug,
         String title,
         String brandName,
         String description,
-        String category,
+        CategoryResponse category,
         List<SellerVariantResponse> variants,
         List<SellerImageResponse> images
 ) {

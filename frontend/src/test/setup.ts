@@ -3,6 +3,8 @@ import '@testing-library/jest-dom/vitest'
 import { afterAll, afterEach, beforeAll } from 'vitest'
 
 import { server } from './msw/server'
+import { resetWrittenReviews } from './msw/fixtures/productDetails'
+import { resetPurchases } from './msw/fixtures/purchases'
 import { clearSellerSession } from './msw/fixtures/sellerAuth'
 import { resetSellerOrders } from './msw/fixtures/sellerOrders'
 import { resetSellerProducts } from './msw/fixtures/sellerProducts'
@@ -27,4 +29,8 @@ afterEach(() => resetSellerOrders())
 // The mock session cookie is module state like the rest; a test that signs in
 // must not leave the next one signed in.
 afterEach(() => clearSellerSession())
+// Reviews written by a test, and the purchases that allowed them, are module state
+// like the rest - a leftover review would make the next test's product look reviewed.
+afterEach(() => resetWrittenReviews())
+afterEach(() => resetPurchases())
 afterAll(() => server.close())

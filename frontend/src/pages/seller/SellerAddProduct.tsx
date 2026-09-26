@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CategorySelect } from '@/features/reference/components/CategorySelect'
 import {
   type StagedImageUpload,
   useCreateProduct,
@@ -36,7 +37,8 @@ export function SellerAddProduct() {
   const [title, setTitle] = useState('')
   const [brandName, setBrandName] = useState('')
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('')
+  // A category SLUG chosen from the system list - never typed. null until chosen.
+  const [categorySlug, setCategorySlug] = useState<string | null>(null)
   const [variants, setVariants] = useState<VariantRow[]>([emptyVariant()])
   const [images, setImages] = useState<StagedImage[]>([])
   const [imageWarning, setImageWarning] = useState<string | null>(null)
@@ -84,12 +86,19 @@ export function SellerAddProduct() {
     setSubmitError(null)
     setImageWarning(null)
 
+    // A selector can't carry `required` the way the text input it replaced did, and
+    // a product has to have a category - the API refuses one without.
+    if (!categorySlug) {
+      setSubmitError('Choose a category for this product.')
+      return
+    }
+
     try {
       const { id } = await createProduct({
         title,
         brandName: brandName || null,
         description: description || null,
-        category,
+        categorySlug,
         variants: variants.map((v) => ({
           label: v.label,
           sku: v.sku,
@@ -153,7 +162,7 @@ export function SellerAddProduct() {
             <label htmlFor="category" className="mb-1.5 block text-sm font-medium">
               Category
             </label>
-            <Input id="category" required value={category} onChange={(e) => setCategory(e.target.value)} />
+            <CategorySelect id="category" value={categorySlug} onChange={setCategorySlug} />
           </div>
         </div>
 

@@ -36,12 +36,52 @@ Every 4xx/5xx from every endpoint below returns this. `errors[]` is omitted when
 |---|---|---|---|
 | Request link | `POST /magic-links` | none | Body: `{ email, role: "buyer"\|"seller" }`. Always `202 Accepted`, never reveals whether the email/account exists. Creates `magic_link_token` (hash stored, 15 min TTL), emails the raw token in a link. |
 | Consume | `POST /sessions` | none | Body: `{ token }`. **POST, not GET** — the emailed link opens a static confirmation page with a button; the button fires this call. Reason: corporate mail scanners pre-fetch GET links and burn single-use tokens before the real user clicks. Marks `magic_link_token.consumed_at`, creates `session`, sets an httpOnly/Secure/SameSite=Lax cookie. `201` with body `{ identityType, identityId, email, fullName, expiresAt }`. `410 Gone` if the token is expired or already consumed. |
+| Buyer sign-in | `POST /auth/buyer/magic-link` + `POST /auth/buyer/verify` | none | **Built** (`identity/BuyerAuthController`). The mirror of the seller pair over the same `MagicLinkAuthService`; a token issued for one identity type is refused by the other's verify endpoint. Exists because a review has to be attributable - before it, the only way to become a known buyer was to place an order, which never created a session. |
 | Check session | `GET /sessions/current` | cookie | **Built** (`identity/SessionController`). `200` with the same identity body, or `401`. This is also how the frontend gets "logged in as X" without a separate `/buyers/me`, and how the seller portal finds out on boot whether its cookie is still good. |
 | Logout | `DELETE /sessions/current` | cookie | **Not built.** `204`, deleting the `session` row server-side. The seller-only build ships `DELETE /auth/seller/session` instead, which does exactly this; a second logout path would have nothing to add. |
 
 Session cookie TTL: 30 days, no refresh/rotation for MVP. Buyer sessions and seller sessions are the same mechanism (`identity_type` distinguishes them) — no separate seller auth endpoints needed.
 
+## Categories & countries — system reference data
+
+`GET /categories` — the selectable categories, in merchandising order, `{ slug, name }`
+each. Public. Retired categories (`active = false`) are left out, so nothing new can be
+filed under one, while products already filed under one keep displaying it.
+
+No search parameter: the list is a dozen rows that change about never, so clients fetch
+it once and filter in memory rather than issuing a request per keystroke.
+
+The **slug is the stable value** - it travels in `?category=` filters and in product
+writes, and it does not change when the display name is edited. The **name is display
+only**. Every product response ships both, so no screen needs the list loaded just to
+turn one into the other.
+
+Product writes take `categorySlug`, and `CategoryService.requireSelectable` refuses
+anything that isn't a live system category with a `404` - which is what makes "no
+arbitrary categories" true of the API and not just of the form.
+
+`GET /countries` — ISO 3166-1 alpha-2, ordered by name. Public (checkout is open to
+guests). Reference data compiled into the application rather than a table, because the
+set of countries is an external standard this marketplace doesn't get a vote on -
+`CountryCatalog` reads it from the JDK's own registry. `@ValidCountryCode` on
+`CheckoutAddressRequest` validates the submitted code, so a client that skips the
+selector cannot store `XX` or the plausible-but-wrong `UK` (the ISO code is `GB`).
+
 ## Products & search
+
+### Product URLs are slugs
+
+`product.slug` replaces the id in every product URL:
+`/products/classic-cotton-t-shirt`, not `/products/49cec0bd-…`. Generated from the
+title once, at creation (`Slugs.uniqueSlug`), and then **stable** - a rename leaves it
+alone, because every link already handed out points at the old one. Duplicate titles
+count up (`-2`, `-3`); accents fold (`Café` → `cafe`); everything else collapses to
+hyphens, so a slug never needs percent-encoding.
+
+`GET /products/{ref}` and `GET /products/{ref}/reviews` accept a slug **or** a legacy
+id, so links minted before slugs existed still resolve - the frontend turns those into
+a redirect to the slug URL rather than a 404. Writes (`PATCH`, `DELETE`) take the id
+only: a slug is for links, and a rename must not be able to retarget an edit.
 
 `GET /products`
 
@@ -207,7 +247,21 @@ Reaching it from the email link: the confirmation/history email contains a magic
 
 ## Reviews
 
-`POST /reviews` — auth: buyer session. Body: `{ orderLineId, rating, body }`. Deliberately **not** nested under `/order-lines/{id}/reviews` or `/products/{id}/reviews` — creation references the order line by id in the body, server validates `order_line.order.buyer_identity_id == session.identityId`, then upserts against the `(buyer_identity_id, product_id)` unique key. Reading is nested (`GET /products/{id}/reviews`) because that's the real browsing hierarchy; writing isn't, because ownership is checked via auth, not via URL position. `403` if the line isn't the caller's, `409` if they've already reviewed that product.
+`POST /reviews` — **Built.** auth: buyer session. Body: `{ orderLineId, rating, body }`.
+Three refusals, each different on purpose: `404` if the line doesn't exist, `403` if it
+belongs to a different buyer (citing someone else's order number is the obvious way to
+fake a purchase), and `409 already-reviewed` for a second review of the same product -
+which is what the schema's `UNIQUE (buyer_identity_id, product_id)` has always said.
+The product is taken from the line's snapshot, never from the request, so a valid line
+cannot be used to review something else.
+
+`GET /products/{ref}/reviews/eligibility` — **Built.** auth: buyer session. Answers
+`{ eligible, reason, orderLineId, existingReview }` so the product page can offer a
+form, say "only buyers can review this", or show what they already wrote - rather than
+handing over a form that 403s on submit. Buyer-scoped, which is why it is its own
+request instead of a field on the public (cacheable) product response.
+
+The original sketch of `POST /reviews`: Deliberately **not** nested under `/order-lines/{id}/reviews` or `/products/{id}/reviews` — creation references the order line by id in the body, server validates `order_line.order.buyer_identity_id == session.identityId`, then upserts against the `(buyer_identity_id, product_id)` unique key. Reading is nested (`GET /products/{id}/reviews`) because that's the real browsing hierarchy; writing isn't, because ownership is checked via auth, not via URL position. `403` if the line isn't the caller's, `409` if they've already reviewed that product.
 
 ## Build order for MSW
 
