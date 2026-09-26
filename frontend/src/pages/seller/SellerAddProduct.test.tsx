@@ -51,6 +51,28 @@ describe('SellerAddProduct', () => {
     expect(listSellerProducts()[0]).toMatchObject({ title: 'Trail Backpack', variantCount: 1 })
   })
 
+  /** Number('') is 0, so an unpriced variant used to be created at $0.00. */
+  it('refuses a variant priced at zero', async () => {
+    renderPage()
+    await fillProduct({ price: '0', stockQty: '5' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(screen.getByText('Variant 1 needs a price above 0.')).toBeInTheDocument()
+    expect(listSellerProducts()).toHaveLength(0)
+  })
+
+  /** Zero stock is a real listing - the product exists, it is just sold out. */
+  it('creates a product with a stock of zero', async () => {
+    renderPage()
+    await fillProduct({ price: '19.99', stockQty: '0' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Products page')).toBeInTheDocument()
+    expect(listSellerProducts()).toHaveLength(1)
+  })
+
   it('cannot remove the only variant row, but can add and remove extra rows', async () => {
     renderPage()
 
@@ -84,3 +106,15 @@ describe('SellerAddProduct', () => {
     expect(screen.getByRole('button', { name: 'Remove image 1' })).toBeInTheDocument()
   })
 })
+
+/** Everything the form needs before Save, with the one variant's numbers varied. */
+async function fillProduct({ price, stockQty }: { price: string; stockQty: string }) {
+  await userEvent.type(screen.getByLabelText('Title'), 'Trail Backpack')
+  await userEvent.click(screen.getByRole('combobox', { name: 'Category' }))
+  await userEvent.type(screen.getByRole('combobox', { name: 'Search category' }), 'Outdoor')
+  await userEvent.click(await screen.findByRole('option', { name: 'Outdoor' }))
+  await userEvent.type(screen.getByLabelText('Variant 1 label'), 'Standard')
+  await userEvent.type(screen.getByLabelText('Variant 1 SKU'), 'SKU-1')
+  await userEvent.type(screen.getByLabelText('Variant 1 price'), price)
+  await userEvent.type(screen.getByLabelText('Variant 1 stock quantity'), stockQty)
+}

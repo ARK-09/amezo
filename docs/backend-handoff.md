@@ -52,6 +52,8 @@ should be added.
 | GET | `/api/v1/sellers/me/orders/{orderId}` | |
 | PATCH | `/api/v1/sellers/me/orders/{orderId}` | **Replaces `POST /sellers/me/orders/{id}/ship`**, which put the verb in the path. Body carries `parcels`/`packedBy` for PACKED and `handoverMethod`/`hub` for SHIPPED. `trackingNumber` is **not** writable — the design says it is issued by the platform on handover. |
 | PATCH | `/products/{productRef}` | Accept `status` (`ACTIVE\|DRAFT`) on the existing endpoint, for publishing and unpublishing a listing. `ARCHIVED` is the soft delete `DELETE /products/{productRef}` performs, so it is not writable here. |
+| POST | `/products` | Accept an optional `status` (`ACTIVE\|DRAFT`) so a listing can be staged before it goes live. Omitted means `ACTIVE`. |
+| GET | `/products/{productRef}` (seller view) | Return `status` on `SellerProductDetail`. It is writable on PATCH but was absent from the detail the edit form reads back, so the form had no way to show which state the listing is in. |
 
 ### Metrics
 | Method | Path | Notes |

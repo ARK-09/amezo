@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -113,16 +113,18 @@ describe('SellerProductDetail', () => {
     await userEvent.clear(price)
     await userEvent.type(price, '59.9')
 
-    // Something else about the product moved while the seller typed - another tab,
-    // another device - so the refetch really brings back a new object rather than
-    // the identical one react-query's structural sharing would hand straight back.
+    // The product moved on the server while the seller typed - another tab, another
+    // device - so the refetch brings back a genuinely new object rather than the
+    // identical one react-query's structural sharing would hand straight back.
     detail.variants[0].stockQty += 3
-    await act(async () => {
-      await queryClient.refetchQueries({ queryKey: sellerProductKeys.detail(PRODUCT_ID) })
-    })
+    detail.images = [
+      { id: 'image-1', url: 'https://cdn.example/1.jpg', position: 0, status: 'STORED' },
+    ]
+    void queryClient.refetchQueries({ queryKey: sellerProductKeys.detail(PRODUCT_ID) })
+    // The gallery is what shows the new data reached the form at all: every field
+    // above it is seeded state, which is precisely what must not move.
+    expect(await screen.findByRole('button', { name: 'Remove image 1' })).toBeInTheDocument()
 
-    console.log('DEBUG cache', JSON.stringify(queryClient.getQueryData(sellerProductKeys.detail(PRODUCT_ID))))
-    console.log('DEBUG inputs', (title as HTMLInputElement).value, (price as HTMLInputElement).value, (screen.getByLabelText('Stock for 1111-0') as HTMLInputElement).value)
     expect(title).toHaveValue('Trail Backpack 40')
     // The variant rows seed the same way, and lost edits the same way.
     expect(price).toHaveValue(59.9)

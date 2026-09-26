@@ -96,9 +96,9 @@ function ProductFields({ productId, product }: { productId: string; product: Edi
   // replaced a half-typed title with the server's old one mid-edit. Derived during
   // render rather than in an effect, which would paint the clobbered value once
   // before correcting it. A save gets its own re-seed, from its response.
-  const [seededId, setSeededId] = useState<unknown>(product)
-  if (product !== seededId) {
-    setSeededId(product)
+  const [seededId, setSeededId] = useState(product.id)
+  if (product.id !== seededId) {
+    setSeededId(product.id)
     seed(product)
   }
 
@@ -382,9 +382,9 @@ function VariantRow({
 
   // Same rule as the product fields above: a new object for the same variant is a
   // refetch, not a different row, and re-seeding on it wiped a price being typed.
-  const [seededId, setSeededId] = useState<unknown>(variant)
-  if (variant !== seededId) {
-    setSeededId(variant)
+  const [seededId, setSeededId] = useState(variant.id)
+  if (variant.id !== seededId) {
+    setSeededId(variant.id)
     seed(variant)
   }
 

@@ -1423,6 +1423,7 @@ components:
         brandName: { type: string, nullable: true }
         description: { type: string, nullable: true }
         category: { $ref: '#/components/schemas/Category' }
+        status: { $ref: '#/components/schemas/ProductStatus' }
         variants:
           type: array
           items: { $ref: '#/components/schemas/SellerVariant' }
@@ -1581,6 +1582,9 @@ components:
         # A slug from GET /categories. The server refuses anything that isn't a live
         # system category, so a client cannot invent one by posting a name.
         categorySlug: { type: string }
+        # Omitted means ACTIVE. DRAFT saves the listing without showing it to
+        # shoppers, which is the only way to stage one before publishing.
+        status: { type: string, enum: [ACTIVE, DRAFT] }
         variants:
           type: array
           minItems: 1
