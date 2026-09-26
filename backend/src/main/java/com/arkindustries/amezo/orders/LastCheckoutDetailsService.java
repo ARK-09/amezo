@@ -40,11 +40,15 @@ public class LastCheckoutDetailsService {
                         order.getBuyerPhone(),
                         toResponse(order.getShippingAddress()),
                         order.isBillingSameAsShipping(),
-                        // Null when the last order billed to the shipping address:
-                        // there is no separate billing row to hand back, and an echo
-                        // of the shipping one would make the form tick "same as
-                        // shipping" off when the buyer never chose that.
-                        toResponse(order.getBillingAddress())));
+                        // Null when the last order billed to the shipping address.
+                        // Checkout copies shipping into the billing columns in that
+                        // case (they are NOT NULL), so the stored billing address is
+                        // an echo rather than a separate answer - handing it back
+                        // would prefill a billing form the buyer never filled in.
+                        // The flag above is what tells the form which it was.
+                        order.isBillingSameAsShipping()
+                                ? null
+                                : toResponse(order.getBillingAddress())));
     }
 
     private static AddressResponse toResponse(Address address) {

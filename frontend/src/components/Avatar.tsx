@@ -1,15 +1,20 @@
+import { Avatar as AvatarRoot, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { displayNameFor, initialsFor } from '@/lib/displayName'
 import { cn } from '@/lib/utils'
 
 /**
  * The signed-in identity, and a reviewer's, shown as an avatar rather than as an
- * email address. Printing someone's email in a page header is both noise and a
- * small privacy leak on a shared screen.
+ * email address.
  *
- * There is no avatar image anywhere in this system yet, so initials ARE the
- * fallback - and a deterministic colour per person keeps them distinguishable
- * without inventing an identity. src is accepted so the day an upload exists,
- * nothing here has to change.
+ * A thin wrapper over shadcn's Avatar rather than a hand-built circle: the primitive
+ * already handles the part that is actually fiddly, which is showing the fallback
+ * only once the image has genuinely failed or is still loading, instead of flashing
+ * initials under every avatar on first paint.
+ *
+ * What stays local is the only thing shadcn has no opinion about: which initials to
+ * show and which colour to use. There is no avatar upload in this system yet, so
+ * initials ARE the normal case, and a deterministic colour per person keeps people
+ * distinguishable without inventing an identity for them.
  */
 const PALETTE = [
   'bg-rose-200 text-rose-900',
@@ -46,30 +51,18 @@ export function Avatar({
   const label = displayNameFor(name)
   const sizes = size === 'sm' ? 'size-7 text-[11px]' : 'size-8 text-xs'
 
-  if (src) {
-    return (
-      <img
-        src={src}
-        alt={label}
-        className={cn('shrink-0 rounded-full object-cover', sizes, className)}
-      />
-    )
-  }
-
   return (
-    <span
+    <AvatarRoot
       // The name is announced by whatever sits next to this, so the circle itself is
       // decoration; title gives it back on hover where the name is not shown.
       aria-hidden
       title={label}
-      className={cn(
-        'flex shrink-0 items-center justify-center rounded-full font-semibold',
-        sizes,
-        paletteFor(label),
-        className,
-      )}
+      className={cn(sizes, className)}
     >
-      {initialsFor(name || 'Anonymous')}
-    </span>
+      {src && <AvatarImage src={src} alt={label} />}
+      <AvatarFallback className={paletteFor(label)}>
+        {initialsFor(name || 'Anonymous')}
+      </AvatarFallback>
+    </AvatarRoot>
   )
 }

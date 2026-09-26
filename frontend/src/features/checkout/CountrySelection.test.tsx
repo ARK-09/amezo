@@ -48,7 +48,7 @@ describe('delivery country', () => {
     renderCheckout()
     await userEvent.click(await screen.findByRole('combobox', { name: 'Country' }))
 
-    await userEvent.type(screen.getByRole('textbox', { name: 'Search country' }), 'united')
+    await userEvent.type(screen.getByRole('combobox', { name: 'Search country' }), 'united')
 
     expect(screen.getByRole('option', { name: 'United Arab Emirates' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'United Kingdom' })).toBeInTheDocument()
@@ -64,7 +64,7 @@ describe('delivery country', () => {
     renderCheckout()
     await userEvent.click(await screen.findByRole('combobox', { name: 'Country' }))
 
-    await userEvent.type(screen.getByRole('textbox', { name: 'Search country' }), 'UK')
+    await userEvent.type(screen.getByRole('combobox', { name: 'Search country' }), 'UK')
 
     expect(screen.getByText('No country matches that')).toBeInTheDocument()
   })

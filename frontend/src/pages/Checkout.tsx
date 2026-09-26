@@ -239,7 +239,9 @@ export function Checkout() {
                     type="checkbox"
                     className="size-4 accent-primary"
                     checked={values.sameAsShipping}
-                    onChange={(e) => edit({ ...values, sameAsShipping: e.target.checked })}
+                    onChange={(e) =>
+                      edit({ ...values, sameAsShipping: e.target.checked }, 'sameAsShipping')
+                    }
                   />
                   Same as shipping
                 </label>

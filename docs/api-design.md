@@ -271,3 +271,37 @@ The original sketch of `POST /reviews`: Deliberately **not** nested under `/orde
 4. `GET /orders`, `GET /orders/{id}` — order history screen.
 5. `POST /reviews`, `GET /products/{id}/reviews`.
 6. Seller portal last, built in parallel once 1–2 are stable: product/variant/image creation, `GET /sellers/me/order-lines`, `PATCH /order-lines/{id}`.
+
+## Sign-out is role-agnostic
+
+`DELETE /sessions/current` revokes whichever session the cookie names, buyer or
+seller. The two role-prefixed sign-outs (`/auth/buyer/session`,
+`/auth/seller/session`) remain for the clients that already call them, but nothing
+new should use them.
+
+They are the reason this endpoint exists. The buyer account page is reachable by a
+seller session - a seller is also a person with an address - but the only sign-out
+it could call was the buyer-scoped one, which `SecurityConfig` restricts to
+`ROLE_BUYER`. A signed-in seller got a 403, the mutation failed silently, and the
+session survived both the click and the reload after it. Revoking a session never
+needed to know which kind of identity it names.
+
+## Prefilling checkout
+
+`GET /checkout/last-details` returns the signed-in buyer's most recent order's
+phone and addresses, so a returning buyer does not retype an address they have
+already given. `204` means they have not ordered before, which is not an error.
+
+It is buyer-scoped even though `POST /orders` beside it is public: placing an order
+needs no account, but reading back what someone ordered before is reading their
+data.
+
+`billingAddress` is null whenever `billingSameAsShipping` is true. Checkout copies
+the shipping address into the billing columns in that case (they are `NOT NULL`),
+so the stored billing address is an echo rather than a separate answer - returning
+it would prefill a billing form the buyer never filled in. The flag is what tells
+the form which it was.
+
+It deliberately carries no order id, total or lines. There is no buyer order
+history API and this is not the start of one.
+

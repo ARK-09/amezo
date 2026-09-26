@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
 import { describe, expect, it } from 'vitest'
@@ -90,13 +90,22 @@ describe('SiteHeader', () => {
 
     await userEvent.click(trigger)
 
-    expect(trigger).toHaveAttribute('aria-expanded', 'true')
-    const menu = within(screen.getByRole('button', { name: /All categories/ }).parentElement!)
-    expect(await menu.findByRole('link', { name: 'Kitchen' })).toHaveAttribute(
+    // The menu is portaled out of the header and is modal, so the rest of the page
+    // leaves the accessibility tree while it is open - it is found through the menu
+    // role, not by looking inside the trigger's parent.
+    const menu = within(await screen.findByRole('menu'))
+    expect(await menu.findByRole('menuitem', { name: 'Kitchen' })).toHaveAttribute(
       'href',
       '/search?category=kitchen',
     )
-    expect(menu.getByRole('link', { name: 'Browse everything' })).toHaveAttribute('href', '/search')
+    expect(menu.getByRole('menuitem', { name: 'Clothing' })).toHaveAttribute(
+      'href',
+      '/search?category=clothing',
+    )
+    expect(menu.getByRole('menuitem', { name: 'Browse everything' })).toHaveAttribute(
+      'href',
+      '/search',
+    )
   })
 
   it('closes the All categories menu on Escape', async () => {
@@ -104,11 +113,13 @@ describe('SiteHeader', () => {
 
     const trigger = screen.getByRole('button', { name: /All categories/ })
     await userEvent.click(trigger)
-    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
 
     await userEvent.keyboard('{Escape}')
 
-    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    // Focus comes back to the trigger, which is the part a hand-rolled menu missed.
+    expect(screen.getByRole('button', { name: /All categories/ })).toHaveFocus()
   })
 
   /**

@@ -100,8 +100,21 @@ export function prefilledValues(
   fill('phone', details?.phone, 'phone')
   fillAddress('shippingAddress', details?.shippingAddress, deliveryCountry)
   // The billing country deliberately does not take the delivery preference: where a
-  // card is billed is not where the parcel is going.
+  // card is billed is not where the parcel is going. billingAddress is null whenever
+  // the last order billed to its shipping address, so there is nothing to fill then.
   fillAddress('billingAddress', details?.billingAddress, null)
+
+  // A buyer who last billed to a different address gets that box reopened, rather
+  // than having to notice the tick and undo it. Only before they touch it themselves.
+  if (
+    details &&
+    !details.billingSameAsShipping &&
+    !touched.has('sameAsShipping') &&
+    next.sameAsShipping
+  ) {
+    next.sameAsShipping = false
+    changed = true
+  }
 
   return changed ? next : current
 }

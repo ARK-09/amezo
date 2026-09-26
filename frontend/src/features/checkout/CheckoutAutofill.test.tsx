@@ -120,6 +120,41 @@ describe('checkout autofill', () => {
     expect(localStorage.getItem('delivery-country:v1')).toBe('GB')
   })
 
+  /**
+   * The flag, not a copy of the shipping address, is what says whether billing was
+   * separate - the API sends null for billingAddress when it was not.
+   */
+  it('reopens the billing box when the last order billed elsewhere', async () => {
+    signInBuyerSession({ buyerIdentityId: 'buyer-1', email: 'ada@example.com' })
+    setLastCheckoutDetails({
+      ...PREVIOUS_ORDER_DETAILS,
+      billingSameAsShipping: false,
+      billingAddress: {
+        fullName: 'Ada Lovelace',
+        line1: '5 Finance Street',
+        line2: null,
+        city: 'Manchester',
+        state: 'Greater Manchester',
+        postalCode: 'M1 2AB',
+        country: 'GB',
+      },
+    })
+    renderCheckout()
+
+    await waitFor(() => expect(screen.getByLabelText('Same as shipping')).not.toBeChecked())
+    const [, billingLine1] = screen.getAllByLabelText('Address line 1')
+    expect(billingLine1).toHaveValue('5 Finance Street')
+  })
+
+  it('leaves billing ticked when the last order billed to the shipping address', async () => {
+    signInBuyerSession({ buyerIdentityId: 'buyer-1', email: 'ada@example.com' })
+    setLastCheckoutDetails(PREVIOUS_ORDER_DETAILS) // billingSameAsShipping: true
+    renderCheckout()
+
+    await waitFor(() => expect(screen.getByLabelText('Full name')).toHaveValue('Ada Lovelace'))
+    expect(screen.getByLabelText('Same as shipping')).toBeChecked()
+  })
+
   /** Billing is a different question from where the parcel goes. */
   it('does not apply the delivery country to the billing address', async () => {
     setDeliveryCountry('JP')
