@@ -6,6 +6,7 @@ import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { createAppQueryClient } from '@/lib/api/queryClient'
+import { listBuyerOrders } from '@/test/msw/fixtures/buyerOrders'
 import { server } from '@/test/msw/server'
 
 import { MyOrders } from './MyOrders'
@@ -32,6 +33,37 @@ function renderWithHistory(entries: string[]) {
     </QueryClientProvider>,
   )
   return router
+}
+
+/**
+ * The seed holds two orders, which is too few to page. One of them, copied
+ * under its own reference, stands in for a buyer with a long history.
+ */
+function seedManyOrders(count: number) {
+  const [first] = listBuyerOrders()
+  const all = Array.from({ length: count }, (_, i) => ({
+    ...first,
+    id: `ord-${i + 1}`,
+    reference: `ord_paged_${i + 1}`,
+  }))
+  server.use(
+    http.get('http://localhost:8080/api/v1/orders', ({ request }) => {
+      const params = new URL(request.url).searchParams
+      const page = Number(params.get('page') ?? 0)
+      const size = Number(params.get('size') ?? 10)
+      return HttpResponse.json({
+        content: all.slice(page * size, page * size + size),
+        page,
+        totalElements: all.length,
+        totalPages: Math.ceil(all.length / size) || 1,
+      })
+    }),
+  )
+}
+
+/** The numbered buttons, away from the tabs and the cards. */
+function pager() {
+  return within(screen.getByRole('navigation', { name: 'pagination' }))
 }
 
 const HEADPHONES = 'Wireless Noise-Cancelling Headphones'
@@ -108,6 +140,54 @@ describe('MyOrders', () => {
 
     // NaN used to reach the request, which answered with nothing at all.
     expect(await screen.findByText('ord_19ff4c82')).toBeInTheDocument()
+  })
+
+  it('pages by number, and the range label counts the short last page', async () => {
+    seedManyOrders(8)
+    renderPage('/orders?size=5')
+
+    expect(await screen.findByText('ord_paged_1')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1\u20135 of 8 orders')).toBeInTheDocument()
+
+    await userEvent.click(pager().getByRole('button', { name: '2' }))
+
+    expect(await screen.findByText('ord_paged_6')).toBeInTheDocument()
+    expect(screen.queryByText('ord_paged_1')).not.toBeInTheDocument()
+    // Three cards on the last page, not five - the label follows the cards.
+    expect(screen.getByText('Showing 6\u20138 of 8 orders')).toBeInTheDocument()
+    expect(pager().getByRole('button', { name: '2' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('goes back to the first page when the page size changes', async () => {
+    seedManyOrders(8)
+    const router = renderWithHistory(['/orders?size=5&page=1'])
+    await screen.findByText('ord_paged_6')
+
+    await userEvent.click(screen.getByLabelText('Rows per page'))
+    await userEvent.click(await screen.findByRole('option', { name: '20' }))
+
+    // Page 2 of a 5-a-page list is nowhere in a 20-a-page one, so ?page= goes
+    // with the size - the same reset every other filter does.
+    await waitFor(() => expect(router.state.location.search).toBe('?size=20'))
+    expect(await screen.findByText('ord_paged_1')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1\u20138 of 8 orders')).toBeInTheDocument()
+  })
+
+  it('ignores a page size that is not one of the offered ones', async () => {
+    const asked: (string | null)[] = []
+    seedManyOrders(8)
+    server.use(
+      http.get('http://localhost:8080/api/v1/orders', ({ request }) => {
+        asked.push(new URL(request.url).searchParams.get('size'))
+        return undefined // fall through to the paged handler above
+      }),
+    )
+    // ?size=10000 asked the server for every order ever placed in one response.
+    renderPage('/orders?size=10000')
+
+    await screen.findByText('ord_paged_1')
+    await waitFor(() => expect(asked.length).toBeGreaterThan(0))
+    expect(asked.every((size) => size === '10')).toBe(true)
   })
 
   it('puts the search box back in step with the URL when you navigate back', async () => {

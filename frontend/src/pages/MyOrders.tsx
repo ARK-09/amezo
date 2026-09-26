@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { PaginationBar } from '@/components/ui/pagination'
 import {
   Select,
   SelectContent,
@@ -36,7 +37,9 @@ const PERIODS = [
 
 type Period = (typeof PERIODS)[number]['value']
 
-const PAGE_SIZE = 10
+/** The sizes the design's Per page select offers, and the one it opens on. */
+const PAGE_SIZES = [5, 10, 20, 50] as const
+const DEFAULT_SIZE = 10
 
 /** The period select narrows the window; the server takes plain dates. */
 function periodStart(period: Period): string | undefined {
@@ -56,6 +59,15 @@ function pageParam(raw: string | null) {
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0
 }
 
+/**
+ * Same treatment for ?size=: junk is the default, and ?size=10000 is a request
+ * for every order ever placed in one response. Only the offered sizes count.
+ */
+function sizeParam(raw: string | null) {
+  const parsed = Number(raw)
+  return PAGE_SIZES.some((size) => size === parsed) ? parsed : DEFAULT_SIZE
+}
+
 export function MyOrders() {
   const session = useSession()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -65,6 +77,7 @@ export function MyOrders() {
   const q = searchParams.get('q') ?? ''
   const period = (searchParams.get('period') as Period | null) ?? '12m'
   const page = pageParam(searchParams.get('page'))
+  const size = sizeParam(searchParams.get('size'))
 
   // The box is controlled so it can never disagree with the list: the Back
   // button rewrites ?q= underneath it, and a defaultValue input went on showing
@@ -83,9 +96,9 @@ export function MyOrders() {
       q: q || undefined,
       from: periodStart(period),
       page,
-      size: PAGE_SIZE,
+      size,
     }),
-    [group, q, period, page],
+    [group, q, period, page, size],
   )
 
   const query = useBuyerOrders(filters)
@@ -256,28 +269,25 @@ export function MyOrders() {
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-6">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={shownPage === 0}
-            onClick={() => patch({ page: String(shownPage - 1) })}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {shownPage + 1} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={shownPage + 1 >= totalPages}
-            onClick={() => patch({ page: String(shownPage + 1) })}
-          >
-            Next
-          </Button>
-        </div>
+      {/* Shown whenever there are orders, not only past page one: Per page is
+          how you get back from 50 to 5, and at 50 there is often one page. */}
+      {orders.length > 0 && (
+        <PaginationBar
+          className="pt-6"
+          page={shownPage}
+          totalPages={totalPages}
+          onPageChange={(next) => patch({ page: String(next) })}
+          range={{
+            totalElements: total,
+            pageSize: size,
+            sizes: PAGE_SIZES,
+            unit: 'orders',
+            // A new page size makes the old offset meaningless, so patch drops
+            // ?page= with it - as it does for any other filter change.
+            onSizeChange: (next) =>
+              patch({ size: next === DEFAULT_SIZE ? undefined : String(next) }),
+          }}
+        />
       )}
     </div>
   )

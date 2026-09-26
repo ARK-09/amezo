@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { CartProvider } from '@/features/cart/context/CartContext'
+import { seedProducts } from '@/test/msw/fixtures/products'
 import { server } from '@/test/msw/server'
 
 import { SearchResults } from './SearchResults'
@@ -22,6 +23,24 @@ function renderPage(initialEntry = '/search') {
         </MemoryRouter>
       </CartProvider>
     </QueryClientProvider>,
+  )
+}
+
+/**
+ * The grid's own page size is fixed and the catalogue is smaller than it, so
+ * the server does the splitting here: three of the six seeded products a page.
+ */
+function pageTheCatalogue(size = 3) {
+  server.use(
+    http.get('http://localhost:8080/products', ({ request }) => {
+      const page = Number(new URL(request.url).searchParams.get('page') ?? 0)
+      return HttpResponse.json({
+        content: seedProducts.slice(page * size, page * size + size),
+        page,
+        totalElements: seedProducts.length,
+        totalPages: Math.ceil(seedProducts.length / size),
+      })
+    }),
   )
 }
 
@@ -80,6 +99,31 @@ describe('SearchResults', () => {
     )
     expect(
       screen.getByLabelText('Remove In stock only filter'),
+    ).toBeInTheDocument()
+  })
+
+  it('pages by number', async () => {
+    pageTheCatalogue()
+    renderPage()
+    await screen.findByText('Wireless Noise-Cancelling Headphones')
+
+    const pager = within(screen.getByRole('navigation', { name: 'pagination' }))
+    await userEvent.click(pager.getByRole('button', { name: '2' }))
+
+    expect(await screen.findByText('Trail Running Shoes')).toBeInTheDocument()
+    expect(
+      screen.queryByText('Wireless Noise-Cancelling Headphones'),
+    ).not.toBeInTheDocument()
+    expect(pager.getByRole('button', { name: '2' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('reads a page param that is not a number as the first page', async () => {
+    pageTheCatalogue()
+    // NaN used to reach the request, which answered with nothing at all.
+    renderPage('/search?page=abc')
+
+    expect(
+      await screen.findByText('Wireless Noise-Cancelling Headphones'),
     ).toBeInTheDocument()
   })
 

@@ -52,6 +52,23 @@ function seed(overrides: Partial<Parameters<typeof addSellerProduct>[0]> = {}) {
   })
 }
 
+/** Newest first, so Item 1 leads the list and Item 8 closes it. */
+function seedMany(count: number) {
+  for (let i = 1; i <= count; i++) {
+    seed({
+      id: `p${i}`,
+      slug: `item-${i}`,
+      title: `Item ${i}`,
+      createdAt: `2026-01-${String(count - i + 1).padStart(2, '0')}T00:00:00Z`,
+    })
+  }
+}
+
+/** The numbered buttons, away from the row and filter controls. */
+function pager() {
+  return within(screen.getByRole('navigation', { name: 'pagination' }))
+}
+
 describe('SellerProducts', () => {
   beforeEach(() => {
     resetSellerProducts()
@@ -198,6 +215,75 @@ describe('SellerProducts', () => {
       'This product is on an open order and cannot be deleted',
     )
     expect(screen.getByText('Trail Backpack')).toBeInTheDocument()
+  })
+
+  it('pages by number, and the range label counts the short last page', async () => {
+    seedMany(8)
+    renderPage('/seller/products?size=5')
+
+    expect(await screen.findByText('Item 1')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1\u20135 of 8')).toBeInTheDocument()
+    expect(pager().getByRole('button', { name: '1' })).toHaveAttribute('aria-current', 'page')
+
+    await userEvent.click(pager().getByRole('button', { name: '2' }))
+
+    expect(await screen.findByText('Item 6')).toBeInTheDocument()
+    expect(screen.queryByText('Item 1')).not.toBeInTheDocument()
+    // Three rows on the last page, not five - the label follows the rows.
+    expect(screen.getByText('Showing 6\u20138 of 8')).toBeInTheDocument()
+    expect(pager().getByRole('button', { name: '2' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('elides the middle of a long range instead of printing every page', async () => {
+    seedMany(40)
+    renderPage('/seller/products?size=5')
+    await screen.findByText('Item 1')
+
+    // Eight pages, seven slots: the first five, a gap, and the last.
+    for (const label of ['1', '2', '3', '4', '5', '8']) {
+      expect(pager().getByRole('button', { name: label })).toBeInTheDocument()
+    }
+    expect(pager().queryByRole('button', { name: '6' })).not.toBeInTheDocument()
+    expect(pager().getByText('More pages')).toBeInTheDocument()
+  })
+
+  it('goes back to the first page when the page size changes', async () => {
+    seedMany(8)
+    const router = renderWithHistory(['/seller/products?size=5&page=1'])
+    await screen.findByText('Item 6')
+
+    await userEvent.click(screen.getByLabelText('Rows per page'))
+    await userEvent.click(await screen.findByRole('option', { name: '20' }))
+
+    // Page 2 of a 5-a-page list is nowhere in a 20-a-page one, so ?page= goes
+    // with the size - the same reset every other filter does.
+    await waitFor(() => expect(router.state.location.search).toBe('?size=20'))
+    expect(await screen.findByText('Item 1')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1\u20138 of 8')).toBeInTheDocument()
+  })
+
+  it('ignores a page size that is not one of the offered ones', async () => {
+    const asked: (string | null)[] = []
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/products', ({ request }) => {
+        asked.push(new URL(request.url).searchParams.get('size'))
+        return undefined // fall through to the default handler
+      }),
+    )
+    seedMany(8)
+
+    // ?size=10000 asked the server for the whole catalogue in one response, and
+    // ?size=abc asked it for NaN of it.
+    for (const junk of ['10000', 'abc']) {
+      const view = renderPage(`/seller/products?size=${junk}`)
+      expect(await screen.findByText('Item 1')).toBeInTheDocument()
+      // Ten a page over eight rows: one page, and the label stops at eight.
+      expect(screen.getByText('Showing 1\u20138 of 8')).toBeInTheDocument()
+      view.unmount()
+    }
+
+    expect(asked.length).toBeGreaterThan(0)
+    expect(asked.every((size) => size === '10')).toBe(true)
   })
 
   it('opens the edit drawer with a link to the same form full page', async () => {

@@ -32,14 +32,18 @@ function make(
   extra: Partial<RefundRequestDetail> = {},
 ): RefundRequestDetail {
   const requestedAmount = lines.reduce((sum, line) => sum + line.lineTotal, 0)
+  const requestedAt = '2026-09-24T09:00:00Z'
   return {
     id,
     reference,
     status,
+    // Every request begins with the buyer raising it, so the timeline is never
+    // empty and never has to be reconstructed from the timestamps around it.
+    events: [{ status: 'REQUESTED', at: requestedAt, note: null }],
     resolution,
     payout: 'ORIGINAL_PAYMENT',
     detail,
-    requestedAt: '2026-09-24T09:00:00Z',
+    requestedAt,
     requestedAmount,
     approvedAmount: null,
     currency: 'USD',

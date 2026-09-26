@@ -1,11 +1,16 @@
-import { ImageOff, Plus, Trash2, Upload } from 'lucide-react'
+import { ArrowDown, ArrowUp, Copy, ImageOff, Plus, Trash2, Upload } from 'lucide-react'
 import { type ChangeEvent, type FormEvent, useRef, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import type { ProblemDetail } from '@/lib/api/client'
+import { apiClient, type ProblemDetail } from '@/lib/api/client'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { CategorySelect } from '@/features/reference/components/CategorySelect'
 import { apiErrorMessage } from '@/lib/api/transient'
+import { formatPrice } from '@/lib/formatPrice'
 import {
   Table,
   TableBody,
@@ -20,6 +25,7 @@ import {
   useAddVariant,
   useDeleteImage,
   useDeleteVariant,
+  sellerProductKeys,
   useSellerProduct,
   useUpdateProduct,
   useUpdateVariant,
@@ -57,7 +63,13 @@ export function ProductFormPanel({ productId }: { productId: string }) {
       {query.isSuccess && (
         <>
           <ProductFields productId={productId} product={query.data} />
-          <VariantRows productId={productId} variants={query.data.variants} />
+          {/* The summary strip closes the variants section but counts images too,
+              so the count comes down from here rather than from a second query. */}
+          <VariantRows
+            productId={productId}
+            variants={query.data.variants}
+            imageCount={query.data.images.length}
+          />
           <Images productId={productId} images={query.data.images} />
         </>
       )}
@@ -72,7 +84,31 @@ type EditableProduct = {
   brandName?: string | null
   description?: string | null
   category: { slug: string; name: string }
+  status?: SellerProductDetailData['status']
 }
+
+/**
+ * The two statuses a seller picks between. ARCHIVED is deliberately not offered:
+ * it is what deleting a product does, and a switch that could reach it would be a
+ * quieter second way to take a listing down for good.
+ */
+type WritableStatus = 'ACTIVE' | 'DRAFT'
+
+const STATUS_HINT: Record<WritableStatus, string> = {
+  ACTIVE: 'Visible in search and on your store page as soon as you save.',
+  DRAFT: 'Saved to your catalogue but hidden from shoppers until you activate it.',
+}
+
+/** No status means ACTIVE - the same default the create endpoint applies. */
+function writableStatus(product: EditableProduct): WritableStatus {
+  return product.status === 'DRAFT' ? 'DRAFT' : 'ACTIVE'
+}
+
+/** The design's own limit; the API sets none. */
+const TITLE_LIMIT = 120
+
+/** The product's image cap, shared by the uploader and the summary strip. */
+const MAX_IMAGES = 7
 
 function ProductFields({ productId, product }: { productId: string; product: EditableProduct }) {
   const { mutate, isPending, isError, error, isSuccess } = useUpdateProduct(productId)
@@ -82,12 +118,14 @@ function ProductFields({ productId, product }: { productId: string; product: Edi
   const [description, setDescription] = useState(product.description ?? '')
   // The selected SLUG, since that is what the selector and the API both deal in.
   const [categorySlug, setCategorySlug] = useState(product.category.slug)
+  const [status, setStatus] = useState<WritableStatus>(writableStatus(product))
 
   function seed(next: EditableProduct) {
     setTitle(next.title)
     setBrandName(next.brandName ?? '')
     setDescription(next.description ?? '')
     setCategorySlug(next.category.slug)
+    setStatus(writableStatus(next))
   }
 
   // Re-seed only for a different product, never for a new object describing the
@@ -102,11 +140,13 @@ function ProductFields({ productId, product }: { productId: string; product: Edi
     seed(product)
   }
 
+  const savedStatus = writableStatus(product)
   const dirty =
     title !== product.title ||
     brandName !== (product.brandName ?? '') ||
     description !== (product.description ?? '') ||
-    categorySlug !== product.category.slug
+    categorySlug !== product.category.slug ||
+    status !== savedStatus
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -118,6 +158,7 @@ function ProductFields({ productId, product }: { productId: string; product: Edi
         ...(brandName !== (product.brandName ?? '') ? { brandName } : {}),
         ...(description !== (product.description ?? '') ? { description } : {}),
         ...(categorySlug !== product.category.slug ? { categorySlug } : {}),
+        ...(status !== savedStatus ? { status } : {}),
       },
       // The one re-seed the identity check above deliberately skips: what came
       // back is what the server stored, so the form shows that and reads clean.
@@ -127,11 +168,32 @@ function ProductFields({ productId, product }: { productId: string; product: Edi
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 rounded-lg border p-6">
-      <h1 className="text-lg font-semibold">Product details</h1>
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-lg font-semibold">Product details</h1>
+          {/* A draft is the only way to keep a listing out of search while it is
+              being worked on, so the control sits with the save it belongs to. */}
+          <div className="flex items-center gap-2">
+            <Switch
+              id="status"
+              checked={status === 'ACTIVE'}
+              onCheckedChange={(on) => setStatus(on ? 'ACTIVE' : 'DRAFT')}
+            />
+            <Label htmlFor="status">Active</Label>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground">{STATUS_HINT[status]}</p>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Title" htmlFor="title">
-          <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+        <Field label="Title" htmlFor="title" hint={`${title.length}/${TITLE_LIMIT} characters`}>
+          <Input
+            id="title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={TITLE_LIMIT}
+            required
+          />
         </Field>
         <Field label="Category" htmlFor="category">
           <CategorySelect
@@ -174,7 +236,15 @@ function ProductFields({ productId, product }: { productId: string; product: Edi
   )
 }
 
-function VariantRows({ productId, variants }: { productId: string; variants: SellerVariant[] }) {
+function VariantRows({
+  productId,
+  variants,
+  imageCount,
+}: {
+  productId: string
+  variants: SellerVariant[]
+  imageCount: number
+}) {
   const [adding, setAdding] = useState(false)
 
   return (
@@ -224,6 +294,45 @@ function VariantRows({ productId, variants }: { productId: string; variants: Sel
           onCancel={() => setAdding(false)}
         />
       )}
+
+      <Summary variants={variants} imageCount={imageCount} />
+    </div>
+  )
+}
+
+/**
+ * What the listing adds up to, from the saved rows rather than the fields being
+ * typed: the numbers a seller checks before publishing are the ones the shop will
+ * show, not the ones a half-finished edit would.
+ */
+function Summary({ variants, imageCount }: { variants: SellerVariant[]; imageCount: number }) {
+  // A variant's price is nullable, and a product priced entirely by nulls has no
+  // range to print.
+  const prices = variants.map((v) => v.price).filter((price): price is number => price != null)
+  const low = prices.length > 0 ? Math.min(...prices) : null
+  const high = prices.length > 0 ? Math.max(...prices) : null
+  const priceRange =
+    low === null || high === null
+      ? '—'
+      : low === high
+        ? formatPrice(low)
+        : `${formatPrice(low)} – ${formatPrice(high)}`
+  const totalStock = variants.reduce((sum, variant) => sum + variant.stockQty, 0)
+
+  return (
+    <div className="flex flex-wrap gap-5 border-t pt-4">
+      <SummaryCell label="Price range" value={priceRange} />
+      <SummaryCell label="Total stock" value={String(totalStock)} />
+      <SummaryCell label="Images" value={`${imageCount}/${MAX_IMAGES}`} />
+    </div>
+  )
+}
+
+function SummaryCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-sm font-bold">{value}</p>
     </div>
   )
 }
@@ -366,6 +475,7 @@ function VariantRow({
 }) {
   const { mutate, isPending, isError, error } = useUpdateVariant(productId)
   const remove = useDeleteVariant(productId)
+  const duplicate = useAddVariant(productId)
 
   const [label, setLabel] = useState(variant.label)
   const [sku, setSku] = useState(variant.sku)
@@ -423,6 +533,23 @@ function VariantRow({
     )
   }
 
+  /**
+   * A copy of the row as it reads now, not as it was last saved - the seller is
+   * looking at these numbers when they ask for a second one like it. SKUs are
+   * unique per product, so the copy gets the design's -COPY suffix to edit.
+   */
+  function duplicateRow() {
+    const priceValue = parsePrice(price)
+    const stockValue = parseStock(stockQty)
+    if (priceValue === null || stockValue === null) {
+      setInvalid(priceValue === null ? PRICE_ERROR : STOCK_ERROR)
+      return
+    }
+
+    setInvalid(null)
+    duplicate.mutate({ label, sku: `${sku}-COPY`, price: priceValue, stockQty: stockValue })
+  }
+
   return (
     <>
       <TableRow>
@@ -463,6 +590,15 @@ function VariantRow({
             <Button
               size="icon"
               variant="ghost"
+              aria-label={`Duplicate ${variant.sku}`}
+              disabled={duplicate.isPending}
+              onClick={duplicateRow}
+            >
+              <Copy className="size-4" aria-hidden />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
               aria-label={`Remove ${variant.sku}`}
               title={isOnlyVariant ? 'A product needs at least one variant' : undefined}
               disabled={isOnlyVariant || remove.isPending}
@@ -473,18 +609,47 @@ function VariantRow({
           </div>
         </TableCell>
       </TableRow>
-      {(invalid || isError || remove.isError) && (
+      {(invalid || isError || remove.isError || duplicate.isError) && (
         <TableRow>
           <TableCell colSpan={5} className="text-sm text-destructive" role="alert">
             {invalid ??
-              (isError
-                ? (error.detail ?? error.title)
-                : (remove.error?.detail ?? remove.error?.title))}
+              problemText(error) ??
+              problemText(remove.error) ??
+              problemText(duplicate.error)}
           </TableCell>
         </TableRow>
       )}
     </>
   )
+}
+
+/**
+ * Reordering is the whole list in one write, which is what the endpoint takes:
+ * a per-image position would need two of them to express a swap, and the gallery
+ * would be wrong in between. The response is the renumbered list, so the cached
+ * product takes it as it stands instead of refetching for it.
+ */
+function useReorderImages(productId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<SellerProductDetailData['images'], ProblemDetail, string[]>({
+    mutationFn: async (imageIds) => {
+      const { data, error } = await apiClient.PUT('/api/v1/products/{productId}/images/order', {
+        params: { path: { productId } },
+        body: { imageIds },
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: (images) => {
+      queryClient.setQueryData<SellerProductDetailData>(
+        sellerProductKeys.detail(productId),
+        (current) => (current ? { ...current, images } : current),
+      )
+      // The list's thumbnail is the product's first image, so a new cover
+      // changes the row too.
+      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
+    },
+  })
 }
 
 function Images({
@@ -496,11 +661,11 @@ function Images({
 }) {
   const upload = useUploadImages(productId)
   const remove = useDeleteImage(productId)
+  const reorder = useReorderImages(productId)
   const fileInput = useRef<HTMLInputElement>(null)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [skipped, setSkipped] = useState(0)
 
-  const MAX_IMAGES = 7
   const atCap = images.length >= MAX_IMAGES
   const remaining = MAX_IMAGES - images.length
 
@@ -529,6 +694,20 @@ function Images({
       { files, startPosition, onProgress: (done, total) => setProgress({ done, total }) },
       { onSettled: () => setProgress(null) },
     )
+  }
+
+  /**
+   * Same swap the create form does, but sent rather than held: nothing here is
+   * staged, so an order that only moved on screen would be gone on the next load.
+   */
+  function move(index: number, direction: -1 | 1) {
+    const target = index + direction
+    if (target < 0 || target >= images.length) {
+      return
+    }
+    const next = images.map((image) => image.id)
+    ;[next[index], next[target]] = [next[target], next[index]]
+    reorder.mutate(next)
   }
 
   const failures = upload.data?.failed ?? []
@@ -583,9 +762,12 @@ function Images({
         </p>
       )}
 
-      {(upload.isError || remove.isError) && (
+      {(upload.isError || remove.isError || reorder.isError) && (
         <p role="alert" className="text-sm text-destructive">
-          {errorText(upload.error) ?? errorText(remove.error) ?? 'Something went wrong'}
+          {errorText(upload.error) ??
+            errorText(remove.error) ??
+            errorText(reorder.error) ??
+            'Something went wrong'}
         </p>
       )}
 
@@ -611,15 +793,25 @@ function Images({
 
       {images.length > 0 && (
         <ul className="flex flex-wrap gap-3">
-          {images.map((image) => (
+          {images.map((image, index) => (
             <li key={image.id} className="flex flex-col items-center gap-1">
-              <div className="flex size-24 items-center justify-center overflow-hidden rounded-md border bg-muted">
+              <div className="relative flex size-24 items-center justify-center overflow-hidden rounded-md border bg-muted">
                 {image.status === 'STORED' ? (
                   <img src={image.url} alt="" className="size-full object-cover" />
                 ) : (
                   // PENDING rows are shown rather than hidden: an upload that
                   // never finished is the thing a seller most needs to notice.
                   <ImageOff className="size-5 text-muted-foreground" aria-hidden />
+                )}
+                {/* Position 0 is the thumbnail buyers see, named on the image
+                    rather than left to be inferred from where it sits. */}
+                {image.position === 0 && (
+                  <Badge
+                    variant="primary"
+                    className="absolute bottom-1 left-1 px-1.5 py-0 text-[10px] font-bold"
+                  >
+                    Cover
+                  </Badge>
                 )}
               </div>
               <div className="flex items-center gap-1">
@@ -637,12 +829,41 @@ function Images({
                   <Trash2 className="size-3" aria-hidden />
                 </Button>
               </div>
+              {/* Below the tile rather than beside the caption, so three buttons
+                  never make the tile wider than the thumbnail it sits under. */}
+              <div className="flex items-center gap-1">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-6"
+                  aria-label={`Move image ${image.position + 1} earlier`}
+                  disabled={index === 0 || reorder.isPending}
+                  onClick={() => move(index, -1)}
+                >
+                  <ArrowUp className="size-3" aria-hidden />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-6"
+                  aria-label={`Move image ${image.position + 1} later`}
+                  disabled={index === images.length - 1 || reorder.isPending}
+                  onClick={() => move(index, 1)}
+                >
+                  <ArrowDown className="size-3" aria-hidden />
+                </Button>
+              </div>
             </li>
           ))}
         </ul>
       )}
     </div>
   )
+}
+
+/** A mutation's failure as one line, or nothing when it hasn't failed. */
+function problemText(error: ProblemDetail | null): string | undefined {
+  return error ? (error.detail ?? error.title) : undefined
 }
 
 /**
@@ -664,10 +885,12 @@ function errorText(error: ProblemDetail | Error | null): string | undefined {
 function Field({
   label,
   htmlFor,
+  hint,
   children,
 }: {
   label: string
   htmlFor: string
+  hint?: string
   children: React.ReactNode
 }) {
   return (
@@ -676,6 +899,7 @@ function Field({
         {label}
       </label>
       {children}
+      {hint && <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }

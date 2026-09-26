@@ -1,8 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { server } from '@/test/msw/server'
 
 import { listSellerProducts, resetSellerProducts } from '@/test/msw/fixtures/sellerProducts'
 
@@ -86,6 +89,45 @@ describe('SellerAddProduct', () => {
     expect(screen.queryByLabelText('Variant 2 label')).not.toBeInTheDocument()
   })
 
+  /**
+   * Without this the only route to a draft is to publish the listing first and
+   * unpublish it afterwards - live in search for as long as that takes.
+   */
+  it('creates a new listing as a draft', async () => {
+    const bodies = captureCreateBodies()
+    renderPage()
+    await fillProduct({ price: '19.99', stockQty: '5' })
+
+    await userEvent.click(screen.getByRole('switch', { name: 'Active' }))
+    expect(screen.getByText(/hidden from shoppers until you activate it/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Products page')).toBeInTheDocument()
+    expect(bodies.at(-1)).toMatchObject({ title: 'Trail Backpack', status: 'DRAFT' })
+  })
+
+  /** The switch starts on, so the ordinary path still publishes. */
+  it('creates an active listing by default', async () => {
+    const bodies = captureCreateBodies()
+    renderPage()
+    await fillProduct({ price: '19.99', stockQty: '5' })
+
+    expect(screen.getByRole('switch', { name: 'Active' })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Products page')).toBeInTheDocument()
+    expect(bodies.at(-1)).toMatchObject({ status: 'ACTIVE' })
+  })
+
+  /** The same count the edit form shows, on the same field. */
+  it('counts the characters in the title against the limit', async () => {
+    renderPage()
+
+    expect(screen.getByText('0/120 characters')).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Title'), 'Trail Backpack')
+    expect(screen.getByText('14/120 characters')).toBeInTheDocument()
+  })
+
   it('stages, reorders, and removes images before upload', async () => {
     renderPage()
 
@@ -106,6 +148,22 @@ describe('SellerAddProduct', () => {
     expect(screen.getByRole('button', { name: 'Remove image 1' })).toBeInTheDocument()
   })
 })
+
+/**
+ * The POST body itself, since only the request says what the form sent; the
+ * fixture's product list doesn't store a status. Falls through to the default
+ * handler afterwards, so the create still behaves normally.
+ */
+function captureCreateBodies() {
+  const bodies: Record<string, unknown>[] = []
+  server.use(
+    http.post('http://localhost:8080/sellers/me/products', async ({ request }) => {
+      bodies.push((await request.clone().json()) as Record<string, unknown>)
+      return undefined
+    }),
+  )
+  return bodies
+}
 
 /** Everything the form needs before Save, with the one variant's numbers varied. */
 async function fillProduct({ price, stockQty }: { price: string; stockQty: string }) {

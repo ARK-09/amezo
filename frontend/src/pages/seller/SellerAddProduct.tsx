@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { CategorySelect } from '@/features/reference/components/CategorySelect'
 import {
   type StagedImageUpload,
@@ -12,6 +14,20 @@ import {
 } from '@/features/seller-portal/api/useSellerProducts'
 
 const MAX_IMAGES = 7
+
+/** The design's own limit; the API sets none. Same field, same count as editing. */
+const TITLE_LIMIT = 120
+
+/**
+ * The two statuses a new listing can be created with. ARCHIVED is not one of
+ * them: it is what deleting a product does.
+ */
+type WritableStatus = 'ACTIVE' | 'DRAFT'
+
+const STATUS_HINT: Record<WritableStatus, string> = {
+  ACTIVE: 'Visible in search and on your store page as soon as you save.',
+  DRAFT: 'Saved to your catalogue but hidden from shoppers until you activate it.',
+}
 
 interface VariantRow {
   label: string
@@ -69,6 +85,9 @@ export function SellerAddProduct() {
   const [title, setTitle] = useState('')
   const [brandName, setBrandName] = useState('')
   const [description, setDescription] = useState('')
+  // A listing has to be creatable as a draft: without it the only way to reach
+  // DRAFT is to publish the half-finished product first and unpublish it after.
+  const [status, setStatus] = useState<WritableStatus>('ACTIVE')
   // A category SLUG chosen from the system list - never typed. null until chosen.
   const [categorySlug, setCategorySlug] = useState<string | null>(null)
   const [variants, setVariants] = useState<VariantRow[]>([emptyVariant()])
@@ -150,6 +169,7 @@ export function SellerAddProduct() {
         brandName: brandName || null,
         description: description || null,
         categorySlug,
+        status,
         variants: priced,
       })
 
@@ -176,7 +196,20 @@ export function SellerAddProduct() {
 
   return (
     <div className="mx-auto max-w-2xl p-6">
-      <h1 className="mb-5 text-xl font-bold">Add product</h1>
+      <div className="mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-bold">Add product</h1>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="status"
+              checked={status === 'ACTIVE'}
+              onCheckedChange={(on) => setStatus(on ? 'ACTIVE' : 'DRAFT')}
+            />
+            <Label htmlFor="status">Active</Label>
+          </div>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">{STATUS_HINT[status]}</p>
+      </div>
 
       <form onSubmit={submit} className="flex flex-col gap-6">
         <div className="flex flex-col gap-3">
@@ -184,7 +217,16 @@ export function SellerAddProduct() {
             <label htmlFor="title" className="mb-1.5 block text-sm font-medium">
               Title
             </label>
-            <Input id="title" required value={title} onChange={(e) => setTitle(e.target.value)} />
+            <Input
+              id="title"
+              required
+              maxLength={TITLE_LIMIT}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {title.length}/{TITLE_LIMIT} characters
+            </p>
           </div>
           <div>
             <label htmlFor="brand" className="mb-1.5 block text-sm font-medium">

@@ -2213,6 +2213,10 @@ components:
         lines:
           type: array
           items: { $ref: '#/components/schemas/RefundRequestLine' }
+        # The seller's own account of what happened, newest last.
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/RefundEvent' }
         approvedAt: { type: string, format: date-time, nullable: true }
         declinedAt: { type: string, format: date-time, nullable: true }
         declineReason: { type: string, nullable: true }
@@ -2256,10 +2260,29 @@ components:
       required: [status]
       properties:
         status: { $ref: '#/components/schemas/RefundStatus' }
+        # The outcome the SELLER settles on, which need not be the one the buyer
+        # asked for - a replacement request can be settled with money, and the
+        # reverse. Without it the seller's choice could not be recorded at all
+        # and had to be inferred from whether an amount was approved.
+        resolution: { $ref: '#/components/schemas/RefundResolution' }
         approvedAmount: { type: number }
         declineReason: { type: string }
         returnTrackingNumber: { type: string }
+        # Shown to the buyer on the request's timeline. It is recorded against
+        # the transition it accompanied - see RefundEvent.
         note: { type: string }
+
+    RefundEvent:
+      type: object
+      description: >-
+        One step in a refund's history. The timeline is a read of these, not a
+        reconstruction from scattered timestamps, which is the only way a note
+        can be attached to the step it was written for.
+      required: [status, at]
+      properties:
+        status: { $ref: '#/components/schemas/RefundStatus' }
+        at: { type: string, format: date-time }
+        note: { type: string, nullable: true }
 
     StoreStatus:
       type: string

@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { PaginationBar } from '@/components/ui/pagination'
 import { ActiveFilterChips } from '@/features/search/components/ActiveFilterChips'
 import { FilterSidebar } from '@/features/search/components/FilterSidebar'
 import { ProductCardSkeleton } from '@/features/search/components/ProductCardSkeleton'
@@ -75,27 +76,16 @@ export function SearchResults() {
         {query.isSuccess && query.data.content.length > 0 && (
           <>
             <ProductGrid products={query.data.content} />
-            <div className="flex items-center justify-center gap-2 pt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={filters.page === 0}
-                onClick={() => setPage(filters.page - 1)}
-              >
-                Previous
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                Page {filters.page + 1} of {query.data.totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={filters.page + 1 >= query.data.totalPages}
-                onClick={() => setPage(filters.page + 1)}
-              >
-                Next
-              </Button>
-            </div>
+            {/* No range label or Per page here: the header above the grid
+                already prints the range, and this list's size is fixed. */}
+            {query.data.totalPages > 1 && (
+              <PaginationBar
+                className="pt-4"
+                page={filters.page}
+                totalPages={query.data.totalPages}
+                onPageChange={setPage}
+              />
+            )}
           </>
         )}
       </main>

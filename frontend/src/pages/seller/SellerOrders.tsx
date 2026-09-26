@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { PaginationBar } from '@/components/ui/pagination'
 import {
   Select,
   SelectContent,
@@ -30,7 +31,9 @@ import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
 import { formatMediumDate } from '@/lib/formatDate'
 import { formatPrice } from '@/lib/formatPrice'
 
-const PAGE_SIZE = 10
+/** The sizes the design's Per page select offers, and the one it opens on. */
+const PAGE_SIZES = [5, 10, 20, 50] as const
+const DEFAULT_SIZE = 10
 
 const STATUSES = [
   'PLACED',
@@ -58,6 +61,15 @@ function pageParam(raw: string | null) {
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0
 }
 
+/**
+ * Same treatment for ?size=: junk is the default, and ?size=10000 is a request
+ * for every order in one response. Only the offered sizes count.
+ */
+function sizeParam(raw: string | null) {
+  const parsed = Number(raw)
+  return PAGE_SIZES.some((size) => size === parsed) ? parsed : DEFAULT_SIZE
+}
+
 export function SellerOrders() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [openId, setOpenId] = useState<string | null>(null)
@@ -67,6 +79,7 @@ export function SellerOrders() {
   const status = searchParams.get('status') ?? 'all'
   const sort = searchParams.get('sort') ?? 'newest'
   const page = pageParam(searchParams.get('page'))
+  const size = sizeParam(searchParams.get('size'))
 
   // The box is controlled so it can never disagree with the list: "Clear
   // filters" and the Back button both rewrite ?q= underneath it, and a
@@ -85,9 +98,9 @@ export function SellerOrders() {
       status: status === 'all' ? undefined : (status as SellerOrderFilters['status']),
       sort: sort as SellerOrderFilters['sort'],
       page,
-      size: PAGE_SIZE,
+      size,
     }),
-    [q, status, sort, page],
+    [q, status, sort, page, size],
   )
 
   const query = useSellerOrderRows(filters)
@@ -268,28 +281,23 @@ export function SellerOrders() {
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={shownPage === 0}
-            onClick={() => patch({ page: String(shownPage - 1) })}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {shownPage + 1} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={shownPage + 1 >= totalPages}
-            onClick={() => patch({ page: String(shownPage + 1) })}
-          >
-            Next
-          </Button>
-        </div>
+      {/* Shown whenever there are rows, not only past page one: Per page is how
+          you get back from 50 to 5, and at 50 there is often only one page. */}
+      {rows.length > 0 && (
+        <PaginationBar
+          page={shownPage}
+          totalPages={totalPages}
+          onPageChange={(next) => patch({ page: String(next) })}
+          range={{
+            totalElements: total,
+            pageSize: size,
+            sizes: PAGE_SIZES,
+            // A new page size makes the old offset meaningless, so patch drops
+            // ?page= with it - as it does for any other filter change.
+            onSizeChange: (next) =>
+              patch({ size: next === DEFAULT_SIZE ? undefined : String(next) }),
+          }}
+        />
       )}
 
       <DetailDrawer

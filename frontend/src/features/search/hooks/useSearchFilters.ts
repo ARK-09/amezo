@@ -4,6 +4,16 @@ import { useSearchParams } from 'react-router'
 import type { SearchFilters, SortOption } from '../schema/types'
 import { DEFAULT_FILTERS } from '../schema/types'
 
+/**
+ * ?page=abc, ?page=-5 and ?page=1.7 used to reach the request as NaN or as an
+ * offset that answers with nothing. A page number is a whole one, zero or
+ * above, or it is 0 - the same reading the seller and buyer lists give it.
+ */
+function pageParam(raw: string | null) {
+  const parsed = Number(raw ?? 0)
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : DEFAULT_FILTERS.page
+}
+
 function parseFilters(params: URLSearchParams): SearchFilters {
   const priceMin = params.get('priceMin')
   const priceMax = params.get('priceMax')
@@ -17,7 +27,7 @@ function parseFilters(params: URLSearchParams): SearchFilters {
     priceMax: priceMax ? Number(priceMax) : undefined,
     inStockOnly: params.get('inStockOnly') === 'true',
     sort: (sort as SortOption | null) ?? DEFAULT_FILTERS.sort,
-    page: page ? Number(page) : DEFAULT_FILTERS.page,
+    page: pageParam(page),
   }
 }
 

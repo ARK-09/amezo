@@ -59,6 +59,25 @@ function seedOrders() {
   ])
 }
 
+/** Newest first, so Buyer1 leads the list and Buyer8 closes it. */
+function seedManyOrders(count: number) {
+  resetSellerOrders(
+    Array.from({ length: count }, (_, i) => ({
+      id: `cccccccc-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
+      buyerEmail: `buyer${i + 1}@example.com`,
+      placedAt: `2026-01-${String(count - i).padStart(2, '0')}T00:00:00Z`,
+      total: 50,
+      status: 'PLACED' as const,
+      lines: [line],
+    })),
+  )
+}
+
+/** The numbered buttons, away from the row and filter controls. */
+function pager() {
+  return within(screen.getByRole('navigation', { name: 'pagination' }))
+}
+
 describe('SellerOrders', () => {
   beforeEach(() => resetSellerOrders())
 
@@ -129,6 +148,53 @@ describe('SellerOrders', () => {
     })
     expect(router.state.location.search).toBe('')
     expect(await screen.findByText('Maya')).toBeInTheDocument()
+  })
+
+  it('pages by number, and the range label counts the short last page', async () => {
+    seedManyOrders(8)
+    renderPage('/seller/orders?size=5')
+
+    expect(await screen.findByText('Buyer1')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1\u20135 of 8')).toBeInTheDocument()
+
+    await userEvent.click(pager().getByRole('button', { name: '2' }))
+
+    expect(await screen.findByText('Buyer6')).toBeInTheDocument()
+    expect(screen.queryByText('Buyer1')).not.toBeInTheDocument()
+    // Three rows on the last page, not five - the label follows the rows.
+    expect(screen.getByText('Showing 6\u20138 of 8')).toBeInTheDocument()
+    expect(pager().getByRole('button', { name: '2' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('goes back to the first page when the page size changes', async () => {
+    seedManyOrders(8)
+    const router = renderWithHistory(['/seller/orders?size=5&page=1'])
+    await screen.findByText('Buyer6')
+
+    await userEvent.click(screen.getByLabelText('Rows per page'))
+    await userEvent.click(await screen.findByRole('option', { name: '20' }))
+
+    // Page 2 of a 5-a-page list is nowhere in a 20-a-page one, so ?page= goes
+    // with the size - the same reset every other filter does.
+    await waitFor(() => expect(router.state.location.search).toBe('?size=20'))
+    expect(await screen.findByText('Buyer1')).toBeInTheDocument()
+  })
+
+  it('ignores a page size that is not one of the offered ones', async () => {
+    const asked: (string | null)[] = []
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/orders', ({ request }) => {
+        asked.push(new URL(request.url).searchParams.get('size'))
+        return undefined // fall through to the default handler
+      }),
+    )
+    seedManyOrders(8)
+    // ?size=10000 asked the server for every order in one response.
+    renderPage('/seller/orders?size=10000')
+
+    await screen.findByText('Buyer1')
+    await waitFor(() => expect(asked.length).toBeGreaterThan(0))
+    expect(asked.every((size) => size === '10')).toBe(true)
   })
 
   it('floors a fractional page param before it reaches the request', async () => {

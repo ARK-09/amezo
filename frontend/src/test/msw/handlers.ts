@@ -498,9 +498,11 @@ export const handlers = [
   http.patch('http://localhost:8080/api/v1/refund-requests/:refundRequestId', async ({ params, request }) => {
     const body = (await request.json()) as {
       status: Parameters<typeof canTransition>[1]
+      resolution?: 'REFUND' | 'REPLACEMENT'
       approvedAmount?: number
       declineReason?: string
       returnTrackingNumber?: string
+      note?: string
     }
     const found = findRefundRequest(params.refundRequestId as string)
     if (!found) {
@@ -542,9 +544,19 @@ export const handlers = [
     return HttpResponse.json(
       updateRefundRequest(found.id, {
         status: body.status,
+        // The seller may settle a replacement request with money, or the
+        // reverse. Absent means they did not change the buyer's ask.
+        resolution: body.resolution ?? found.resolution,
         approvedAmount: body.approvedAmount ?? found.approvedAmount,
         declineReason: body.declineReason ?? found.declineReason,
         returnTrackingNumber: body.returnTrackingNumber ?? found.returnTrackingNumber,
+        // The note is recorded against the transition it accompanied. It used
+        // to be accepted and dropped, so a seller wrote it believing the buyer
+        // would see it and nobody ever did.
+        events: [
+          ...(found.events ?? []),
+          { status: body.status, at: now, note: body.note?.trim() || null },
+        ],
         ...(stamps[body.status] ?? {}),
       }),
     )
