@@ -92,14 +92,24 @@ export function SellerOrders() {
 
   const query = useSellerOrderRows(filters)
 
-  function patch(next: Record<string, string | undefined>) {
+  // `replace` swaps the current history entry instead of pushing a new one.
+  function patch(next: Record<string, string | undefined>, replace = false) {
     const params = new URLSearchParams(searchParams)
     for (const [key, value] of Object.entries(next)) {
       if (value && value !== 'all') params.set(key, value)
       else params.delete(key)
     }
     if (!('page' in next)) params.delete('page')
-    setSearchParams(params)
+    setSearchParams(params, { replace })
+  }
+
+  // A filter, a sort or a page is a navigation the seller may want to undo
+  // with Back; a keystroke is not. The first character pushes the one entry that
+  // Back escapes the search by, and every character after it replaces that entry
+  // - typing "jonas" used to leave five entries to press Back through.
+  function patchTerm(value: string) {
+    setTerm(value)
+    patch({ q: value }, Boolean(q))
   }
 
   const rows = query.data?.content ?? []
@@ -133,10 +143,7 @@ export function SellerOrders() {
           <input
             type="search"
             value={term}
-            onChange={(e) => {
-              setTerm(e.target.value)
-              patch({ q: e.target.value })
-            }}
+            onChange={(e) => patchTerm(e.target.value)}
             placeholder="Search order, recipient or email"
             aria-label="Search orders"
             className="h-9 w-full rounded-md border bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
