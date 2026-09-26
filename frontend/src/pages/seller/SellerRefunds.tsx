@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { PaginationBar } from '@/components/ui/pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -25,7 +26,8 @@ import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
 import { formatMediumDate } from '@/lib/formatDate'
 import { formatPrice } from '@/lib/formatPrice'
 
-const PAGE_SIZE = 10
+const PAGE_SIZES = [5, 10, 20, 50] as const
+const DEFAULT_PAGE_SIZE = 10
 
 /** The design opens on what needs a decision, not on everything. */
 const TABS: { value: string; label: string }[] = [
@@ -46,6 +48,12 @@ function pageParam(raw: string | null) {
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0
 }
 
+/** Same for ?size=: one of the four the selector offers, or the default. */
+function sizeParam(raw: string | null) {
+  const parsed = Number(raw)
+  return PAGE_SIZES.includes(parsed as (typeof PAGE_SIZES)[number]) ? parsed : DEFAULT_PAGE_SIZE
+}
+
 export function SellerRefunds() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [openId, setOpenId] = useState<string | null>(null)
@@ -54,6 +62,7 @@ export function SellerRefunds() {
   const status = searchParams.get('status') ?? 'REQUESTED'
   const q = searchParams.get('q') ?? ''
   const page = pageParam(searchParams.get('page'))
+  const size = sizeParam(searchParams.get('size'))
 
   // The box is controlled so it can never disagree with the list: a tab switch
   // or the Back button rewrites ?q= underneath it, and a defaultValue input
@@ -71,9 +80,9 @@ export function SellerRefunds() {
       status: status === 'all' ? undefined : (status as RefundStatus),
       q: q || undefined,
       page,
-      size: PAGE_SIZE,
+      size,
     }),
-    [status, q, page],
+    [status, q, page, size],
   )
 
   const query = useSellerRefundRequests(filters)
@@ -85,6 +94,8 @@ export function SellerRefunds() {
       if (value) params.set(key, value)
       else params.delete(key)
     }
+    // Any other change - a tab, the search, the page size - starts again at
+    // the first page.
     if (!('page' in next)) params.delete('page')
     setSearchParams(params, { replace })
   }
@@ -217,28 +228,21 @@ export function SellerRefunds() {
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={shownPage === 0}
-            onClick={() => patch({ page: String(shownPage - 1) })}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {shownPage + 1} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={shownPage + 1 >= totalPages}
-            onClick={() => patch({ page: String(shownPage + 1) })}
-          >
-            Next
-          </Button>
-        </div>
+      {rows.length > 0 && (
+        // The same footer as every other paged list: range, Per page, and
+        // Prev · 1 2 3 · Next. A size change is a filter change, so patch()
+        // drops ?page= with it.
+        <PaginationBar
+          page={shownPage}
+          totalPages={totalPages}
+          onPageChange={(next) => patch({ page: next === 0 ? undefined : String(next) })}
+          range={{
+            totalElements: total,
+            pageSize: size,
+            sizes: PAGE_SIZES,
+            onSizeChange: (next) => patch({ size: String(next) }),
+          }}
+        />
       )}
 
       <DetailDrawer

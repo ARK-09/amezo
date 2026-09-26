@@ -1,10 +1,12 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { createAppQueryClient } from '@/lib/api/queryClient'
+import { server } from '@/test/msw/server'
 
 import { SellerRefunds } from './SellerRefunds'
 
@@ -15,6 +17,40 @@ function renderPage(initialEntry = '/seller/refunds') {
         <SellerRefunds />
       </MemoryRouter>
     </QueryClientProvider>,
+  )
+}
+
+/**
+ * Eight requests, paged the way the handler pages the fixture. The seeded queue
+ * is five requests across five statuses, which is one page however it is sliced.
+ */
+function serveEightRequests() {
+  const rows = Array.from({ length: 8 }, (_, index) => ({
+    id: `many-${index}`,
+    reference: `ref_many${index}`,
+    status: 'REQUESTED' as const,
+    resolution: 'REFUND' as const,
+    requestedAt: '2026-09-24T09:00:00Z',
+    requestedAmount: 10 + index,
+    approvedAmount: null,
+    currency: 'USD',
+    orderId: `order-many-${index}`,
+    orderReference: `ord_many${index}`,
+    returnTrackingNumber: null,
+  }))
+
+  server.use(
+    http.get('http://localhost:8080/api/v1/sellers/me/refund-requests', ({ request }) => {
+      const url = new URL(request.url)
+      const page = Number(url.searchParams.get('page') ?? 0)
+      const size = Number(url.searchParams.get('size') ?? 10)
+      return HttpResponse.json({
+        content: rows.slice(page * size, page * size + size),
+        page,
+        totalElements: rows.length,
+        totalPages: Math.ceil(rows.length / size) || 1,
+      })
+    }),
   )
 }
 
@@ -131,8 +167,9 @@ describe('SellerRefunds', () => {
     // be derived from the current page, so it closed on the seller the instant
     // their decision succeeded.
     const settled = await screen.findByRole('dialog')
-    // Once as the status badge, once as the completed step in the stepper.
-    expect(await within(settled).findAllByText('Approved')).toHaveLength(2)
+    // Once as the status badge, once as the completed step in the stepper, and
+    // once more in the History log the panel now keeps.
+    expect(await within(settled).findAllByText('Approved')).toHaveLength(3)
 
     // Close it, and the approved request has left the "needs a decision" queue.
     // Asserted after closing because the drawer is modal - Radix marks the rest
@@ -159,6 +196,42 @@ describe('SellerRefunds', () => {
     expect(
       within(drawer).getByRole('button', { name: 'Approve and request return' }),
     ).toBeDisabled()
+  })
+
+  it('walks the queue with numbered pages and a range label', async () => {
+    serveEightRequests()
+    renderPage('/seller/refunds?size=5')
+
+    expect(await screen.findByText('Showing 1\u20135 of 8')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '1' })).toHaveAttribute('aria-current', 'page')
+    // Nowhere to go back to from the first page.
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled()
+
+    await userEvent.click(screen.getByRole('button', { name: '2' }))
+
+    expect(await screen.findByText('Showing 6\u20138 of 8')).toBeInTheDocument()
+    expect(screen.getByText('ref_many7')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Previous page' }))
+
+    expect(await screen.findByText('Showing 1\u20135 of 8')).toBeInTheDocument()
+    expect(screen.getByText('ref_many0')).toBeInTheDocument()
+  })
+
+  it('resizes the page from the per-page selector, and starts again at the first page', async () => {
+    serveEightRequests()
+    renderPage('/seller/refunds?size=5&page=1')
+
+    expect(await screen.findByText('Showing 6\u20138 of 8')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Rows per page' }))
+    await userEvent.click(await screen.findByRole('option', { name: '20' }))
+
+    // A bigger page from halfway through the old one would have started past
+    // the end of the list.
+    expect(await screen.findByText('Showing 1\u20138 of 8')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '2' })).not.toBeInTheDocument()
   })
 
   it('links the drawer to the same panel full page', async () => {
