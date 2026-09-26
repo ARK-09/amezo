@@ -2,6 +2,7 @@ import { ChevronRight, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PaginationBar } from '@/components/ui/pagination'
 import {
@@ -13,6 +14,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
+  useBuyerOrderFacets,
   useBuyerOrders,
   type BuyerOrderFilters,
   type BuyerOrderGroup,
@@ -102,6 +104,11 @@ export function MyOrders() {
   )
 
   const query = useBuyerOrders(filters)
+  // The same window the list is showing, spelled the way each endpoint takes
+  // it: a `from` date for the list, the period token for the counts. No
+  // `group` - the strip describes every bucket, so narrowing the counts by the
+  // tab being viewed would zero the other three.
+  const facets = useBuyerOrderFacets({ q: q || undefined, period })
 
   function patch(next: Record<string, string | undefined>, replace = false) {
     const params = new URLSearchParams(searchParams)
@@ -203,6 +210,7 @@ export function MyOrders() {
       <div className="mb-5 flex flex-wrap gap-2 border-b pb-4">
         {TABS.map((tab) => {
           const isActive = tab.value === group
+          const count = facets.data?.get(tab.value)
           return (
             <button
               key={tab.value}
@@ -217,6 +225,25 @@ export function MyOrders() {
               )}
             >
               {tab.label}
+              {/* The counts are a second request. Until it lands - or for good,
+                  if it fails while the list succeeds - the tab is just its
+                  label: a badge short of a number still filters, and a strip
+                  that waited for one would hold up a list that had arrived. */}
+              {count !== undefined && (
+                <>
+                  {/* A space between the two text runs, or the tab is named
+                      "Delivered1" to a screen reader. Flex drops a
+                      whitespace-only item, so the 7px gap is still the gap. */}{' '}
+                  <Badge
+                    className={cn(
+                      'border-0 bg-transparent p-0 text-xs font-semibold',
+                      isActive ? 'text-background/65' : 'text-muted-foreground',
+                    )}
+                  >
+                    {count}
+                  </Badge>
+                </>
+              )}
             </button>
           )
         })}

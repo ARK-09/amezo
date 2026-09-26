@@ -517,6 +517,7 @@ export const handlers = [
   }),
 
   http.get('http://localhost:8080/api/v1/orders', ({ request }) => {
+    if (!currentBuyer()) return unauthorized()
     const url = new URL(request.url)
     const group = url.searchParams.get('group') ?? 'all'
     const q = url.searchParams.get('q')?.toLowerCase()

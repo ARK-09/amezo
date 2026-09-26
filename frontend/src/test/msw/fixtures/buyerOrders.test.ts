@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { components } from '@/lib/api/schema'
+
+import { signInBuyerSession } from './sellerAuth'
 
 /**
  * The fixture layer is the contract the buyer's order screens are written
@@ -57,6 +59,10 @@ async function raiseRefund(orderId: string, orderLineId: string) {
 }
 
 describe('buyer order refund fields', () => {
+  // The orders endpoints are buyer routes and answer 401 without a session,
+  // the way the real ones do.
+  beforeEach(() => signInBuyerSession({ buyerIdentityId: 'buyer-1', email: 'maya@example.com' }))
+
   it('serves the one seeded record rather than a second copy of it', async () => {
     const detail = await detailOf(IN_TRANSIT)
 

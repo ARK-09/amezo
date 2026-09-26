@@ -3,10 +3,11 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createAppQueryClient } from '@/lib/api/queryClient'
 import { listBuyerOrders } from '@/test/msw/fixtures/buyerOrders'
+import { signInBuyerSession } from '@/test/msw/fixtures/sellerAuth'
 import { server } from '@/test/msw/server'
 
 import { MyOrders } from './MyOrders'
@@ -61,6 +62,14 @@ function seedManyOrders(count: number) {
   )
 }
 
+/**
+ * The counts endpoint answers 401 without one, so a test that wants numbers on
+ * the tabs has to arrive signed in - exactly as the real page does.
+ */
+function signIn() {
+  signInBuyerSession({ buyerIdentityId: 'buyer-1111', email: 'rhea@example.com' })
+}
+
 /** The numbered buttons, away from the tabs and the cards. */
 function pager() {
   return within(screen.getByRole('navigation', { name: 'pagination' }))
@@ -70,6 +79,11 @@ const HEADPHONES = 'Wireless Noise-Cancelling Headphones'
 const LAPTOP = '14" Ultrabook Laptop, 16GB RAM'
 
 describe('MyOrders', () => {
+  // Every buyer route needs a session, the orders list included - the fixture
+  // used to serve it to anyone, which let these tests pass against behaviour the
+  // real API does not have.
+  beforeEach(signIn)
+
   it('lists the buyer’s orders with their delivery state', async () => {
     renderPage()
 
@@ -129,10 +143,82 @@ describe('MyOrders', () => {
     renderPage()
     await screen.findByText(HEADPHONES)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Delivered' }))
+    await userEvent.click(screen.getByRole('button', { name: /^Delivered/ }))
 
     expect(await screen.findByText(LAPTOP)).toBeInTheDocument()
     expect(screen.queryByText(HEADPHONES)).not.toBeInTheDocument()
+  })
+
+  it('carries a count on every tab', async () => {
+    signIn()
+    renderPage()
+
+    // Two orders: one in transit with a return open on it, one delivered. Every
+    // bucket is counted, so the same order shows up under more than one tab.
+    expect(await screen.findByRole('button', { name: 'All orders 2' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'In progress 1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delivered 1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refunds & returns 1' })).toBeInTheDocument()
+  })
+
+  it('leaves the counts alone when a tab is chosen', async () => {
+    signIn()
+    const asked: string[] = []
+    server.use(
+      http.get('http://localhost:8080/api/v1/orders/facets', ({ request }) => {
+        asked.push(new URL(request.url).search)
+        return undefined // fall through to the real handler
+      }),
+    )
+    renderPage()
+    await screen.findByRole('button', { name: 'All orders 2' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delivered 1' }))
+    expect(await screen.findByText(LAPTOP)).toBeInTheDocument()
+    expect(screen.queryByText(HEADPHONES)).not.toBeInTheDocument()
+
+    // The strip describes every bucket, not the one being viewed: the list is
+    // down to a single delivered order and the other three counts still stand.
+    expect(screen.getByRole('button', { name: 'All orders 2' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'In progress 1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refunds & returns 1' })).toBeInTheDocument()
+    // And no second request: the group is not part of what was asked.
+    expect(asked).toEqual(['?period=12m'])
+  })
+
+  it('starts from the first page again when a tab changes', async () => {
+    seedManyOrders(8)
+    const router = renderWithHistory(['/orders?size=5&page=1'])
+    await screen.findByText('ord_paged_6')
+
+    await userEvent.click(screen.getByRole('button', { name: /^Delivered/ }))
+
+    // Page 2 of one bucket means nothing in the next: a tab resets ?page= like
+    // every other filter, and pushes so Back undoes it.
+    await waitFor(() => expect(router.state.location.search).toBe('?size=5&group=delivered'))
+    expect(await screen.findByText('ord_paged_1')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1\u20135 of 8 orders')).toBeInTheDocument()
+  })
+
+  it('still lists the orders when the counts fail', async () => {
+    signIn()
+    server.use(
+      http.get('http://localhost:8080/api/v1/orders/facets', () =>
+        HttpResponse.json(
+          { type: 'about:blank', title: 'Internal error', status: 500 },
+          { status: 500 },
+        ),
+      ),
+    )
+    renderPage()
+
+    // A tab short of its badge still filters; a page that waited on the counts
+    // would show nothing at all because of a number.
+    expect(await screen.findByText(HEADPHONES)).toBeInTheDocument()
+    expect(screen.queryByText("Couldn't load your orders")).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /^Delivered/ }))
+    expect(await screen.findByText(LAPTOP)).toBeInTheDocument()
   })
 
   it('reads a page param that is not a number as the first page', async () => {
@@ -228,7 +314,7 @@ describe('MyOrders', () => {
     const router = renderWithHistory(['/orders'])
     await screen.findByText(HEADPHONES)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Delivered' }))
+    await userEvent.click(screen.getByRole('button', { name: /^Delivered/ }))
     await screen.findByText(LAPTOP)
     expect(router.state.location.search).toBe('?group=delivered')
 
