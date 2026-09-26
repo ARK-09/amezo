@@ -330,7 +330,7 @@ export function SellerDashboard() {
 
     if (key === 'ship') {
       return (
-        <Panel key={key} {...shared} title="Waiting to ship" action={<PanelLink to="/seller/orders?status=PLACED">Orders</PanelLink>}>
+        <Panel key={key} {...shared} title="Waiting to ship" action={<PanelLink to="/seller/orders?group=to_pack">Orders</PanelLink>}>
           <WidgetList
             rows={shipQueue.data?.content ?? []}
             rowKey={(order) => order.id}

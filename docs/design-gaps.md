@@ -104,7 +104,7 @@ The design renders an SVG donut with a centre total and a swatch legend.
 bars. `CategoryShare` already returns everything needed and recharts is already a
 dependency.
 
-## 8. Status tab strips with counts and money values · M, needs API for the numbers
+## 8. Status tab strips with counts and money values · done
 
 Seller Orders uses a 6-tab strip (All / To pack / Ready for pickup / With Amezo /
 Delivered / Refunded), each tab showing **both** a count and that bucket's
@@ -117,6 +117,25 @@ My Orders' tabs have no counts.
 
 Converting the control to tabs is S. The counts and bucket values need either 5–6
 parallel queries or a new counts endpoint — the contract has neither.
+
+
+**Done.** Seller Orders gained the six-tab strip with a count and bucket revenue
+per tab, replacing the status `<Select>`; Seller Refunds and My Orders gained
+counts. The numbers come from three `facets` endpoints that ignore the tab being
+viewed, so the strip always describes every bucket. `GET .../sellers/me/orders`
+gained a `group` param because the design's tabs are coarser than status.
+
+Two things left short of the design, both for want of data rather than effort:
+the refunds header's "$X at stake" (refund facets carry no money), and the
+design's 4-tab refund set, whose "Settled" is not a `RefundStatus` and would
+need exactly the translation table the facet keys exist to avoid.
+
+**Known a11y follow-up:** the seller strips use Radix `Tabs` with no
+`TabsContent`, so each trigger's `aria-controls` names an element that does not
+exist — the thing a tab controls here is the table below, outside the component.
+Pre-existing on Seller Refunds and not widened, but it wants fixing in
+`components/ui/tabs.tsx` or by moving the strips to buttons with `aria-pressed`,
+which is what My Orders does.
 
 ## 9. Numbered pagination, per-page selector, range label · S
 

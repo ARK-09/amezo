@@ -348,8 +348,19 @@ export const handlers = [
     const rows = listRefundRequests().filter(
       (row) => !q || `${row.reference} ${row.buyerName ?? ''}`.toLowerCase().includes(q),
     )
-    // Keyed by RefundStatus, which is what the list's own status filter takes.
-    const statuses = ['REQUESTED', 'APPROVED', 'AWAITING_RETURN', 'REFUNDED', 'DECLINED']
+    // Every RefundStatus, which is what the list's own status filter takes. A
+    // short list here would leave a real bucket with no count while the tab for
+    // it still rendered.
+    const statuses: string[] = [
+      'REQUESTED',
+      'APPROVED',
+      'AWAITING_RETURN',
+      'RETURN_RECEIVED',
+      'REFUNDED',
+      'REPLACEMENT_SENT',
+      'DECLINED',
+      'CANCELLED',
+    ]
     return HttpResponse.json({
       facets: [
         { key: 'all', count: rows.length, value: null, currency: null },

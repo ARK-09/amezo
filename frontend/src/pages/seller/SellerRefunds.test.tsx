@@ -54,6 +54,26 @@ function serveEightRequests() {
   )
 }
 
+/**
+ * One bucket of the tab strip. Matched on the leading label because the rest of
+ * the accessible name is the count, which arrives a request later.
+ */
+function tab(label: string) {
+  return screen.getByRole('tab', { name: new RegExp(`^${label}`) })
+}
+
+/** Serves the facets endpoint an error while the queue goes on answering. */
+function breakFacets() {
+  server.use(
+    http.get('http://localhost:8080/api/v1/sellers/me/refund-requests/facets', () =>
+      HttpResponse.json(
+        { type: 'about:blank', title: 'Internal Server Error', status: 500 },
+        { status: 500 },
+      ),
+    ),
+  )
+}
+
 /** A real history, so a test can press Back the way a browser does. */
 function renderWithHistory(entries: string[]) {
   const router = createMemoryRouter([{ path: '/seller/refunds', Component: SellerRefunds }], {
@@ -83,8 +103,70 @@ describe('SellerRefunds', () => {
     renderPage()
     await screen.findByText('ref_4d90b12c')
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Awaiting return' }))
+    await userEvent.click(tab('Awaiting return'))
 
+    expect(await screen.findByText('ref_90ce34aa')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('ref_4d90b12c')).not.toBeInTheDocument())
+  })
+
+  it('counts every bucket on the tab strip', async () => {
+    renderPage()
+    await screen.findByText('ref_4d90b12c')
+
+    // Three waiting, one awaiting a return, one declined - five in all.
+    await waitFor(() =>
+      expect(within(tab('Needs a decision')).getByText('3')).toBeInTheDocument(),
+    )
+    expect(within(tab('Awaiting return')).getByText('1')).toBeInTheDocument()
+    expect(within(tab('Declined')).getByText('1')).toBeInTheDocument()
+    expect(within(tab('Refunded')).getByText('0')).toBeInTheDocument()
+    expect(within(tab('All')).getByText('5')).toBeInTheDocument()
+
+    expect(screen.getByText('3 waiting on you · 5 requests total')).toBeInTheDocument()
+
+    // Refund buckets have no money to total, so no tab claims one.
+    expect(tab('Needs a decision')).not.toHaveTextContent('$')
+  })
+
+  it('keeps the counts on every bucket while one of them is being viewed', async () => {
+    renderPage()
+    await waitFor(() =>
+      expect(within(tab('Needs a decision')).getByText('3')).toBeInTheDocument(),
+    )
+
+    await userEvent.click(tab('Awaiting return'))
+    expect(await screen.findByText('ref_90ce34aa')).toBeInTheDocument()
+
+    // The facets request ignores the tab on purpose: narrowed by it, the five
+    // buckets the seller is not looking at would all read zero.
+    expect(within(tab('Needs a decision')).getByText('3')).toBeInTheDocument()
+    expect(within(tab('All')).getByText('5')).toBeInTheDocument()
+  })
+
+  it('starts the bucket again at the first page', async () => {
+    serveEightRequests()
+    const router = renderWithHistory(['/seller/refunds?size=5&page=1'])
+    await screen.findByText('Showing 6–8 of 8')
+
+    await userEvent.click(tab('All'))
+
+    // Page 2 of the old bucket means nothing in the new one, so a tab drops
+    // ?page= the way the search and the page size do.
+    await waitFor(() => expect(router.state.location.search).toBe('?size=5&status=all'))
+    expect(await screen.findByText('Showing 1–5 of 8')).toBeInTheDocument()
+  })
+
+  it('still lists the queue when the counts fail', async () => {
+    breakFacets()
+    renderPage()
+
+    // The strip is a second request. Losing it costs the numbers on the tabs
+    // and the header line - not the tabs, and not the queue under them.
+    expect(await screen.findByText('ref_4d90b12c')).toBeInTheDocument()
+    expect(await screen.findByText('3 requests')).toBeInTheDocument()
+    expect(tab('Awaiting return')).toHaveTextContent('Awaiting return')
+
+    await userEvent.click(tab('Awaiting return'))
     expect(await screen.findByText('ref_90ce34aa')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('ref_4d90b12c')).not.toBeInTheDocument())
   })
@@ -140,7 +222,7 @@ describe('SellerRefunds', () => {
     expect(await screen.findByText('ref_4d90b12c')).toBeInTheDocument()
 
     // A tab is a navigation, so it still leaves an entry to Back out of.
-    await userEvent.click(screen.getByRole('tab', { name: 'Awaiting return' }))
+    await userEvent.click(tab('Awaiting return'))
     await waitFor(() => expect(router.state.location.search).toBe('?status=AWAITING_RETURN'))
 
     await act(async () => {

@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http } from 'msw'
+import { http, HttpResponse } from 'msw'
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -78,6 +78,26 @@ function pager() {
   return within(screen.getByRole('navigation', { name: 'pagination' }))
 }
 
+/**
+ * One bucket of the tab strip. Matched on the leading label because the rest of
+ * the accessible name is the count and the money, which arrive a request later.
+ */
+function tab(label: string) {
+  return screen.getByRole('tab', { name: new RegExp(`^${label}`) })
+}
+
+/** Serves the facets endpoint an error while the list goes on answering. */
+function breakFacets() {
+  server.use(
+    http.get('http://localhost:8080/api/v1/sellers/me/orders/facets', () =>
+      HttpResponse.json(
+        { type: 'about:blank', title: 'Internal Server Error', status: 500 },
+        { status: 500 },
+      ),
+    ),
+  )
+}
+
 describe('SellerOrders', () => {
   beforeEach(() => resetSellerOrders())
 
@@ -98,16 +118,96 @@ describe('SellerOrders', () => {
     expect(within(firstRow).getByText('Maya')).toBeInTheDocument()
   })
 
-  it('filters by status', async () => {
+  it('filters to a bucket from the tab strip', async () => {
     seedOrders()
     renderPage()
     await screen.findByText('Maya')
 
-    await userEvent.click(screen.getByLabelText('Filter by status'))
-    await userEvent.click(await screen.findByRole('option', { name: 'Shipped' }))
+    // "With Amezo" is three carrier statuses at once, which the status filter
+    // this strip replaced could not express.
+    await userEvent.click(tab('With Amezo'))
 
     expect(await screen.findByText('Jonas')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('Maya')).not.toBeInTheDocument())
+  })
+
+  it('shows a count and that bucket’s revenue on every tab', async () => {
+    seedOrders()
+    renderPage()
+    await screen.findByText('Maya')
+
+    const all = await screen.findByRole('tab', { name: /^All orders/ })
+    await waitFor(() => expect(within(all).getByText('2')).toBeInTheDocument())
+    expect(all).toHaveTextContent('$170.00')
+
+    // $50 placed and $120 shipped, counted into the two buckets that hold them.
+    expect(within(tab('To pack')).getByText('1')).toBeInTheDocument()
+    expect(tab('To pack')).toHaveTextContent('$50.00')
+    expect(within(tab('With Amezo')).getByText('1')).toBeInTheDocument()
+    expect(tab('With Amezo')).toHaveTextContent('$120.00')
+    // An empty bucket still reports, rather than going blank.
+    expect(within(tab('Delivered')).getByText('0')).toBeInTheDocument()
+
+    expect(
+      screen.getByText('1 to pack · 0 waiting on Amezo pickup · 2 orders total'),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the counts on every bucket while one of them is being viewed', async () => {
+    seedOrders()
+    renderPage()
+    await waitFor(() => expect(within(tab('To pack')).getByText('1')).toBeInTheDocument())
+
+    await userEvent.click(tab('With Amezo'))
+    expect(await screen.findByText('Jonas')).toBeInTheDocument()
+
+    // The facets request deliberately ignores the tab: narrowed by it, the
+    // five buckets the seller is not looking at would all read zero.
+    expect(within(tab('To pack')).getByText('1')).toBeInTheDocument()
+    expect(within(tab('All orders')).getByText('2')).toBeInTheDocument()
+    expect(
+      screen.getByText('1 to pack · 0 waiting on Amezo pickup · 2 orders total'),
+    ).toBeInTheDocument()
+  })
+
+  it('starts the bucket again at the first page', async () => {
+    seedManyOrders(8)
+    const router = renderWithHistory(['/seller/orders?size=5&page=1'])
+    await screen.findByText('Buyer6')
+
+    await userEvent.click(tab('To pack'))
+
+    // Page 2 of the old bucket means nothing in the new one, so a tab drops
+    // ?page= the way every other filter does.
+    await waitFor(() => expect(router.state.location.search).toBe('?size=5&group=to_pack'))
+    expect(await screen.findByText('Buyer1')).toBeInTheDocument()
+  })
+
+  it('still lists the orders when the counts fail', async () => {
+    breakFacets()
+    seedOrders()
+    renderPage()
+
+    // The strip is a second request. Losing it costs the numbers on the tabs
+    // and the header line - not the tabs, and not the list under them.
+    expect(await screen.findByText('Maya')).toBeInTheDocument()
+    expect(await screen.findByText('2 orders')).toBeInTheDocument()
+    expect(tab('With Amezo')).toHaveTextContent('With Amezo')
+
+    await userEvent.click(tab('With Amezo'))
+    expect(await screen.findByText('Jonas')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Maya')).not.toBeInTheDocument())
+  })
+
+  it('lands a ?status= link on the tab that holds it', async () => {
+    seedOrders()
+    // The dashboard's "Waiting to ship" panel still links in this way, from
+    // before the buckets existed.
+    renderPage('/seller/orders?status=PLACED')
+
+    expect(await screen.findByText('Maya')).toBeInTheDocument()
+    expect(screen.queryByText('Jonas')).not.toBeInTheDocument()
+    expect(tab('To pack')).toHaveAttribute('aria-selected', 'true')
   })
 
   it('searches by recipient', async () => {
@@ -138,10 +238,10 @@ describe('SellerOrders', () => {
     expect(router.state.location.search).toBe('')
     expect(await screen.findByText('Maya')).toBeInTheDocument()
 
-    // A filter is a navigation, so it still leaves an entry to Back out of.
-    await userEvent.click(screen.getByLabelText('Filter by status'))
-    await userEvent.click(await screen.findByRole('option', { name: 'Shipped' }))
-    await waitFor(() => expect(router.state.location.search).toBe('?status=SHIPPED'))
+    // A tab is a filter, and a filter is a navigation, so it still leaves an
+    // entry to Back out of.
+    await userEvent.click(tab('With Amezo'))
+    await waitFor(() => expect(router.state.location.search).toBe('?group=with_amezo'))
 
     await act(async () => {
       await router.navigate(-1)

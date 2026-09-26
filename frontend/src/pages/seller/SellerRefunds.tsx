@@ -13,7 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   useSellerRefundRequests,
   type RefundStatus,
@@ -21,7 +20,9 @@ import {
   type SellerRefundFilters,
 } from '@/features/refunds/api/useRefundRequests'
 import { RefundDecisionPanel } from '@/features/refunds/components/RefundDecisionPanel'
+import { useSellerRefundFacets } from '@/features/seller-portal/api/useSellerFacets'
 import { DetailDrawer } from '@/features/seller-portal/components/DetailDrawer'
+import { FacetTabs } from '@/features/seller-portal/components/FacetTabs'
 import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
 import { formatMediumDate } from '@/lib/formatDate'
 import { formatPrice } from '@/lib/formatPrice'
@@ -29,7 +30,11 @@ import { formatPrice } from '@/lib/formatPrice'
 const PAGE_SIZES = [5, 10, 20, 50] as const
 const DEFAULT_PAGE_SIZE = 10
 
-/** The design opens on what needs a decision, not on everything. */
+/**
+ * The design opens on what needs a decision, not on everything. Each value is a
+ * RefundStatus, which is both what ?status= takes and what the facets endpoint
+ * keys its counts by - so a tab needs no translation to become either.
+ */
 const TABS: { value: string; label: string }[] = [
   { value: 'REQUESTED', label: 'Needs a decision' },
   { value: 'AWAITING_RETURN', label: 'Awaiting return' },
@@ -86,6 +91,10 @@ export function SellerRefunds() {
   )
 
   const query = useSellerRefundRequests(filters)
+  // A second request, on the search alone: the strip shows every bucket at
+  // once, so narrowing it by the tab being viewed would zero the other five.
+  // Its failure costs the numbers and nothing else.
+  const facetsQuery = useSellerRefundFacets(q || undefined)
 
   // `replace` swaps the current history entry instead of pushing a new one.
   function patch(next: Record<string, string | undefined>, replace = false) {
@@ -115,6 +124,20 @@ export function SellerRefunds() {
   // A ?page= past the end comes back empty; don't also print a page number that
   // doesn't exist, and let Previous walk back into the range that does.
   const shownPage = Math.min(page, totalPages - 1)
+
+  // The design's header line. Drawn from the facets, which count every bucket,
+  // where the line it replaces counted only the tab being viewed. Without them
+  // it says what it always said. Refund buckets carry no money - the endpoint
+  // returns a null value for each - so there is no total to add.
+  const countOf = (key: string) => facetsQuery.data?.find((facet) => facet.key === key)?.count
+  const waiting = countOf('REQUESTED')
+  const allRequests = countOf('all')
+  const summary =
+    waiting !== undefined && allRequests !== undefined
+      ? `${waiting} waiting on you · ${allRequests} request${allRequests === 1 ? '' : 's'} total`
+      : query.isLoading
+        ? 'Loading…'
+        : `${total} request${total === 1 ? '' : 's'}`
   // Snapshotted when the drawer opens. Acting on a record usually moves it
   // out of the bucket being viewed - deriving the drawer from the current
   // page meant it slammed shut the instant the action succeeded, before the
@@ -125,20 +148,17 @@ export function SellerRefunds() {
     <div className="flex flex-col gap-5">
       <div>
         <h1 className="text-xl font-bold">Refunds</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {query.isLoading ? 'Loading…' : `${total} request${total === 1 ? '' : 's'}`}
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{summary}</p>
       </div>
 
-      <Tabs value={status} onValueChange={(value) => patch({ status: value })}>
-        <TabsList className="flex-wrap">
-          {TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value}>
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      <FacetTabs
+        label="Filter refund requests by status"
+        tabs={TABS}
+        value={status}
+        facets={facetsQuery.data}
+        isPending={facetsQuery.isPending}
+        onValueChange={(value) => patch({ status: value })}
+      />
 
       <div className="relative max-w-[360px]">
         <Search
