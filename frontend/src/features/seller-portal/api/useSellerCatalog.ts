@@ -1,5 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { sellerOrderKeys } from '@/features/seller-portal/api/useSellerOrders'
+import { sellerProductKeys } from '@/features/seller-portal/api/useSellerProducts'
 import { apiClient, type ProblemDetail } from '@/lib/api/client'
 import type { components, operations } from '@/lib/api/schema'
 
@@ -16,12 +18,18 @@ export type SellerProductFilters = NonNullable<
 >
 export type SellerOrderFilters = NonNullable<operations['sellerListOrdersV1']['parameters']['query']>
 
+/**
+ * Deliberately nested under the keys the unversioned hooks already use
+ * (`['seller','products']`, `['seller','orders']`) rather than given a
+ * namespace of their own. The product form and the ship action invalidate
+ * those, and they have to reach these lists too - otherwise deleting a
+ * product leaves it sitting on screen.
+ */
 export const sellerCatalogKeys = {
-  all: ['seller', 'catalog'] as const,
   products: (filters: SellerProductFilters) =>
-    [...sellerCatalogKeys.all, 'products', filters] as const,
-  orders: (filters: SellerOrderFilters) => [...sellerCatalogKeys.all, 'orders', filters] as const,
-  order: (orderId: string) => [...sellerCatalogKeys.all, 'order', orderId] as const,
+    [...sellerProductKeys.all, 'rows', filters] as const,
+  orders: (filters: SellerOrderFilters) => [...sellerOrderKeys.all, 'rows', filters] as const,
+  order: (orderId: string) => [...sellerOrderKeys.detail(orderId), 'v1'] as const,
 }
 
 export function useSellerProductRows(filters: SellerProductFilters) {
@@ -88,7 +96,7 @@ export function useUpdateSellerOrder(orderId: string) {
     },
     onSuccess: (updated) => {
       queryClient.setQueryData(sellerCatalogKeys.order(orderId), updated)
-      queryClient.invalidateQueries({ queryKey: sellerCatalogKeys.all })
+      queryClient.invalidateQueries({ queryKey: sellerOrderKeys.all })
     },
   })
 }

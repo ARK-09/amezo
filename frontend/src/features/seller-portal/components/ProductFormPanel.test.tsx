@@ -15,7 +15,7 @@ import {
 } from '@/test/msw/fixtures/sellerProducts'
 
 
-import { SellerProductDetail } from './SellerProductDetail'
+import { SellerProductDetail } from '@/pages/seller/SellerProductDetail'
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111'
 

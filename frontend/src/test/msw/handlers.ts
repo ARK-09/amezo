@@ -27,7 +27,7 @@ import {
   TAKEN_SKU,
   updateSellerProductDetail,
   updateSellerVariant,
-} from './fixtures/sellerProducts'
+  listSellerProductRows,} from './fixtures/sellerProducts'
 import {
   addWrittenReview,
   productDetails,
@@ -67,6 +67,43 @@ export const handlers = [
   // --- /api/v1 --------------------------------------------------------------
   // These endpoints do not exist on the backend yet; see docs/backend-handoff.md.
   // They run only under VITE_USE_MSW and in vitest.
+
+  http.get('http://localhost:8080/api/v1/sellers/me/products', ({ request }) => {
+    const url = new URL(request.url)
+    const q = url.searchParams.get('q')?.toLowerCase()
+    const status = url.searchParams.get('status')
+    const categorySlug = url.searchParams.get('categorySlug')
+    const stockBelow = url.searchParams.get('stockBelow')
+    const sort = url.searchParams.get('sort') ?? 'newest'
+    const page = Number(url.searchParams.get('page') ?? 0)
+    const size = Number(url.searchParams.get('size') ?? 20)
+
+    let rows = listSellerProductRows().filter((row) => {
+      if (q && !`${row.title} ${row.brandName ?? ''}`.toLowerCase().includes(q)) return false
+      if (status && row.status !== status) return false
+      if (categorySlug && row.category.slug !== categorySlug) return false
+      if (stockBelow && row.totalStock >= Number(stockBelow)) return false
+      return true
+    })
+
+    const by: Record<string, (a: typeof rows[number], b: typeof rows[number]) => number> = {
+      newest: (a, b) => b.createdAt.localeCompare(a.createdAt),
+      oldest: (a, b) => a.createdAt.localeCompare(b.createdAt),
+      title_asc: (a, b) => a.title.localeCompare(b.title),
+      title_desc: (a, b) => b.title.localeCompare(a.title),
+      stock_asc: (a, b) => a.totalStock - b.totalStock,
+      price_asc: (a, b) => (a.priceFrom ?? 0) - (b.priceFrom ?? 0),
+      price_desc: (a, b) => (b.priceFrom ?? 0) - (a.priceFrom ?? 0),
+    }
+    rows = [...rows].sort(by[sort] ?? by.newest)
+
+    return HttpResponse.json({
+      content: rows.slice(page * size, page * size + size),
+      page,
+      totalElements: rows.length,
+      totalPages: Math.ceil(rows.length / size) || 1,
+    })
+  }),
 
   http.get('http://localhost:8080/api/v1/orders', ({ request }) => {
     const url = new URL(request.url)

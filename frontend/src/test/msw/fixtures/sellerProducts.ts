@@ -220,3 +220,39 @@ export function removeSellerImage(imageId: string): boolean {
   }
   return false
 }
+
+// --- /api/v1/sellers/me/products -------------------------------------------
+// Derived from the same store the unversioned endpoints serve, so the portal
+// list and the product form never disagree about what exists. Product status
+// is not persisted anywhere yet (see docs/backend-handoff.md); until the column
+// exists, a product with no live variant reads as a draft.
+
+type SellerProductRow = components['schemas']['SellerProductRow']
+
+export function listSellerProductRows(): SellerProductRow[] {
+  return listSellerProducts().map((summary) => {
+    const detail = findSellerProductDetail(summary.id)
+    const variants = detail?.variants ?? []
+    // A variant's price is nullable, and a product priced entirely by
+    // nulls has no range to show.
+    const prices = variants.map((v) => v.price).filter((p): p is number => p != null)
+    const totalStock = variants.reduce((sum, v) => sum + v.stockQty, 0)
+
+    return {
+      id: summary.id,
+      productRef: summary.slug,
+      title: summary.title,
+      brandName: detail?.brandName ?? null,
+      thumbnailUrl: summary.thumbnailUrl,
+      imageCount: detail?.images.length ?? 0,
+      category: summary.category,
+      status: variants.length === 0 ? 'DRAFT' : 'ACTIVE',
+      variantCount: summary.variantCount,
+      totalStock,
+      priceFrom: prices.length ? Math.min(...prices) : undefined,
+      priceTo: prices.length ? Math.max(...prices) : undefined,
+      createdAt: summary.createdAt,
+      updatedAt: summary.createdAt,
+    }
+  })
+}
