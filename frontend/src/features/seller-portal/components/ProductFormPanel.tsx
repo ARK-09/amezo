@@ -1,5 +1,5 @@
 import { ImageOff, Plus, Trash2, Upload } from 'lucide-react'
-import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react'
+import { type ChangeEvent, type FormEvent, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { ProblemDetail } from '@/lib/api/client'
@@ -65,18 +65,16 @@ export function ProductFormPanel({ productId }: { productId: string }) {
   )
 }
 
-function ProductFields({
-  productId,
-  product,
-}: {
-  productId: string
-  product: {
-    title: string
-    brandName?: string | null
-    description?: string | null
-    category: { slug: string; name: string }
-  }
-}) {
+/** The product's own editable fields - what the query and a save's response both carry. */
+type EditableProduct = {
+  id: string
+  title: string
+  brandName?: string | null
+  description?: string | null
+  category: { slug: string; name: string }
+}
+
+function ProductFields({ productId, product }: { productId: string; product: EditableProduct }) {
   const { mutate, isPending, isError, error, isSuccess } = useUpdateProduct(productId)
 
   const [title, setTitle] = useState(product.title)
@@ -85,14 +83,24 @@ function ProductFields({
   // The selected SLUG, since that is what the selector and the API both deal in.
   const [categorySlug, setCategorySlug] = useState(product.category.slug)
 
-  // Re-seed when the product itself changes (a save's response, or a refetch);
-  // without this the form would keep showing the values it mounted with.
-  useEffect(() => {
-    setTitle(product.title)
-    setBrandName(product.brandName ?? '')
-    setDescription(product.description ?? '')
-    setCategorySlug(product.category.slug)
-  }, [product])
+  function seed(next: EditableProduct) {
+    setTitle(next.title)
+    setBrandName(next.brandName ?? '')
+    setDescription(next.description ?? '')
+    setCategorySlug(next.category.slug)
+  }
+
+  // Re-seed only for a different product, never for a new object describing the
+  // same one: a background refetch (window refocus, an invalidation from an image
+  // upload) hands back a fresh object with the same id, and re-seeding on that
+  // replaced a half-typed title with the server's old one mid-edit. Derived during
+  // render rather than in an effect, which would paint the clobbered value once
+  // before correcting it. A save gets its own re-seed, from its response.
+  const [seededId, setSeededId] = useState<unknown>(product)
+  if (product !== seededId) {
+    setSeededId(product)
+    seed(product)
+  }
 
   const dirty =
     title !== product.title ||
@@ -104,12 +112,17 @@ function ProductFields({
     e.preventDefault()
     // Only what changed: the API treats an omitted field as untouched, so this
     // keeps a title edit from rewriting the description with its own value.
-    mutate({
-      ...(title !== product.title ? { title } : {}),
-      ...(brandName !== (product.brandName ?? '') ? { brandName } : {}),
-      ...(description !== (product.description ?? '') ? { description } : {}),
-      ...(categorySlug !== product.category.slug ? { categorySlug } : {}),
-    })
+    mutate(
+      {
+        ...(title !== product.title ? { title } : {}),
+        ...(brandName !== (product.brandName ?? '') ? { brandName } : {}),
+        ...(description !== (product.description ?? '') ? { description } : {}),
+        ...(categorySlug !== product.category.slug ? { categorySlug } : {}),
+      },
+      // The one re-seed the identity check above deliberately skips: what came
+      // back is what the server stored, so the form shows that and reads clean.
+      { onSuccess: seed },
+    )
   }
 
   return (
@@ -215,6 +228,41 @@ function VariantRows({ productId, variants }: { productId: string; variants: Sel
   )
 }
 
+/**
+ * A numeric field's value, or null when the field holds nothing usable. Number('')
+ * is 0, which is how a cleared price used to be submitted as a real $0.00 variant,
+ * and Number('12px') is NaN, which serialises to null against a number column.
+ * Both are a missing value, not a zero.
+ */
+function parseNumber(value: string): number | null {
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    return null
+  }
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * Price has to be above 0. Unlike stock, a zero price is never something a seller
+ * means - a free item is a promotion, not a $0.00 offer - and it is exactly what
+ * the empty-field bug produced, so accepting a typed 0 would leave that same
+ * mispriced listing one stray keystroke away.
+ */
+function parsePrice(value: string): number | null {
+  const parsed = parseNumber(value)
+  return parsed !== null && parsed > 0 ? parsed : null
+}
+
+/** Stock 0 is a real answer - it is how a seller stops selling a variant. */
+function parseStock(value: string): number | null {
+  const parsed = parseNumber(value)
+  return parsed !== null && Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
+const PRICE_ERROR = 'Enter a price above 0.'
+const STOCK_ERROR = 'Enter a stock quantity of 0 or more.'
+
 function NewVariantForm({
   productId,
   onDone,
@@ -229,14 +277,26 @@ function NewVariantForm({
   const [sku, setSku] = useState('')
   const [price, setPrice] = useState('')
   const [stockQty, setStockQty] = useState('')
+  const [invalid, setInvalid] = useState<string | null>(null)
 
   function submit(e: FormEvent) {
     e.preventDefault()
-    mutate(
-      { label, sku, price: Number(price), stockQty: Number(stockQty) },
-      { onSuccess: onDone },
-    )
+    // Checked here as well as by the inputs' `required`, which a whitespace-only
+    // value satisfies and which nothing enforces on a programmatic submit.
+    const priceValue = parsePrice(price)
+    const stockValue = parseStock(stockQty)
+    if (priceValue === null || stockValue === null) {
+      setInvalid(priceValue === null ? PRICE_ERROR : STOCK_ERROR)
+      return
+    }
+
+    setInvalid(null)
+    mutate({ label, sku, price: priceValue, stockQty: stockValue }, { onSuccess: onDone })
   }
+
+  // One message at a time, in the slot the API's own errors use: a field the
+  // seller can fix now outranks whatever the last request came back with.
+  const errorMessage = invalid ?? (isError ? (error.detail ?? error.title) : null)
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-3 rounded-md border border-dashed p-4">
@@ -277,9 +337,9 @@ function NewVariantForm({
         />
       </div>
 
-      {isError && (
+      {errorMessage && (
         <p role="alert" className="text-sm text-destructive">
-          {error.detail ?? error.title}
+          {errorMessage}
         </p>
       )}
 
@@ -311,13 +371,22 @@ function VariantRow({
   const [sku, setSku] = useState(variant.sku)
   const [price, setPrice] = useState(String(variant.price ?? ''))
   const [stockQty, setStockQty] = useState(String(variant.stockQty))
+  const [invalid, setInvalid] = useState<string | null>(null)
 
-  useEffect(() => {
-    setLabel(variant.label)
-    setSku(variant.sku)
-    setPrice(String(variant.price ?? ''))
-    setStockQty(String(variant.stockQty))
-  }, [variant])
+  function seed(next: SellerVariant) {
+    setLabel(next.label)
+    setSku(next.sku)
+    setPrice(String(next.price ?? ''))
+    setStockQty(String(next.stockQty))
+  }
+
+  // Same rule as the product fields above: a new object for the same variant is a
+  // refetch, not a different row, and re-seeding on it wiped a price being typed.
+  const [seededId, setSeededId] = useState<unknown>(variant)
+  if (variant !== seededId) {
+    setSeededId(variant)
+    seed(variant)
+  }
 
   const dirty =
     label !== variant.label ||
@@ -326,15 +395,32 @@ function VariantRow({
     stockQty !== String(variant.stockQty)
 
   function save() {
-    mutate({
-      variantId: variant.id,
-      body: {
-        ...(label !== variant.label ? { label } : {}),
-        ...(sku !== variant.sku ? { sku } : {}),
-        ...(price !== String(variant.price ?? '') ? { price: Number(price) } : {}),
-        ...(stockQty !== String(variant.stockQty) ? { stockQty: Number(stockQty) } : {}),
+    // undefined is "untouched, so not in the PATCH"; null is "edited into
+    // something unusable" - an empty price is missing, not $0.00. Only the fields
+    // this save actually carries are checked, so a variant the server has no price
+    // for can still have its stock saved.
+    const priceEdit = price !== String(variant.price ?? '') ? parsePrice(price) : undefined
+    const stockEdit = stockQty !== String(variant.stockQty) ? parseStock(stockQty) : undefined
+    if (priceEdit === null || stockEdit === null) {
+      setInvalid(priceEdit === null ? PRICE_ERROR : STOCK_ERROR)
+      return
+    }
+
+    setInvalid(null)
+    mutate(
+      {
+        variantId: variant.id,
+        body: {
+          ...(label !== variant.label ? { label } : {}),
+          ...(sku !== variant.sku ? { sku } : {}),
+          ...(priceEdit !== undefined ? { price: priceEdit } : {}),
+          ...(stockEdit !== undefined ? { stockQty: stockEdit } : {}),
+        },
       },
-    })
+      // The saved row is what the server stored - show that, since the identity
+      // check above won't re-seed from the cache update it triggers.
+      { onSuccess: seed },
+    )
   }
 
   return (
@@ -387,12 +473,13 @@ function VariantRow({
           </div>
         </TableCell>
       </TableRow>
-      {(isError || remove.isError) && (
+      {(invalid || isError || remove.isError) && (
         <TableRow>
           <TableCell colSpan={5} className="text-sm text-destructive" role="alert">
-            {isError
-              ? (error.detail ?? error.title)
-              : (remove.error?.detail ?? remove.error?.title)}
+            {invalid ??
+              (isError
+                ? (error.detail ?? error.title)
+                : (remove.error?.detail ?? remove.error?.title))}
           </TableCell>
         </TableRow>
       )}

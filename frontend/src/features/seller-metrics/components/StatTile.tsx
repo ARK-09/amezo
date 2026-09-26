@@ -20,10 +20,16 @@ export function StatTile({
   /** For measures where down is good. Nothing uses it yet; refunds will. */
   invertTone?: boolean
 }) {
-  const hasPrevious = previous != null && previous !== 0
-  const change = hasPrevious ? ((current - previous) / previous) * 100 : 0
-  const flat = !hasPrevious || Math.abs(change) < 0.05
-  const up = change > 0
+  // "There is no previous window" and "the previous window was zero" are
+  // different facts. Treating both as flat reported the biggest movement a
+  // seller can have - nothing to something - as no change at all.
+  const hasPrevious = previous != null
+  // A percentage against zero is a division by zero, so a move off zero shows
+  // its direction with a word rather than Infinity or an invented figure.
+  const fromZero = hasPrevious && previous === 0 && current !== 0
+  const change = hasPrevious && previous !== 0 ? ((current - previous) / previous) * 100 : 0
+  const flat = hasPrevious && !fromZero && Math.abs(change) < 0.05
+  const up = fromZero ? current > 0 : change > 0
   const good = invertTone ? !up : up
 
   return (
@@ -35,18 +41,29 @@ export function StatTile({
       <p
         className={cn(
           'mt-1 inline-flex items-center gap-1 text-[13px] font-medium',
-          flat ? 'text-muted-foreground' : good ? 'text-[#1f7a45]' : 'text-[#b42318]',
+          !hasPrevious || flat
+            ? 'text-muted-foreground'
+            : good
+              ? 'text-[#1f7a45]'
+              : 'text-[#b42318]',
         )}
       >
-        {flat ? (
+        {!hasPrevious ? null : flat ? (
           <Minus className="size-3.5" aria-hidden />
         ) : up ? (
           <ArrowUp className="size-3.5" aria-hidden />
         ) : (
           <ArrowDown className="size-3.5" aria-hidden />
         )}
-        {flat ? 'Flat' : `${up ? '+' : ''}${change.toFixed(1)}%`}
-        <span className="text-muted-foreground">vs prev</span>
+        {!hasPrevious
+          ? 'No prior data'
+          : flat
+            ? 'Flat'
+            : fromZero
+              ? 'New'
+              : `${up ? '+' : ''}${change.toFixed(1)}%`}
+        {/* Nothing to compare against means no "vs prev" to claim. */}
+        {hasPrevious && <span className="text-muted-foreground">vs prev</span>}
       </p>
     </div>
   )

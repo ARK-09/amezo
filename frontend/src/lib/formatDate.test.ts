@@ -24,3 +24,13 @@ describe('formatDate', () => {
     expect(formatDeliveryDate('not-a-date')).toBe('—')
   })
 })
+
+describe('date-only strings', () => {
+  // These arrive from the metrics series and every `format: date` field. They
+  // parse as UTC midnight, so reading them back with local getters printed the
+  // previous day anywhere west of UTC.
+  it('keeps the calendar day that was written down', () => {
+    expect(formatShortDate('2026-09-01')).toBe('1 Sep')
+    expect(formatMediumDate('2026-09-01')).toBe('1 Sep 2026')
+  })
+})

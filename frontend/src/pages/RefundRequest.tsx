@@ -75,12 +75,6 @@ export function RefundRequest() {
     )
   }
 
-  // The window and the one-open-request rule are the server's to decide, and it
-  // says so on the order rather than leaving each screen to work it out.
-  if (!order.data.canRequestRefund) {
-    return <Navigate to="/orders" replace />
-  }
-
   const detailedOrder = order.data
   const paymentLabel = detailedOrder.payment
     ? `${detailedOrder.payment.brand} ending ${detailedOrder.payment.last4}`
@@ -152,6 +146,18 @@ export function RefundRequest() {
         </div>
       </main>
     )
+  }
+
+  // The window and the one-open-request rule are the server's to decide, and it
+  // says so on the order rather than leaving each screen to work it out.
+  //
+  // Checked AFTER the confirmation above, and that order matters: submitting
+  // invalidates the order, which comes back with canRequestRefund false - so
+  // running this first replaced the confirmation screen with a redirect the
+  // moment the request succeeded. A missing field is treated as eligible for
+  // the same reason; the server refuses the POST if it is not.
+  if (order.data.canRequestRefund === false) {
+    return <Navigate to="/orders" replace />
   }
 
   return (

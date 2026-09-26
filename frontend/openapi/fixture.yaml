@@ -1035,7 +1035,7 @@ paths:
         - name: handle
           in: path
           required: true
-          schema: { type: string }
+          schema: { $ref: '#/components/schemas/StoreHandle' }
       responses:
         '200':
           description: OK
@@ -1440,6 +1440,9 @@ components:
         brandName: { type: string }
         description: { type: string }
         categorySlug: { type: string }
+        # Publishing and unpublishing a listing. ARCHIVED is the soft delete that
+        # DELETE /products/{productRef} performs, so it is not offered here.
+        status: { type: string, enum: [ACTIVE, DRAFT] }
     UpdateVariantRequest:
       type: object
       description: Every field optional - an omitted field is left as it is.
@@ -1757,6 +1760,7 @@ components:
         carrier: { type: string, nullable: true }
         trackingNumber: { type: string, nullable: true }
         trackingUrl: { type: string, nullable: true }
+        shippedAt: { type: string, format: date-time, nullable: true }
         estimatedDeliveryAt: { type: string, format: date-time, nullable: true }
         deliveredAt: { type: string, format: date-time, nullable: true }
         deliveryNote: { type: string, nullable: true }
@@ -1786,7 +1790,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        handle: { type: string }
+        handle: { $ref: '#/components/schemas/StoreHandle' }
 
     BuyerOrderSummary:
       type: object
@@ -1806,6 +1810,13 @@ components:
           items: { $ref: '#/components/schemas/BuyerOrderLine' }
         shipment: { $ref: '#/components/schemas/ShipmentInfo' }
         openRefundRequestId: { type: string, format: uuid, nullable: true }
+        # The list needs the status, not just the id: the card prints a badge
+        # for it, and a refund that has been approved or declined does not read
+        # the same as one nobody has looked at yet.
+        openRefundStatus:
+          oneOf:
+            - $ref: '#/components/schemas/RefundStatus'
+          nullable: true
     BuyerOrderSummaryPage:
       type: object
       required: [content, page, totalElements, totalPages]
@@ -1956,13 +1967,24 @@ components:
     StoreStatus:
       type: string
       enum: [OPEN, VACATION, CLOSED]
+    StoreHandle:
+      type: string
+      description: >-
+        The store's URL segment (amezo.com/stores/{handle}). Lowercase letters,
+        digits and inner dashes only - never a leading or trailing dash, so the
+        printed URL never ends in one. Case-insensitive on lookup and unique
+        across stores; PATCH /api/v1/sellers/me/store answers 409 when taken.
+      pattern: '^[a-z0-9][a-z0-9-]{0,37}[a-z0-9]$'
+      minLength: 2
+      maxLength: 39
+      example: northwind-supply
     StoreProfile:
       type: object
       required: [id, name, handle, status]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        handle: { type: string }
+        handle: { $ref: '#/components/schemas/StoreHandle' }
         tagline: { type: string, nullable: true }
         location: { type: string, nullable: true }
         foundedYear: { type: integer, nullable: true }
@@ -1977,7 +1999,7 @@ components:
       type: object
       properties:
         name: { type: string }
-        handle: { type: string }
+        handle: { $ref: '#/components/schemas/StoreHandle' }
         tagline: { type: string }
         location: { type: string }
         foundedYear: { type: integer }
@@ -1993,7 +2015,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        handle: { type: string }
+        handle: { $ref: '#/components/schemas/StoreHandle' }
         tagline: { type: string, nullable: true }
         location: { type: string, nullable: true }
         about: { type: string, nullable: true }
@@ -2061,7 +2083,9 @@ components:
         total: { type: number }
         currency: { type: string }
         destination: { type: string, nullable: true }
-        trackingNumber: { type: string, nullable: true }
+        # No trackingNumber here. The seller's table has no tracking column, and
+        # carrying a second copy beside SellerOrderRowDetail.shipment.trackingNumber
+        # is how the three shapes drifted apart in the first place.
         hasOpenRefund: { type: boolean }
     SellerOrderRowPage:
       type: object

@@ -51,7 +51,7 @@ should be added.
 | GET | `/api/v1/sellers/me/orders` | `q`, `status`, `sort`, `page`, `size`. |
 | GET | `/api/v1/sellers/me/orders/{orderId}` | |
 | PATCH | `/api/v1/sellers/me/orders/{orderId}` | **Replaces `POST /sellers/me/orders/{id}/ship`**, which put the verb in the path. Body carries `parcels`/`packedBy` for PACKED and `handoverMethod`/`hub` for SHIPPED. `trackingNumber` is **not** writable — the design says it is issued by the platform on handover. |
-| PATCH | `/products/{productRef}` | Accept `status` (`ACTIVE\|DRAFT\|ARCHIVED`) on the existing endpoint. |
+| PATCH | `/products/{productRef}` | Accept `status` (`ACTIVE\|DRAFT`) on the existing endpoint, for publishing and unpublishing a listing. `ARCHIVED` is the soft delete `DELETE /products/{productRef}` performs, so it is not writable here. |
 
 ### Metrics
 | Method | Path | Notes |
@@ -83,6 +83,15 @@ FK, `quantity`. Partial-unique index on `order_line_id` where the parent
 request is open, which is what makes the duplicate-request `409` enforceable
 rather than a race.
 
+**Derived on the order lists** — `GET /api/v1/orders` returns
+`openRefundRequestId` and `openRefundStatus` per row, and
+`GET /api/v1/sellers/me/orders` returns `hasOpenRefund`. All three read the
+buyer's/seller's open `refund_request` for that order; "open" is any status
+outside the terminal set (`REFUNDED`, `REPLACEMENT_SENT`, `DECLINED`,
+`CANCELLED`). The card prints a badge for the status, so the id alone is not
+enough — a refund nobody has looked at yet must not read the same as an
+approved one.
+
 **Changed: `order.status`** — `PLACED, SHIPPED, DELIVERED` becomes
 `PLACED, PACKED, SHIPPED, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, CANCELLED`.
 Existing rows map unchanged.
@@ -112,10 +121,12 @@ The unversioned seller endpoints previously declared their own inline
 reference the shared `OrderStatus` too.
 
 **Order** — `PLACED → PACKED → SHIPPED → IN_TRANSIT → OUT_FOR_DELIVERY →
-DELIVERED`. Seller may drive `PLACED→PACKED` (takes `parcels`) and
-`PLACED|PACKED→SHIPPED` (takes `trackingNumber`). The three carrier states are
-system-driven and not writable by a seller. `CANCELLED` only from `PLACED`.
-Anything else `409`.
+DELIVERED`. Seller may drive `PLACED→PACKED` (takes `parcels`, `packedBy`) and
+`PLACED|PACKED→SHIPPED` (takes `handoverMethod`, `hub`). Either may carry a
+`note`, which is shown to the buyer on the order timeline. The seller never
+supplies `trackingNumber`: the platform issues it on handover and returns it on
+the next read. The three carrier states are system-driven and not writable by a
+seller. `CANCELLED` only from `PLACED`. Anything else `409`.
 
 **Refund** — `REQUESTED → APPROVED → AWAITING_RETURN → RETURN_RECEIVED →
 REFUNDED`, with `REQUESTED → DECLINED`, `APPROVED → REPLACEMENT_SENT` when the
@@ -134,9 +145,11 @@ Terminal: `REFUNDED`, `REPLACEMENT_SENT`, `DECLINED`, `CANCELLED`.
 - `PATCH /api/v1/refund-requests/{id}`: only the owning seller may approve,
   decline, receive, refund or send a replacement. `approvedAmount` must be
   ≤ `requested_amount`. `declineReason` required on `DECLINED`.
-- `PATCH /api/v1/sellers/me/store`: `handle` matches `^[a-z0-9][a-z0-9-]{1,38}$`,
-  unique, and is **immutable once orders exist** unless you also plan redirects
-  from the old public URL.
+- `PATCH /api/v1/sellers/me/store`: `handle` matches the shared `StoreHandle`
+  schema — `^[a-z0-9][a-z0-9-]{0,37}[a-z0-9]$`, 2–39 characters, no dash at either
+  end so the public URL never ends in one. Compared case-insensitively, unique, and
+  **immutable once orders exist** unless you also plan redirects from the old public
+  URL. The client normalises to this shape before sending, but the server owns it.
 - `canRequestRefund` and `refundWindowEndsAt` on the order detail are
   server-owned. No screen re-derives the return window from dates.
 

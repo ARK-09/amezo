@@ -1,6 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -10,13 +11,14 @@ import {
   resetSellerProductDetails,
   resetSellerProducts,
 } from '@/test/msw/fixtures/sellerProducts'
+import { server } from '@/test/msw/server'
 
 import { SellerProducts } from './SellerProducts'
 
-function renderPage() {
+function renderPage(initialEntry = '/seller/products') {
   return render(
     <QueryClientProvider client={createAppQueryClient()}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <SellerProducts />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -97,6 +99,61 @@ describe('SellerProducts', () => {
 
     await waitFor(() => expect(screen.queryByText('Trail Backpack')).not.toBeInTheDocument())
     expect(await screen.findByText('No products here')).toBeInTheDocument()
+  })
+
+  it('reads a page param that is not a number as the first page', async () => {
+    seed()
+    renderPage('/seller/products?page=abc')
+
+    // NaN used to reach the request, which answered with nothing at all.
+    expect(await screen.findByText('Trail Backpack')).toBeInTheDocument()
+  })
+
+  it('puts the search box back in step with the URL when the filters are cleared', async () => {
+    seed()
+    seed({ id: 'p2', slug: 'desk-lamp', title: 'Desk Lamp' })
+    renderPage()
+    await screen.findByText('Trail Backpack')
+
+    const search = screen.getByLabelText('Search products')
+    await userEvent.type(search, 'lamp')
+    await waitFor(() => expect(screen.queryByText('Trail Backpack')).not.toBeInTheDocument())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+
+    // The box used to keep the cleared term while the list behind it went back
+    // to showing everything.
+    expect(search).toHaveValue('')
+    expect(await screen.findByText('Trail Backpack')).toBeInTheDocument()
+  })
+
+  it('says so when a delete fails instead of leaving the row unexplained', async () => {
+    seed()
+    server.use(
+      http.delete('http://localhost:8080/products/:productId', () =>
+        HttpResponse.json(
+          {
+            type: 'https://api/errors/product-referenced',
+            title: 'Conflict',
+            status: 409,
+            detail: 'This product is on an open order and cannot be deleted',
+          },
+          { status: 409 },
+        ),
+      ),
+    )
+    renderPage()
+    await screen.findByText('Trail Backpack')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Trail Backpack' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
+
+    // The confirm popover closes as soon as the request settles, so without
+    // this the row simply stayed put and read as a delete that had worked.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This product is on an open order and cannot be deleted',
+    )
+    expect(screen.getByText('Trail Backpack')).toBeInTheDocument()
   })
 
   it('opens the edit drawer with a link to the same form full page', async () => {

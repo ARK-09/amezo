@@ -40,7 +40,10 @@ export function OrderCard({
 }) {
   const headline = headlineFor(order)
   const preview = order.previewLines ?? []
-  const hiddenCount = order.itemCount - preview.length
+  // itemCount is units, not lines - subtracting a line count from it claimed
+  // extra items that do not exist whenever anything was ordered in twos.
+  const previewUnits = preview.reduce((sum, line) => sum + line.quantity, 0)
+  const hiddenCount = Math.max(0, order.itemCount - previewUnits)
   const isMoving = headline.tone === 'moving'
   const canRequestRefund = order.status === 'DELIVERED' && !order.openRefundRequestId
 
@@ -108,7 +111,7 @@ export function OrderCard({
               className="inline-flex shrink-0 items-center gap-[7px] rounded-full border border-primary bg-primary/5 px-3.5 py-[7px] text-[13px] font-bold text-[#b8560a]"
             >
               <RotateCcw className="size-3.5" />
-              {refundBadgeLabel('REQUESTED')}
+              {refundBadgeLabel(order.openRefundStatus ?? 'REQUESTED')}
             </button>
           )}
         </div>

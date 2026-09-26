@@ -77,6 +77,37 @@ describe('SellerDashboard', () => {
     expect(await within(panel).findByText('Maya')).toBeInTheDocument()
   })
 
+  it('keeps a failed widget to itself, and retries just that widget', async () => {
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/metrics/top-products', () =>
+        HttpResponse.json(
+          { type: 'about:blank', title: 'Internal error', status: 500, detail: 'Top products are unavailable.' },
+          { status: 500 },
+        ),
+      ),
+    )
+    renderPage()
+
+    const panel = (await screen.findByText('Top products')).closest('section')!
+    expect(
+      await within(panel).findByText("Couldn't load top products", {}, { timeout: 5000 }),
+    ).toBeInTheDocument()
+    expect(within(panel).getByText('Top products are unavailable.')).toBeInTheDocument()
+    // A failed list must not read as an empty one.
+    expect(within(panel).queryByText('No sales in this window.')).not.toBeInTheDocument()
+    // The rest of the dashboard is untouched by one broken endpoint.
+    expect(await screen.findByRole('group', { name: 'Revenue' })).toBeInTheDocument()
+    expect(await screen.findByText('Electronics')).toBeInTheDocument()
+
+    // The endpoint recovers; the widget's own retry is enough to bring it back.
+    server.resetHandlers()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Try again' }))
+
+    expect(
+      await within(panel).findByText('14" Ultrabook Laptop, 16GB RAM', {}, { timeout: 5000 }),
+    ).toBeInTheDocument()
+  })
+
   it('surfaces a metrics failure with a retry', async () => {
     server.use(
       http.get('http://localhost:8080/api/v1/sellers/me/metrics', () =>

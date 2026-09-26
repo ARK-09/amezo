@@ -1,13 +1,27 @@
 import type { components } from '@/lib/api/schema'
 
+import { isRefundOpen, refundRequestsForOrder, summaryOfRefund } from './refunds'
+
 type SellerOrderDetail = components['schemas']['SellerOrderDetail']
+
+/**
+ * What the store actually holds. SellerOrderDetail is the older unversioned
+ * shape and has no packedAt or parcels, so a fulfilment PATCH that wrote back
+ * through it dropped both: the response echoed them once and the next GET of
+ * the same order answered null, which no backend will ever do.
+ */
+export type StoredSellerOrder = SellerOrderDetail & {
+  /** Format: date-time */
+  packedAt?: string | null
+  parcels?: number | null
+}
 
 // Demo-account starting orders (browser/dev only - every test resets this to
 // [] via resetSellerOrders() in beforeEach/afterEach). Lines reference the
 // same products as fixtures/sellerProducts.ts's DEMO_SEED. One of each
 // status so the status filter and the "mark as shipped" action both have
 // something to show.
-const DEMO_SEED: SellerOrderDetail[] = [
+const DEMO_SEED: StoredSellerOrder[] = [
   {
     id: 'd0000000-0000-0000-0000-000000000001',
     buyerEmail: 'alex@example.com',
@@ -117,32 +131,32 @@ const DEMO_SEED: SellerOrderDetail[] = [
   },
 ]
 
-let orders: SellerOrderDetail[] = [...DEMO_SEED]
+let orders: StoredSellerOrder[] = [...DEMO_SEED]
 
-export function resetSellerOrders(seed: SellerOrderDetail[] = []) {
+export function resetSellerOrders(seed: StoredSellerOrder[] = []) {
   orders = [...seed]
 }
 
-export function listSellerOrders(): SellerOrderDetail[] {
+export function listSellerOrders(): StoredSellerOrder[] {
   return orders
 }
 
-export function findSellerOrder(id: string): SellerOrderDetail | undefined {
+export function findSellerOrder(id: string): StoredSellerOrder | undefined {
   return orders.find((order) => order.id === id)
 }
 
-export function updateSellerOrder(id: string, patch: Partial<SellerOrderDetail>): SellerOrderDetail | undefined {
+export function updateSellerOrder(id: string, patch: Partial<StoredSellerOrder>): StoredSellerOrder | undefined {
   const order = findSellerOrder(id)
   if (!order) return undefined
   Object.assign(order, patch)
   return order
 }
 
-function total(order: Pick<SellerOrderDetail, 'lines'>) {
+function total(order: Pick<StoredSellerOrder, 'lines'>) {
   return order.lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0)
 }
 
-export function summaryOf(order: SellerOrderDetail) {
+export function summaryOf(order: StoredSellerOrder) {
   return {
     id: order.id,
     buyerEmail: order.buyerEmail,
@@ -160,12 +174,12 @@ export function summaryOf(order: SellerOrderDetail) {
 type SellerOrderRow = components['schemas']['SellerOrderRow']
 type SellerOrderRowDetail = components['schemas']['SellerOrderRowDetail']
 
-function recipientFor(order: SellerOrderDetail): string {
+function recipientFor(order: StoredSellerOrder): string {
   const [name] = order.buyerEmail.split('@')
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
-function addressFor(order: SellerOrderDetail) {
+function addressFor(order: StoredSellerOrder) {
   return {
     fullName: recipientFor(order),
     line1: '418 Harrison Street',
@@ -177,11 +191,22 @@ function addressFor(order: SellerOrderDetail) {
   }
 }
 
-function referenceFor(order: SellerOrderDetail): string {
+function referenceFor(order: StoredSellerOrder): string {
   return `ord_${order.id.replace(/-/g, '').slice(-8)}`
 }
 
-export function sellerOrderRowOf(order: SellerOrderDetail): SellerOrderRow {
+/**
+ * The refund requests raised against this order, read from the refund store
+ * rather than answered with a constant. Both fields below used to be hardcoded
+ * (false and []), so the seller's refund badge and the panel's "this order has
+ * a refund request" section could not be reached in dev or in a test - they
+ * were dead code a reviewer had no way to exercise.
+ */
+function refundsOn(order: StoredSellerOrder) {
+  return refundRequestsForOrder(order.id).map(summaryOfRefund)
+}
+
+export function sellerOrderRowOf(order: StoredSellerOrder): SellerOrderRow {
   return {
     id: order.id,
     reference: referenceFor(order),
@@ -193,14 +218,15 @@ export function sellerOrderRowOf(order: SellerOrderDetail): SellerOrderRow {
     total: order.total,
     currency: 'USD',
     destination: 'Seattle, WA',
-    trackingNumber: order.trackingNumber ?? null,
-    hasOpenRefund: false,
+    // Settling the request clears the badge, because it is the store's current
+    // status that is asked, not a flag written once when the refund was raised.
+    hasOpenRefund: refundsOn(order).some((refund) => isRefundOpen(refund.status)),
   }
 }
 
-export function sellerOrderRowDetailOf(order: SellerOrderDetail): SellerOrderRowDetail {
+export function sellerOrderRowDetailOf(order: StoredSellerOrder): SellerOrderRowDetail {
   // lineTotal is optional on the older shape; derive it when it is absent.
-  const lineTotalOf = (line: SellerOrderDetail['lines'][number]) =>
+  const lineTotalOf = (line: StoredSellerOrder['lines'][number]) =>
     line.lineTotal ?? line.unitPrice * line.quantity
   const subtotal = order.lines.reduce((sum, line) => sum + lineTotalOf(line), 0)
   return {
@@ -220,13 +246,16 @@ export function sellerOrderRowDetailOf(order: SellerOrderDetail): SellerOrderRow
       carrier: order.trackingNumber ? 'Amezo Logistics' : null,
       trackingNumber: order.trackingNumber ?? null,
       trackingUrl: null,
+      // The panel dates its "Handed over" step from this. It was never filled,
+      // so a shipped order read "Not yet" against a step already ticked.
+      shippedAt: order.shippedAt ?? null,
       estimatedDeliveryAt: null,
       deliveredAt: order.status === 'DELIVERED' ? order.shippedAt ?? null : null,
       deliveryNote: null,
     },
-    packedAt: null,
-    parcels: null,
-    refundRequests: [],
+    packedAt: order.packedAt ?? null,
+    parcels: order.parcels ?? null,
+    refundRequests: refundsOn(order),
   }
 }
 

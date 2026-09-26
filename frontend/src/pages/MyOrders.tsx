@@ -47,6 +47,15 @@ function periodStart(period: Period): string | undefined {
   return now.toISOString().slice(0, 10)
 }
 
+/**
+ * ?page=abc, ?page=-5 and ?page=1.7 used to go straight into the request and
+ * into "Page NaN of 1". A page number is a whole one, zero or above, or it is 0.
+ */
+function pageParam(raw: string | null) {
+  const parsed = Number(raw ?? 0)
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0
+}
+
 export function MyOrders() {
   const session = useSession()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -55,7 +64,18 @@ export function MyOrders() {
   const group = (searchParams.get('group') as BuyerOrderGroup | null) ?? 'all'
   const q = searchParams.get('q') ?? ''
   const period = (searchParams.get('period') as Period | null) ?? '12m'
-  const page = Number(searchParams.get('page') ?? 0)
+  const page = pageParam(searchParams.get('page'))
+
+  // The box is controlled so it can never disagree with the list: the Back
+  // button rewrites ?q= underneath it, and a defaultValue input went on showing
+  // the term it was mounted with. Re-seeded during render rather than from an
+  // effect - react(set-state-in-effect).
+  const [term, setTerm] = useState(q)
+  const [seededFrom, setSeededFrom] = useState(q)
+  if (seededFrom !== q) {
+    setSeededFrom(q)
+    setTerm(q)
+  }
 
   const filters = useMemo<BuyerOrderFilters>(
     () => ({
@@ -84,6 +104,9 @@ export function MyOrders() {
   const orders = query.data?.content ?? []
   const total = query.data?.totalElements ?? 0
   const totalPages = query.data?.totalPages ?? 1
+  // A ?page= past the end comes back empty; don't also print a page number that
+  // doesn't exist, and let Previous walk back into the range that does.
+  const shownPage = Math.min(page, totalPages - 1)
 
   return (
     <div className="mx-auto w-full max-w-[1320px] flex-1 px-7 pt-5 pb-[72px]">
@@ -128,8 +151,11 @@ export function MyOrders() {
           />
           <input
             type="search"
-            defaultValue={q}
-            onChange={(e) => patch({ q: e.target.value })}
+            value={term}
+            onChange={(e) => {
+              setTerm(e.target.value)
+              patch({ q: e.target.value })
+            }}
             placeholder="Search by order number or product name"
             aria-label="Search your orders"
             className="h-10 w-full rounded-full border bg-background pr-4 pl-[38px] text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -229,19 +255,19 @@ export function MyOrders() {
           <Button
             variant="outline"
             size="sm"
-            disabled={page === 0}
-            onClick={() => patch({ page: String(page - 1) })}
+            disabled={shownPage === 0}
+            onClick={() => patch({ page: String(shownPage - 1) })}
           >
             Previous
           </Button>
           <span className="text-sm text-muted-foreground">
-            Page {page + 1} of {totalPages}
+            Page {shownPage + 1} of {totalPages}
           </span>
           <Button
             variant="outline"
             size="sm"
-            disabled={page + 1 >= totalPages}
-            onClick={() => patch({ page: String(page + 1) })}
+            disabled={shownPage + 1 >= totalPages}
+            onClick={() => patch({ page: String(shownPage + 1) })}
           >
             Next
           </Button>

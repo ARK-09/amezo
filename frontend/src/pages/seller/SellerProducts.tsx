@@ -23,6 +23,7 @@ import { useCategories } from '@/features/reference/api/useCategories'
 import {
   useSellerProductRows,
   type SellerProductFilters,
+  type SellerProductRow,
 } from '@/features/seller-portal/api/useSellerCatalog'
 import { useDeleteProduct } from '@/features/seller-portal/api/useSellerProducts'
 import { DetailDrawer } from '@/features/seller-portal/components/DetailDrawer'
@@ -44,9 +45,19 @@ const SORTS = [
   { value: 'price_desc', label: 'Highest price' },
 ] as const
 
+/**
+ * ?page=abc, ?page=-5 and ?page=1.7 used to go straight into the request and
+ * into "Page NaN of 1". A page number is a whole one, zero or above, or it is 0.
+ */
+function pageParam(raw: string | null) {
+  const parsed = Number(raw ?? 0)
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0
+}
+
 export function SellerProducts() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [openId, setOpenId] = useState<string | null>(null)
+  const [openSnapshot, setOpenSnapshot] = useState<SellerProductRow | null>(null)
   // The design confirms a delete inline on the row rather than in a modal.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const categories = useCategories()
@@ -56,7 +67,18 @@ export function SellerProducts() {
   const status = searchParams.get('status') ?? 'all'
   const categorySlug = searchParams.get('category') ?? 'all'
   const sort = searchParams.get('sort') ?? 'newest'
-  const page = Number(searchParams.get('page') ?? 0)
+  const page = pageParam(searchParams.get('page'))
+
+  // The box is controlled so it can never disagree with the list: "Clear
+  // filters" and the Back button both rewrite ?q= underneath it, and a
+  // defaultValue input went on showing the term it was mounted with. Re-seeded
+  // during render rather than from an effect - react(set-state-in-effect).
+  const [term, setTerm] = useState(q)
+  const [seededFrom, setSeededFrom] = useState(q)
+  if (seededFrom !== q) {
+    setSeededFrom(q)
+    setTerm(q)
+  }
 
   const filters = useMemo<SellerProductFilters>(
     () => ({
@@ -85,8 +107,15 @@ export function SellerProducts() {
   const rows = query.data?.content ?? []
   const total = query.data?.totalElements ?? 0
   const totalPages = query.data?.totalPages ?? 1
+  // A ?page= past the end comes back empty; don't also print a page number that
+  // doesn't exist, and let Previous walk back into the range that does.
+  const shownPage = Math.min(page, totalPages - 1)
   const hasFilters = Boolean(q) || status !== 'all' || categorySlug !== 'all' || sort !== 'newest'
-  const openRow = rows.find((row) => row.id === openId)
+  // Snapshotted when the drawer opens. Acting on a record usually moves it
+  // out of the bucket being viewed - deriving the drawer from the current
+  // page meant it slammed shut the instant the action succeeded, before the
+  // seller saw the result.
+  const openRow = rows.find((row) => row.id === openId) ?? openSnapshot
 
   return (
     <div className="flex flex-col gap-5">
@@ -113,8 +142,11 @@ export function SellerProducts() {
           />
           <input
             type="search"
-            defaultValue={q}
-            onChange={(e) => patch({ q: e.target.value })}
+            value={term}
+            onChange={(e) => {
+              setTerm(e.target.value)
+              patch({ q: e.target.value })
+            }}
             placeholder="Search title, brand or SKU"
             aria-label="Search products"
             className="h-9 w-full rounded-md border bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -166,6 +198,14 @@ export function SellerProducts() {
           </Button>
         )}
       </div>
+
+      {/* The confirm popover closes as soon as the request settles, so a delete
+          that failed used to leave the row sitting there looking untouched. */}
+      {deleteProduct.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {deleteProduct.error.detail ?? deleteProduct.error.title}
+        </p>
+      )}
 
       {query.isError && (
         <div className="flex flex-col items-start gap-3 rounded-lg border p-6">
@@ -290,7 +330,10 @@ export function SellerProducts() {
                       </div>
                     ) : (
                       <div className="flex justify-end gap-1.5">
-                        <Button variant="outline" size="sm" onClick={() => setOpenId(row.id)}>
+                        <Button variant="outline" size="sm" onClick={() => {
+                        setOpenId(row.id)
+                        setOpenSnapshot(row)
+                      }}>
                           Edit
                         </Button>
                         <Button
@@ -316,19 +359,19 @@ export function SellerProducts() {
           <Button
             variant="outline"
             size="sm"
-            disabled={page === 0}
-            onClick={() => patch({ page: String(page - 1) })}
+            disabled={shownPage === 0}
+            onClick={() => patch({ page: String(shownPage - 1) })}
           >
             Previous
           </Button>
           <span className="text-sm text-muted-foreground">
-            Page {page + 1} of {totalPages}
+            Page {shownPage + 1} of {totalPages}
           </span>
           <Button
             variant="outline"
             size="sm"
-            disabled={page + 1 >= totalPages}
-            onClick={() => patch({ page: String(page + 1) })}
+            disabled={shownPage + 1 >= totalPages}
+            onClick={() => patch({ page: String(shownPage + 1) })}
           >
             Next
           </Button>
@@ -336,8 +379,12 @@ export function SellerProducts() {
       )}
 
       <DetailDrawer
-        open={Boolean(openRow)}
-        onOpenChange={(next) => !next && setOpenId(null)}
+        open={Boolean(openId)}
+        onOpenChange={(next) => {
+          if (next) return
+          setOpenId(null)
+          setOpenSnapshot(null)
+        }}
         title={openRow?.title ?? 'Edit product'}
         description={openRow ? `${openRow.category.name} · ${openRow.variantCount} variants` : undefined}
         fullPageTo={`/seller/products/${openRow?.id ?? ''}`}

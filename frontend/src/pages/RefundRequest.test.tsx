@@ -74,6 +74,24 @@ describe('RefundRequest', () => {
     expect(screen.getByText('Seller reviews it')).toBeInTheDocument()
   })
 
+  // The eligibility guard used to run before the confirmation. Submitting
+  // invalidates the order, which comes back ineligible, so the success screen
+  // was replaced by a redirect the instant the request went through.
+  it('keeps the confirmation on screen after the order stops being eligible', async () => {
+    renderPage()
+    await screen.findByText(LAPTOP)
+
+    await userEvent.click(screen.getByRole('checkbox', { name: LAPTOP }))
+    await userEvent.type(screen.getByLabelText('What went wrong'), DETAIL)
+    await userEvent.click(screen.getByRole('button', { name: 'Send request' }))
+
+    expect(await screen.findByText('Request sent to Vexel')).toBeInTheDocument()
+    // Still there once the invalidated order has refetched as ineligible.
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(screen.getByText('Request sent to Vexel')).toBeInTheDocument()
+    expect(screen.queryByText('Orders list')).not.toBeInTheDocument()
+  })
+
   it('sends a buyer away from an order that cannot be refunded', async () => {
     // order-1111 already has an open request, so canRequestRefund is false.
     renderPage('order-1111')

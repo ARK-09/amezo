@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis } from 'recharts'
 
-import { Button } from '@/components/ui/button'
 import {
   ChartContainer,
   ChartTooltip,
@@ -19,6 +18,7 @@ import {
 } from '@/features/seller-metrics/api/useSellerMetrics'
 import { ShareList } from '@/features/seller-metrics/components/ShareList'
 import { StatTile } from '@/features/seller-metrics/components/StatTile'
+import { WidgetError } from '@/features/seller-metrics/components/WidgetError'
 import {
   useSellerOrderRows,
   useSellerProductRows,
@@ -38,12 +38,21 @@ type RangeKey = (typeof RANGES)[number]['value']
 
 const LOW_STOCK = 10
 
+/** The local calendar day, not the UTC one - toISOString() on a local date
+ *  shifts the window by a day either side of UTC, and at the start of a month
+ *  collapsed it to a single day in the previous one. */
+function isoDay(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
 function rangeFor(key: RangeKey): MetricsRange {
   const to = new Date()
   const from = new Date(to)
   if (key === 'month') from.setDate(1)
   else from.setDate(to.getDate() - (key === 'd7' ? 6 : 29))
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) }
+  return { from: isoDay(from), to: isoDay(to) }
 }
 
 // Single series each, so no legend: the card title names the measure and the
@@ -108,15 +117,12 @@ export function SellerDashboard() {
       </div>
 
       {metrics.isError && (
-        <div className="flex flex-col items-start gap-3 rounded-lg border p-6">
-          <p className="font-medium">Couldn't load your dashboard</p>
-          <p className="text-sm text-muted-foreground">
-            {metrics.error?.detail ?? 'Something went wrong. Try again.'}
-          </p>
-          <Button variant="outline" onClick={() => metrics.refetch()}>
-            Try again
-          </Button>
-        </div>
+        <WidgetError
+          className="rounded-lg border p-6"
+          title="Couldn't load your dashboard"
+          error={metrics.error}
+          onRetry={() => metrics.refetch()}
+        />
       )}
 
       {metrics.isLoading && (
@@ -225,28 +231,44 @@ export function SellerDashboard() {
             </Link>
           }
         >
-          <ShareList
-            emptyLabel="No sales in this window."
-            rows={(top.data ?? []).map((product) => ({
-              key: product.productId,
-              label: product.title,
-              value: formatPrice(product.revenue),
-              share: product.share,
-              to: `/products/${product.productRef}`,
-            }))}
-          />
+          {top.isError ? (
+            <WidgetError
+              title="Couldn't load top products"
+              error={top.error}
+              onRetry={() => top.refetch()}
+            />
+          ) : (
+            <ShareList
+              emptyLabel="No sales in this window."
+              rows={(top.data ?? []).map((product) => ({
+                key: product.productId,
+                label: product.title,
+                value: formatPrice(product.revenue),
+                share: product.share,
+                to: `/products/${product.productRef}`,
+              }))}
+            />
+          )}
         </Panel>
 
         <Panel title="Revenue by category">
-          <ShareList
-            emptyLabel="No sales in this window."
-            rows={(categories.data ?? []).map((row) => ({
-              key: row.category.slug,
-              label: row.category.name,
-              value: formatPrice(row.revenue),
-              share: row.share,
-            }))}
-          />
+          {categories.isError ? (
+            <WidgetError
+              title="Couldn't load your categories"
+              error={categories.error}
+              onRetry={() => categories.refetch()}
+            />
+          ) : (
+            <ShareList
+              emptyLabel="No sales in this window."
+              rows={(categories.data ?? []).map((row) => ({
+                key: row.category.slug,
+                label: row.category.name,
+                value: formatPrice(row.revenue),
+                share: row.share,
+              }))}
+            />
+          )}
         </Panel>
       </div>
 
@@ -259,7 +281,13 @@ export function SellerDashboard() {
             </Link>
           }
         >
-          {(shipQueue.data?.content ?? []).length === 0 ? (
+          {shipQueue.isError ? (
+            <WidgetError
+              title="Couldn't load your ship queue"
+              error={shipQueue.error}
+              onRetry={() => shipQueue.refetch()}
+            />
+          ) : (shipQueue.data?.content ?? []).length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Nothing waiting.</p>
           ) : (
             <ul className="flex flex-col gap-2.5">
@@ -284,7 +312,13 @@ export function SellerDashboard() {
             </Link>
           }
         >
-          {(lowStock.data?.content ?? []).length === 0 ? (
+          {lowStock.isError ? (
+            <WidgetError
+              title="Couldn't load your stock levels"
+              error={lowStock.error}
+              onRetry={() => lowStock.refetch()}
+            />
+          ) : (lowStock.data?.content ?? []).length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Everything is stocked.</p>
           ) : (
             <ul className="flex flex-col gap-2.5">
@@ -314,7 +348,13 @@ export function SellerDashboard() {
             </Link>
           }
         >
-          {(refunds.data?.content ?? []).length === 0 ? (
+          {refunds.isError ? (
+            <WidgetError
+              title="Couldn't load your refunds"
+              error={refunds.error}
+              onRetry={() => refunds.refetch()}
+            />
+          ) : (refunds.data?.content ?? []).length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               Nothing waiting on a decision.
             </p>

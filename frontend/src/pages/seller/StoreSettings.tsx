@@ -43,14 +43,31 @@ function draftFrom(profile: StoreProfile): Draft {
   }
 }
 
-/** Lowercase, dashes, no leading dash - the same shape the server enforces. */
+/**
+ * The handle rule lives in the contract as StoreHandle: lowercase letters, digits
+ * and inner dashes, 2-39 characters, no dash at either end.
+ *
+ * This runs on every keystroke, so it deliberately does NOT strip a trailing dash:
+ * typing "my store" passes through "my-", and eating that dash would splice the
+ * next word onto the last one ("mystore"). The dash is trimmed once on save
+ * instead - see normaliseHandle - which is the only point the server sees it.
+ */
 function slugify(value: string): string {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/-{2,}/g, '-')
-    .replace(/^-/, '')
+    .replace(/^-+/, '')
+    .slice(0, 39)
 }
+
+/** What actually goes to the server: slugify's transient trailing dash, gone. */
+function normaliseHandle(value: string): string {
+  return slugify(value).replace(/-+$/, '')
+}
+
+/** Mirrors StoreHandle's pattern and minLength, so a reject is caught before the round trip. */
+const HANDLE_PATTERN = /^[a-z0-9][a-z0-9-]{0,37}[a-z0-9]$/
 
 function Field({
   id,
@@ -77,29 +94,23 @@ export function StoreSettings() {
   const update = useUpdateMyStore()
 
   const [draft, setDraft] = useState<Draft | null>(null)
-  const [seededFrom, setSeededFrom] = useState<string | null>(null)
+  const [seededFrom, setSeededFrom] = useState<StoreProfile | null>(null)
 
   // Re-seed whenever the saved profile changes, so a successful save becomes
   // the new baseline and the form stops reading as dirty. Derived during
   // render rather than in an effect: an effect would paint the stale draft
   // once before correcting it.
-  const savedAt = query.data?.updatedAt ?? null
-  if (query.data && savedAt !== seededFrom) {
-    setSeededFrom(savedAt)
+  //
+  // Keyed on the profile object rather than its updatedAt, which is optional -
+  // a server that omits it left seededFrom and savedAt both null, so the draft
+  // was never seeded and the form sat on its skeleton forever.
+  if (query.data && query.data !== seededFrom) {
+    setSeededFrom(query.data)
     setDraft(draftFrom(query.data))
   }
 
   const baseline = useMemo(() => (query.data ? draftFrom(query.data) : null), [query.data])
   const dirty = Boolean(draft && baseline && JSON.stringify(draft) !== JSON.stringify(baseline))
-
-  if (query.isLoading || !draft) {
-    return (
-      <div className="flex max-w-[720px] flex-col gap-4">
-        <Skeleton className="h-7 w-48" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    )
-  }
 
   if (query.isError) {
     return (
@@ -115,12 +126,31 @@ export function StoreSettings() {
     )
   }
 
+  if (query.isLoading || !draft) {
+    return (
+      <div className="flex max-w-[720px] flex-col gap-4">
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    )
+  }
+
+  // Number('19a9') is NaN, which serialises to null against an integer field.
+  const foundedYearValue = /^\d{4}$/.test(draft.foundedYear.trim())
+    ? Number(draft.foundedYear.trim())
+    : null
+  const foundedYearOk = !draft.foundedYear.trim() || foundedYearValue !== null
+
   const emailOk =
     !draft.supportEmail.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.supportEmail.trim())
   const missing: string[] = []
   if (!draft.name.trim()) missing.push('a store name')
-  if (!draft.handle.trim()) missing.push('a store URL')
+  const handleValue = normaliseHandle(draft.handle)
+  if (!HANDLE_PATTERN.test(handleValue)) {
+    missing.push(draft.handle.trim() ? 'a store URL of at least two characters' : 'a store URL')
+  }
   if (!emailOk) missing.push('a valid support email')
+  if (!foundedYearOk) missing.push('a four-digit year')
   const canSave = dirty && missing.length === 0 && !update.isPending
 
   function patch(next: Partial<Draft>) {
@@ -131,10 +161,10 @@ export function StoreSettings() {
     if (!canSave || !draft) return
     update.mutate({
       name: draft.name.trim(),
-      handle: draft.handle.trim(),
+      handle: handleValue,
       tagline: draft.tagline.trim(),
       location: draft.location.trim(),
-      foundedYear: draft.foundedYear ? Number(draft.foundedYear) : undefined,
+      foundedYear: foundedYearValue ?? undefined,
       supportEmail: draft.supportEmail.trim(),
       about: draft.about.trim(),
       status: draft.onVacation ? 'VACATION' : 'OPEN',
@@ -173,7 +203,8 @@ export function StoreSettings() {
               onChange={(e) => patch({ name: e.target.value })}
             />
           </Field>
-          <Field id="st-handle" label="Store URL" hint={`amezo.com/stores/${draft.handle || '…'}`}>
+          {/* The previewed URL is the normalised one, so it matches what save sends. */}
+          <Field id="st-handle" label="Store URL" hint={`amezo.com/stores/${handleValue || '…'}`}>
             <Input
               id="st-handle"
               value={draft.handle}
@@ -200,7 +231,7 @@ export function StoreSettings() {
               id="st-founded"
               inputMode="numeric"
               value={draft.foundedYear}
-              onChange={(e) => patch({ foundedYear: e.target.value })}
+              onChange={(e) => patch({ foundedYear: e.target.value.replace(/\D/g, '').slice(0, 4) })}
             />
           </Field>
           <Field id="st-email" label="Support email">

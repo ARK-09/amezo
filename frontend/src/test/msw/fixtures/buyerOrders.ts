@@ -3,6 +3,7 @@ import type { components } from '@/lib/api/schema'
 type BuyerOrderDetail = components['schemas']['BuyerOrderDetail']
 type BuyerOrderSummary = components['schemas']['BuyerOrderSummary']
 type RefundRequestDetail = components['schemas']['RefundRequestDetail']
+type RefundRequestSummary = components['schemas']['RefundRequestSummary']
 
 /**
  * Buyer order history for local development and tests.
@@ -79,7 +80,7 @@ export const refundRequests: RefundRequestDetail[] = [
   },
 ]
 
-export const orderDetails: Record<string, BuyerOrderDetail> = {
+const SEED_ORDERS: Record<string, BuyerOrderDetail> = {
   'order-1111': {
     id: 'order-1111',
     reference: 'ord_19ff4c82',
@@ -186,6 +187,13 @@ export const orderDetails: Record<string, BuyerOrderDetail> = {
   },
 }
 
+export let orderDetails: Record<string, BuyerOrderDetail> = structuredClone(SEED_ORDERS)
+
+/** The refund POST mutates orders now, so each test starts from the seed. */
+export function resetBuyerOrders() {
+  orderDetails = structuredClone(SEED_ORDERS)
+}
+
 function summaryOf(detail: BuyerOrderDetail): BuyerOrderSummary {
   return {
     id: detail.id,
@@ -199,9 +207,23 @@ function summaryOf(detail: BuyerOrderDetail): BuyerOrderSummary {
     previewLines: detail.lines.slice(0, 2),
     shipment: detail.shipment,
     openRefundRequestId: detail.refundRequests?.[0]?.id ?? null,
+    openRefundStatus: detail.refundRequests?.[0]?.status ?? null,
   }
 }
 
 export function listBuyerOrders(): BuyerOrderSummary[] {
   return Object.values(orderDetails).map(summaryOf)
+}
+
+/**
+ * What POST /api/v1/refund-requests does to the order it was raised against:
+ * the order stops being eligible, and the new request shows on it. The real
+ * backend enforces one open request per line, so a mock that kept saying
+ * "yes, you may refund this" would hide exactly that class of bug.
+ */
+export function attachRefundToOrder(orderId: string, summary: RefundRequestSummary) {
+  const order = orderDetails[orderId]
+  if (!order) return
+  order.canRequestRefund = false
+  order.refundRequests = [...(order.refundRequests ?? []), summary]
 }

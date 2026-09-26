@@ -12,8 +12,13 @@ import { formatShortDate } from '@/lib/formatDate'
 const REFUND_FLOW = ['Requested', 'Approved', 'Return received', 'Refunded'] as const
 const REPLACEMENT_FLOW = ['Requested', 'Approved', 'Replacement sent'] as const
 
-/** How far along its flow each status sits. */
-const REACHED: Record<RefundRequestSummary['status'], number> = {
+/**
+ * How many steps of the flow this status has actually completed. A terminal
+ * status completes its whole flow - REFUNDED is the fourth step of four, not
+ * the fourth step in progress - so the last dot fills rather than sitting
+ * half-drawn under a heading that says the refund is complete.
+ */
+const COMPLETED: Record<RefundRequestSummary['status'], number> = {
   REQUESTED: 1,
   APPROVED: 2,
   AWAITING_RETURN: 2,
@@ -38,7 +43,7 @@ export function refundStepsFor(refund: RefundRequestSummary): ProgressStep[] {
   }
 
   const flow = refund.resolution === 'REPLACEMENT' ? REPLACEMENT_FLOW : REFUND_FLOW
-  const reached = REACHED[refund.status]
+  const completed = COMPLETED[refund.status]
 
   return flow.map((label, index) => {
     const position = index + 1
@@ -46,7 +51,7 @@ export function refundStepsFor(refund: RefundRequestSummary): ProgressStep[] {
       key: label,
       label,
       detail: position === 1 ? formatShortDate(refund.requestedAt) : null,
-      state: position < reached ? 'done' : position === reached ? 'current' : 'todo',
+      state: position <= completed ? 'done' : position === completed + 1 ? 'current' : 'todo',
     }
   })
 }
@@ -111,4 +116,9 @@ export function refundBadgeLabel(status: RefundRequestSummary['status']): string
     default:
       return 'Refund requested'
   }
+}
+
+/** Whether a refund is still live, as opposed to settled one way or another. */
+export function isRefundOpen(status: RefundRequestSummary['status']): boolean {
+  return !['REFUNDED', 'REPLACEMENT_SENT', 'DECLINED', 'CANCELLED'].includes(status)
 }

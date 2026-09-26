@@ -3,7 +3,12 @@ import { RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useBuyerOrder } from '@/features/orders/api/useBuyerOrders'
-import { refundStepsFor, refundSummaryLine, refundTitleFor } from '@/features/refunds/refundProgress'
+import {
+  isRefundOpen,
+  refundStepsFor,
+  refundSummaryLine,
+  refundTitleFor,
+} from '@/features/refunds/refundProgress'
 import { formatPrice } from '@/lib/formatPrice'
 import { formatShortDate } from '@/lib/formatDate'
 
@@ -108,7 +113,7 @@ export function OrderCardDetail({ orderId }: { orderId: string }) {
                 {line.variantLabel} · qty {line.quantity}
               </p>
             </div>
-            {line.refundStatus && (
+            {line.refundStatus && isRefundOpen(line.refundStatus) && (
               <span className="rounded-full bg-primary/10 px-2.5 py-[3px] text-[11px] font-bold text-[#b8560a]">
                 In refund
               </span>

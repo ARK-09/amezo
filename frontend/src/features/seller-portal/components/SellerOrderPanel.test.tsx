@@ -84,6 +84,28 @@ describe('SellerOrderPanel', () => {
     )
   })
 
+  // Number('') is 0 and Number('abc') is NaN, so the old clamp posted "1 parcel"
+  // whatever the seller had left in the box.
+  it('will not post a parcel count the seller did not type', async () => {
+    seed()
+    renderPanel()
+    await screen.findByText('Add an update')
+
+    await userEvent.clear(screen.getByLabelText('Parcels'))
+
+    const post = screen.getByRole('button', { name: 'Mark as packed' })
+    expect(post).toBeDisabled()
+    expect(screen.getByText('How many parcels? Enter at least 1.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Parcels')).toHaveAttribute('aria-invalid', 'true')
+
+    await userEvent.type(screen.getByLabelText('Parcels'), 'two')
+    expect(post).toBeDisabled()
+
+    await userEvent.clear(screen.getByLabelText('Parcels'))
+    await userEvent.type(screen.getByLabelText('Parcels'), '2')
+    expect(post).toBeEnabled()
+  })
+
   it('will not offer packing again once the order has moved on', async () => {
     seed('SHIPPED')
     renderPanel()

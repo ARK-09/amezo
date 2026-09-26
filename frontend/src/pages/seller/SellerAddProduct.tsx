@@ -30,6 +30,38 @@ function emptyVariant(): VariantRow {
   return { label: '', sku: '', price: '', stockQty: '' }
 }
 
+/**
+ * A numeric field's value, or null when the field holds nothing usable. Number('')
+ * is 0, which is how a cleared price used to be submitted as a real $0.00 variant,
+ * and Number('12px') is NaN, which serialises to null against a number column.
+ * Both are a missing value, not a zero.
+ */
+function parseNumber(value: string): number | null {
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    return null
+  }
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * Price has to be above 0. Unlike stock, a zero price is never something a seller
+ * means - a free item is a promotion, not a $0.00 offer - and it is exactly what
+ * the empty-field bug produced, so accepting a typed 0 would leave that same
+ * mispriced listing one stray keystroke away.
+ */
+function parsePrice(value: string): number | null {
+  const parsed = parseNumber(value)
+  return parsed !== null && parsed > 0 ? parsed : null
+}
+
+/** Stock 0 is a real answer - a variant can be listed with nothing on the shelf. */
+function parseStock(value: string): number | null {
+  const parsed = parseNumber(value)
+  return parsed !== null && Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
 export function SellerAddProduct() {
   const navigate = useNavigate()
   const { mutateAsync: createProduct, isPending } = useCreateProduct()
@@ -93,18 +125,32 @@ export function SellerAddProduct() {
       return
     }
 
+    // Parsed before the request rather than with Number() inside it: an empty
+    // price field is missing, not $0.00, and a product listed at zero is one
+    // nobody meant to publish. Checked here as well as by the inputs' `required`,
+    // which a whitespace-only value satisfies.
+    const priced: { label: string; sku: string; price: number; stockQty: number }[] = []
+    for (const [index, v] of variants.entries()) {
+      const price = parsePrice(v.price)
+      const stockQty = parseStock(v.stockQty)
+      if (price === null || stockQty === null) {
+        setSubmitError(
+          price === null
+            ? `Variant ${index + 1} needs a price above 0.`
+            : `Variant ${index + 1} needs a stock quantity of 0 or more.`,
+        )
+        return
+      }
+      priced.push({ label: v.label, sku: v.sku, price, stockQty })
+    }
+
     try {
       const { id } = await createProduct({
         title,
         brandName: brandName || null,
         description: description || null,
         categorySlug,
-        variants: variants.map((v) => ({
-          label: v.label,
-          sku: v.sku,
-          price: Number(v.price),
-          stockQty: Number(v.stockQty),
-        })),
+        variants: priced,
       })
 
       const failedUploads: string[] = []

@@ -70,7 +70,7 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
   const query = useSellerOrderRow(orderId)
   const update = useUpdateSellerOrder(orderId)
 
-  const [stage, setStage] = useState<Stage>('PACKED')
+  const [stage, setStage] = useState<Stage | null>(null)
   const [parcels, setParcels] = useState('1')
   const [packedBy, setPackedBy] = useState('')
   const [handoverMethod, setHandoverMethod] =
@@ -104,15 +104,26 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
 
   const order = query.data
   const can = availability(order.status)
-  const stageAllowed = can[stage].allowed
+  // Follows the order rather than sticking where it was first rendered: after
+  // packing, PACKED is no longer on offer, and leaving the picker there left a
+  // disabled stage with a dead post button and no way forward.
+  const defaultStage: Stage = can.PACKED.allowed ? 'PACKED' : 'SHIPPED'
+  const activeStage = stage && can[stage].allowed ? stage : defaultStage
+  const stageAllowed = can[activeStage].allowed
   const isFinal = !can.PACKED.allowed && !can.SHIPPED.allowed
+
+  // Number('') is 0 and Number('abc') is NaN, so clamping to 1 used to post a
+  // parcel count the seller never typed. The contract's minimum is 1, so an
+  // empty or non-numeric box is a question for the seller, not a default.
+  const parcelCount = /^\d+$/.test(parcels.trim()) ? Number(parcels.trim()) : null
+  const parcelsOk = activeStage !== 'PACKED' || (parcelCount !== null && parcelCount >= 1)
 
   function post() {
     const body: UpdateSellerOrder =
-      stage === 'PACKED'
+      activeStage === 'PACKED'
         ? {
             status: 'PACKED',
-            parcels: Math.max(1, Number(parcels) || 1),
+            parcels: parcelCount ?? 1,
             packedBy: packedBy.trim() || undefined,
             note: note.trim() || undefined,
           }
@@ -122,7 +133,12 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
             hub,
             note: note.trim() || undefined,
           }
-    update.mutate(body, { onSuccess: () => setNote('') })
+    update.mutate(body, {
+      onSuccess: () => {
+        setNote('')
+        setStage(null)
+      },
+    })
   }
 
   const log = [
@@ -131,7 +147,7 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
     {
       code: 'SHIPPED',
       label: 'Handed over',
-      at: order.shipment?.trackingNumber ? order.placedAt : null,
+      at: order.shipment?.shippedAt ?? null,
       done: ['SHIPPED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status),
     },
     {
@@ -147,6 +163,11 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
       <div className="flex flex-wrap items-center gap-3">
         <StatusBadge status={order.status} />
         <span className="font-mono text-xs text-muted-foreground">{order.reference}</span>
+        {order.shipment?.trackingNumber && (
+          <span className="font-mono text-xs text-muted-foreground">
+            {order.shipment.trackingNumber}
+          </span>
+        )}
         <span className="ml-auto text-sm font-semibold tabular-nums">
           {formatPrice(order.total)}
         </span>
@@ -210,7 +231,7 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
                   key={option}
                   type="button"
                   size="sm"
-                  variant={stage === option ? 'default' : 'outline'}
+                  variant={activeStage === option ? 'default' : 'outline'}
                   disabled={!state.allowed}
                   title={state.reason}
                   onClick={() => setStage(option)}
@@ -222,13 +243,14 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {stage === 'PACKED' ? (
+            {activeStage === 'PACKED' ? (
               <>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="op-parcels">Parcels</Label>
                   <Input
                     id="op-parcels"
                     inputMode="numeric"
+                    aria-invalid={!parcelsOk}
                     value={parcels}
                     onChange={(e) => setParcels(e.target.value)}
                   />
@@ -305,15 +327,19 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
           </div>
 
           <div className="mt-3.5 flex flex-wrap items-center gap-3">
-            <Button disabled={!stageAllowed || update.isPending} onClick={post}>
+            <Button disabled={!stageAllowed || !parcelsOk || update.isPending} onClick={post}>
               {update.isPending
                 ? 'Posting…'
-                : stage === 'PACKED'
+                : activeStage === 'PACKED'
                   ? 'Mark as packed'
                   : 'Mark as handed over'}
             </Button>
             <p className="text-xs text-muted-foreground">
-              {stageAllowed ? 'The buyer sees this on their order' : can[stage].reason}
+              {!stageAllowed
+                ? can[activeStage].reason
+                : parcelsOk
+                  ? 'The buyer sees this on their order'
+                  : 'How many parcels? Enter at least 1.'}
             </p>
           </div>
 

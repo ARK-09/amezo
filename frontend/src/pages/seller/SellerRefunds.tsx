@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   useSellerRefundRequests,
   type RefundStatus,
+  type RefundRequestSummary,
   type SellerRefundFilters,
 } from '@/features/refunds/api/useRefundRequests'
 import { RefundDecisionPanel } from '@/features/refunds/components/RefundDecisionPanel'
@@ -36,13 +37,34 @@ const TABS: { value: string; label: string }[] = [
   { value: 'all', label: 'All' },
 ]
 
+/**
+ * ?page=abc, ?page=-5 and ?page=1.7 used to go straight into the request and
+ * into "Page NaN of 1". A page number is a whole one, zero or above, or it is 0.
+ */
+function pageParam(raw: string | null) {
+  const parsed = Number(raw ?? 0)
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0
+}
+
 export function SellerRefunds() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [openId, setOpenId] = useState<string | null>(null)
+  const [openSnapshot, setOpenSnapshot] = useState<RefundRequestSummary | null>(null)
 
   const status = searchParams.get('status') ?? 'REQUESTED'
   const q = searchParams.get('q') ?? ''
-  const page = Number(searchParams.get('page') ?? 0)
+  const page = pageParam(searchParams.get('page'))
+
+  // The box is controlled so it can never disagree with the list: a tab switch
+  // or the Back button rewrites ?q= underneath it, and a defaultValue input
+  // went on showing the term it was mounted with. Re-seeded during render
+  // rather than from an effect - react(set-state-in-effect).
+  const [term, setTerm] = useState(q)
+  const [seededFrom, setSeededFrom] = useState(q)
+  if (seededFrom !== q) {
+    setSeededFrom(q)
+    setTerm(q)
+  }
 
   const filters = useMemo<SellerRefundFilters>(
     () => ({
@@ -69,7 +91,14 @@ export function SellerRefunds() {
   const rows = query.data?.content ?? []
   const total = query.data?.totalElements ?? 0
   const totalPages = query.data?.totalPages ?? 1
-  const openRow = rows.find((row) => row.id === openId)
+  // A ?page= past the end comes back empty; don't also print a page number that
+  // doesn't exist, and let Previous walk back into the range that does.
+  const shownPage = Math.min(page, totalPages - 1)
+  // Snapshotted when the drawer opens. Acting on a record usually moves it
+  // out of the bucket being viewed - deriving the drawer from the current
+  // page meant it slammed shut the instant the action succeeded, before the
+  // seller saw the result.
+  const openRow = rows.find((row) => row.id === openId) ?? openSnapshot
 
   return (
     <div className="flex flex-col gap-5">
@@ -97,8 +126,11 @@ export function SellerRefunds() {
         />
         <input
           type="search"
-          defaultValue={q}
-          onChange={(e) => patch({ q: e.target.value })}
+          value={term}
+          onChange={(e) => {
+            setTerm(e.target.value)
+            patch({ q: e.target.value })
+          }}
           placeholder="Search buyer, order or product"
           aria-label="Search refund requests"
           className="h-9 w-full rounded-md border bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -164,7 +196,10 @@ export function SellerRefunds() {
                     <StatusBadge status={row.status} />
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => setOpenId(row.id)}>
+                    <Button variant="outline" size="sm" onClick={() => {
+                        setOpenId(row.id)
+                        setOpenSnapshot(row)
+                      }}>
                       Review
                     </Button>
                   </TableCell>
@@ -180,19 +215,19 @@ export function SellerRefunds() {
           <Button
             variant="outline"
             size="sm"
-            disabled={page === 0}
-            onClick={() => patch({ page: String(page - 1) })}
+            disabled={shownPage === 0}
+            onClick={() => patch({ page: String(shownPage - 1) })}
           >
             Previous
           </Button>
           <span className="text-sm text-muted-foreground">
-            Page {page + 1} of {totalPages}
+            Page {shownPage + 1} of {totalPages}
           </span>
           <Button
             variant="outline"
             size="sm"
-            disabled={page + 1 >= totalPages}
-            onClick={() => patch({ page: String(page + 1) })}
+            disabled={shownPage + 1 >= totalPages}
+            onClick={() => patch({ page: String(shownPage + 1) })}
           >
             Next
           </Button>
@@ -200,8 +235,12 @@ export function SellerRefunds() {
       )}
 
       <DetailDrawer
-        open={Boolean(openRow)}
-        onOpenChange={(next) => !next && setOpenId(null)}
+        open={Boolean(openId)}
+        onOpenChange={(next) => {
+          if (next) return
+          setOpenId(null)
+          setOpenSnapshot(null)
+        }}
         title={openRow ? `Request ${openRow.reference}` : 'Refund request'}
         description={openRow?.orderReference}
         fullPageTo={`/seller/refunds/${openRow?.id ?? ''}`}

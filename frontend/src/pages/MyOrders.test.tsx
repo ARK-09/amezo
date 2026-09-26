@@ -1,8 +1,8 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { MemoryRouter } from 'react-router'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { createAppQueryClient } from '@/lib/api/queryClient'
@@ -18,6 +18,20 @@ function renderPage(initialEntry = '/orders') {
       </MemoryRouter>
     </QueryClientProvider>,
   )
+}
+
+/** A real history, so a test can press Back the way a browser does. */
+function renderWithHistory(entries: string[]) {
+  const router = createMemoryRouter([{ path: '/orders', Component: MyOrders }], {
+    initialEntries: entries,
+    initialIndex: entries.length - 1,
+  })
+  render(
+    <QueryClientProvider client={createAppQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
+  return router
 }
 
 const HEADPHONES = 'Wireless Noise-Cancelling Headphones'
@@ -56,7 +70,10 @@ describe('MyOrders', () => {
     const [firstCard] = screen.getAllByRole('article')
     await userEvent.click(within(firstCard).getByRole('button', { name: /Order details/ }))
 
-    expect(await within(firstCard).findByText('Return in progress')).toBeInTheDocument()
+    // The card's badge and the panel's heading both read the real status. The
+    // badge used to be hardcoded to "Refund requested", so a card could
+    // contradict the panel sitting directly underneath it.
+    expect(await within(firstCard).findAllByText('Return in progress')).toHaveLength(2)
     expect(within(firstCard).getByText('ref_90ce34aa')).toBeInTheDocument()
     expect(within(firstCard).getByText(/Send the item back/)).toBeInTheDocument()
   })
@@ -84,6 +101,30 @@ describe('MyOrders', () => {
 
     expect(await screen.findByText(LAPTOP)).toBeInTheDocument()
     expect(screen.queryByText(HEADPHONES)).not.toBeInTheDocument()
+  })
+
+  it('reads a page param that is not a number as the first page', async () => {
+    renderPage('/orders?page=abc')
+
+    // NaN used to reach the request, which answered with nothing at all.
+    expect(await screen.findByText('ord_19ff4c82')).toBeInTheDocument()
+  })
+
+  it('puts the search box back in step with the URL when you navigate back', async () => {
+    const router = renderWithHistory(['/orders', '/orders?q=ultrabook'])
+
+    const search = await screen.findByLabelText('Search your orders')
+    expect(search).toHaveValue('ultrabook')
+    await screen.findByText(LAPTOP)
+
+    await act(async () => {
+      await router.navigate(-1)
+    })
+
+    // The box used to keep the old term after the URL dropped it, so it read as
+    // a filtered list with every order back on screen.
+    await waitFor(() => expect(search).toHaveValue(''))
+    expect(await screen.findByText(HEADPHONES)).toBeInTheDocument()
   })
 
   it('surfaces a failure with a retry rather than an empty list', async () => {

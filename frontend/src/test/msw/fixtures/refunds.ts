@@ -82,6 +82,19 @@ const SEED: RefundRequestDetail[] = [
     [{ orderLineId: 'l4', productTitle: '14" Ultrabook Laptop, 16GB RAM', variantLabel: 'Silver', quantity: 1, unitPrice: 899, lineTotal: 899 }],
     { declinedAt: '2026-09-04T09:00:00Z', declineReason: 'Item shows signs of use' },
   ),
+  // Raised against the first demo seller order (see fixtures/sellerOrders.ts),
+  // so the seller-side "this order has a refund" branches are reachable by
+  // opening the app. They were dead code while the order fixture answered
+  // hasOpenRefund: false for every order. Appended last on purpose: the queue
+  // is served in store order, so the rows the existing tests reach for by
+  // position do not move.
+  make(
+    'ref-5', 'ref_2f81aa07', 'Alex', 'alex@example.com', 'ord_00000001',
+    'REQUESTED', 'REFUND',
+    'One earcup rattles at anything above half volume. Box, cable and pads are all still here.',
+    [{ orderLineId: 'd0000000-0000-0000-0000-000000000001-line-1', productTitle: 'Wireless Noise-Cancelling Headphones', variantLabel: 'Black', quantity: 1, unitPrice: 129.99, lineTotal: 129.99 }],
+    { orderId: 'd0000000-0000-0000-0000-000000000001', orderPlacedAt: '2026-09-23T14:12:00.000Z' },
+  ),
 ]
 
 let store: RefundRequestDetail[] = structuredClone(SEED)
@@ -96,6 +109,26 @@ export function listRefundRequests(): RefundRequestDetail[] {
 
 export function findRefundRequest(id: string): RefundRequestDetail | undefined {
   return store.find((request) => request.id === id)
+}
+
+/**
+ * Every request raised against one order, matched on order id the way the
+ * backend's foreign key will. The order fixtures derive their refund fields
+ * from this instead of returning constants - an order that always said "no
+ * open refund" left the screens that branch on one permanently untested.
+ */
+export function refundRequestsForOrder(orderId: string): RefundRequestDetail[] {
+  return store.filter((request) => request.orderId === orderId)
+}
+
+/**
+ * What POST /api/v1/refund-requests adds. One store answers every read, so a
+ * request the buyer just raised is visible to the seller's queue and to the
+ * order it was raised against, rather than only to the order.
+ */
+export function addRefundRequest(request: RefundRequestDetail): RefundRequestDetail {
+  store.push(request)
+  return request
 }
 
 export function summaryOfRefund(request: RefundRequestDetail): RefundRequestSummary {
@@ -116,7 +149,7 @@ export function summaryOfRefund(request: RefundRequestDetail): RefundRequestSumm
 
 /** Exactly the transitions the handoff document specifies. */
 const LEGAL: Record<RefundStatus, RefundStatus[]> = {
-  REQUESTED: ['APPROVED', 'AWAITING_RETURN', 'DECLINED', 'CANCELLED'],
+  REQUESTED: ['APPROVED', 'DECLINED', 'CANCELLED'],
   APPROVED: ['AWAITING_RETURN', 'RETURN_RECEIVED', 'REPLACEMENT_SENT'],
   AWAITING_RETURN: ['RETURN_RECEIVED'],
   RETURN_RECEIVED: ['REFUNDED', 'REPLACEMENT_SENT'],
@@ -128,6 +161,18 @@ const LEGAL: Record<RefundStatus, RefundStatus[]> = {
 
 export function canTransition(from: RefundStatus, to: RefundStatus): boolean {
   return LEGAL[from].includes(to)
+}
+
+/**
+ * Still live, as opposed to settled one way or another. Read straight off the
+ * transition map so the two cannot disagree: a request is open exactly while
+ * the backend would still accept a move out of its current status. The app has
+ * its own isRefundOpen() for the same question, but this directory imports
+ * nothing from the app but generated types - a mock that borrowed a UI helper
+ * would quietly change shape whenever the UI did.
+ */
+export function isRefundOpen(status: RefundStatus): boolean {
+  return LEGAL[status].length > 0
 }
 
 export function updateRefundRequest(

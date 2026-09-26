@@ -1,21 +1,35 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { createAppQueryClient } from '@/lib/api/queryClient'
 
 import { SellerRefunds } from './SellerRefunds'
 
-function renderPage() {
+function renderPage(initialEntry = '/seller/refunds') {
   return render(
     <QueryClientProvider client={createAppQueryClient()}>
-      <MemoryRouter initialEntries={['/seller/refunds']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <SellerRefunds />
       </MemoryRouter>
     </QueryClientProvider>,
   )
+}
+
+/** A real history, so a test can press Back the way a browser does. */
+function renderWithHistory(entries: string[]) {
+  const router = createMemoryRouter([{ path: '/seller/refunds', Component: SellerRefunds }], {
+    initialEntries: entries,
+    initialIndex: entries.length - 1,
+  })
+  render(
+    <QueryClientProvider client={createAppQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
+  return router
 }
 
 describe('SellerRefunds', () => {
@@ -49,6 +63,30 @@ describe('SellerRefunds', () => {
     await waitFor(() => expect(screen.queryByText('ref_4d90b12c')).not.toBeInTheDocument())
   })
 
+  it('clamps a negative page param to the first page', async () => {
+    renderPage('/seller/refunds?page=-2')
+
+    // A negative offset used to reach the request, which answered with nothing.
+    expect(await screen.findByText('ref_4d90b12c')).toBeInTheDocument()
+  })
+
+  it('puts the search box back in step with the URL when you navigate back', async () => {
+    const router = renderWithHistory(['/seller/refunds', '/seller/refunds?q=tanaka'])
+
+    const search = await screen.findByLabelText('Search refund requests')
+    expect(search).toHaveValue('tanaka')
+    await screen.findByText('ref_77a1e604')
+
+    await act(async () => {
+      await router.navigate(-1)
+    })
+
+    // The box used to keep the old term after the URL dropped it, so it read as
+    // a filtered list with the whole queue back on screen.
+    await waitFor(() => expect(search).toHaveValue(''))
+    expect(await screen.findByText('ref_4d90b12c')).toBeInTheDocument()
+  })
+
   it('approves a request from the drawer and moves it off the queue', async () => {
     renderPage()
     await screen.findByText('ref_4d90b12c')
@@ -62,7 +100,19 @@ describe('SellerRefunds', () => {
       within(drawer).getByRole('button', { name: 'Approve and request return' }),
     )
 
-    // The queue is "needs a decision", so an approved request leaves it.
+    // The drawer stays open on the request that was just acted on. It used to
+    // be derived from the current page, so it closed on the seller the instant
+    // their decision succeeded.
+    const settled = await screen.findByRole('dialog')
+    // Once as the status badge, once as the completed step in the stepper.
+    expect(await within(settled).findAllByText('Approved')).toHaveLength(2)
+
+    // Close it, and the approved request has left the "needs a decision" queue.
+    // Asserted after closing because the drawer is modal - Radix marks the rest
+    // of the page aria-hidden, so the table is not in the accessibility tree
+    // while it is open.
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await waitFor(() => expect(screen.queryByText('ref_4d90b12c')).not.toBeInTheDocument())
   })
 
@@ -76,7 +126,9 @@ describe('SellerRefunds', () => {
     const drawer = await screen.findByRole('dialog')
     await userEvent.type(await within(drawer).findByLabelText('Refund amount'), '9999')
 
-    expect(within(drawer).getByText('Cannot be more than the requested amount.')).toBeInTheDocument()
+    expect(
+      within(drawer).getByText('Enter an amount above zero and no more than what was requested.'),
+    ).toBeInTheDocument()
     expect(
       within(drawer).getByRole('button', { name: 'Approve and request return' }),
     ).toBeDisabled()

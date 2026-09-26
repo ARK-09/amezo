@@ -7,7 +7,12 @@ import {
   issueMagicLinkToken,
   signInBuyerSession,
 } from './fixtures/sellerAuth'
-import { listBuyerOrders, orderDetails, refundRequests } from './fixtures/buyerOrders'
+import {
+  attachRefundToOrder,
+  listBuyerOrders,
+  orderDetails,
+  refundRequests,
+} from './fixtures/buyerOrders'
 import { systemCategories } from './fixtures/categories'
 import { currentLastCheckoutDetails } from './fixtures/checkoutDetails'
 import { mockCountries } from './fixtures/countries'
@@ -19,6 +24,7 @@ import {
   patchStoreProfile,
 } from './fixtures/storeProfile'
 import {
+  addRefundRequest,
   canTransition,
   findRefundRequest,
   listRefundRequests,
@@ -203,18 +209,19 @@ export const handlers = [
       )
     }
 
+    // Stored on the order, not spread onto the response on the way out: the
+    // fulfilment fields used to be echoed once and then lost, so the very next
+    // GET of the same order answered packedAt: null and the log forgot that the
+    // seller had packed anything.
     const updated = updateSellerOrder(order.id, {
       status: body.status as typeof order.status,
+      ...(body.parcels != null ? { parcels: body.parcels } : {}),
+      ...(body.status === 'PACKED' ? { packedAt: new Date().toISOString() } : {}),
       ...(body.status === 'SHIPPED'
         ? { trackingNumber: `AZ${order.id.replace(/-/g, '').slice(-8).toUpperCase()}`, shippedAt: new Date().toISOString() }
         : {}),
     })!
-    const detail = sellerOrderRowDetailOf(updated)
-    return HttpResponse.json({
-      ...detail,
-      packedAt: body.status === 'PACKED' ? new Date().toISOString() : detail.packedAt,
-      parcels: body.parcels ?? detail.parcels,
-    })
+    return HttpResponse.json(sellerOrderRowDetailOf(updated))
   }),
 
   http.get('http://localhost:8080/api/v1/sellers/me/products', ({ request }) => {
@@ -327,11 +334,10 @@ export const handlers = [
     })
     const requestedAmount = lines.reduce((sum, l) => sum + l.lineTotal, 0)
 
-    return HttpResponse.json(
-      {
+    const created = {
         id: crypto.randomUUID(),
         reference: 'ref_' + Math.random().toString(16).slice(2, 10),
-        status: 'REQUESTED',
+        status: 'REQUESTED' as const,
         resolution: body.resolution,
         payout: body.payout ?? 'ORIGINAL_PAYMENT',
         detail: body.detail,
@@ -347,9 +353,28 @@ export const handlers = [
         seller: order.seller,
         paymentMethod: null,
         lines,
-      },
-      { status: 201 },
-    )
+    }
+
+    // Into the refund store as well as onto the order. The order-side fields
+    // are derived from that store, and a request that only ever landed on the
+    // order was invisible to every other reader - including GET by id, which
+    // answered 404 for a request the buyer had just been shown.
+    addRefundRequest(created)
+
+    attachRefundToOrder(order.id, {
+      id: created.id,
+      reference: created.reference,
+      status: created.status,
+      resolution: created.resolution,
+      requestedAt: created.requestedAt,
+      requestedAmount: created.requestedAmount,
+      approvedAmount: null,
+      currency: created.currency,
+      orderId: created.orderId,
+      orderReference: created.orderReference,
+    })
+
+    return HttpResponse.json(created, { status: 201 })
   }),
 
   http.get('http://localhost:8080/api/v1/refund-requests/:refundRequestId', ({ params }) => {

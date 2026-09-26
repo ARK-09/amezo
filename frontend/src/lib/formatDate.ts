@@ -20,9 +20,17 @@ const MONTHS_LONG = [
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+/** A date with no time, as the metrics series and the API's `format: date` use. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
 function parse(iso: string | null | undefined): Date | null {
   if (!iso) return null
-  const date = new Date(iso)
+  // A date-only string parses as UTC midnight, but everything below reads it
+  // back with local getters - so west of UTC "2026-09-01" rendered as 31 Aug,
+  // and every axis tick and range caption was a day early. Anchoring at local
+  // noon makes the calendar day the one that was written down. A full
+  // timestamp is a real instant and stays as it is.
+  const date = new Date(DATE_ONLY.test(iso) ? `${iso}T12:00:00` : iso)
   return Number.isNaN(date.getTime()) ? null : date
 }
 

@@ -37,10 +37,12 @@ function nextActions(
 ): readonly RefundStatus[] {
   switch (status) {
     case 'REQUESTED':
-      return ['AWAITING_RETURN', 'DECLINED'] as const
+      return ['APPROVED', 'DECLINED'] as const
     case 'APPROVED':
     case 'AWAITING_RETURN':
-      return ['RETURN_RECEIVED'] as const
+      return resolution === 'REPLACEMENT'
+        ? (['REPLACEMENT_SENT'] as const)
+        : (['RETURN_RECEIVED'] as const)
     case 'RETURN_RECEIVED':
       return resolution === 'REPLACEMENT' ? (['REPLACEMENT_SENT'] as const) : (['REFUNDED'] as const)
     default:
@@ -49,7 +51,7 @@ function nextActions(
 }
 
 const ACTION_LABEL: Record<string, string> = {
-  AWAITING_RETURN: 'Approve and request return',
+  APPROVED: 'Approve and request return',
   DECLINED: 'Decline',
   RETURN_RECEIVED: 'Mark return received',
   REFUNDED: 'Release the refund',
@@ -103,12 +105,16 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
   const request = query.data
   const actions = nextActions(request.status, request.resolution)
   const amountValue = amount === '' ? request.requestedAmount : Number(amount)
-  const amountTooHigh = amountValue > request.requestedAmount
+  // Number('abc') is NaN, and NaN > x is false - so a typo used to pass the
+  // guard and serialise to null against a field the spec types as a number.
+  const amountOk =
+    Number.isFinite(amountValue) && amountValue > 0 && amountValue <= request.requestedAmount
+  const amountTooHigh = !amountOk
 
   function act(status: RefundStatus) {
     update.mutate({
       status,
-      ...(status === 'AWAITING_RETURN' ? { approvedAmount: amountValue } : {}),
+      ...(status === 'APPROVED' ? { approvedAmount: amountValue } : {}),
       ...(status === 'DECLINED' ? { declineReason: reason } : {}),
       ...(note.trim() ? { note: note.trim() } : {}),
     })
@@ -176,7 +182,7 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
         <section className="rounded-xl border p-5">
           <SectionLabel>Your decision</SectionLabel>
 
-          {actions.includes('AWAITING_RETURN') && (
+          {actions.includes('APPROVED') && (
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="rf-amount">Refund amount</Label>
@@ -192,7 +198,7 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
                 </p>
                 {amountTooHigh && (
                   <p className="text-xs text-destructive">
-                    Cannot be more than the requested amount.
+                    Enter an amount above zero and no more than what was requested.
                   </p>
                 )}
               </div>
@@ -231,7 +237,7 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
               <Button
                 key={action}
                 variant={action === 'DECLINED' ? 'outline' : 'default'}
-                disabled={update.isPending || (action === 'AWAITING_RETURN' && amountTooHigh)}
+                disabled={update.isPending || (action === 'APPROVED' && !amountOk)}
                 onClick={() => act(action)}
               >
                 {ACTION_LABEL[action]}

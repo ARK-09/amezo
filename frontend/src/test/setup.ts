@@ -10,6 +10,7 @@ import { resetWrittenReviews } from './msw/fixtures/productDetails'
 import { resetPurchases } from './msw/fixtures/purchases'
 import { clearSellerSession } from './msw/fixtures/sellerAuth'
 import { resetSellerOrders } from './msw/fixtures/sellerOrders'
+import { resetBuyerOrders } from './msw/fixtures/buyerOrders'
 import { resetRefundRequests } from './msw/fixtures/refunds'
 import { resetSellerProducts } from './msw/fixtures/sellerProducts'
 import { resetStoreProfile } from './msw/fixtures/storeProfile'
@@ -31,6 +32,7 @@ afterEach(() => server.resetHandlers())
 afterEach(() => localStorage.clear())
 afterEach(() => resetSellerProducts())
 afterEach(() => resetRefundRequests())
+afterEach(() => resetBuyerOrders())
 afterEach(() => resetStoreProfile())
 afterEach(() => resetSellerOrders())
 // The mock session cookie is module state like the rest; a test that signs in
