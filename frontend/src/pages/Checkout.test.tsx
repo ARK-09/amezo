@@ -51,7 +51,7 @@ async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
  */
 async function chooseCountry(user: ReturnType<typeof userEvent.setup>, name: string) {
   await user.click(screen.getByRole('combobox', { name: 'Country' }))
-  await user.type(screen.getByRole('textbox', { name: 'Search country' }), name)
+  await user.type(screen.getByRole('combobox', { name: 'Search country' }), name)
   await user.click(await screen.findByRole('option', { name }))
 }
 

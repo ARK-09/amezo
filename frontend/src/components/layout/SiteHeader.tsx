@@ -1,10 +1,10 @@
-import { ChevronDown, LayoutGrid, Search, ShoppingBag, Store, Tag } from 'lucide-react'
+import { Search, ShoppingBag, Store, Tag } from 'lucide-react'
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 
 import { Avatar } from '@/components/Avatar'
-import { displayNameFor } from '@/lib/displayName'
+import { AllCategoriesMenu } from '@/components/layout/AllCategoriesMenu'
 import { DeliveryLocation } from '@/components/layout/DeliveryLocation'
 import { CartTrigger } from '@/features/cart/components/CartTrigger'
 import { useCategories } from '@/features/reference/api/useCategories'
@@ -91,15 +91,18 @@ export function SiteHeader() {
         <div className="ml-auto flex items-center gap-3 md:ml-0 md:gap-5">
           <DeliveryLocation />
           <CartTrigger />
-          {/* An avatar, not an email address: printing someone's address in the
-              header is noise, and a small privacy leak on a shared screen. The name
-              still travels, as the avatar's title and the adjacent label. */}
+          {/* The avatar alone. The label beside it used to print a name derived from
+              the email when no real name was on record, which for a magic-link buyer
+              is always - so "someone@example.com" showed up as "Someone" in the
+              header of a shared screen. The identity is still reachable: the avatar
+              is the link to /account, which is where the address belongs. */}
           {session.data ? (
-            <Link to="/account" className="flex items-center gap-2" aria-label="Your account">
+            <Link
+              to="/account"
+              className="flex items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Your account"
+            >
               <Avatar name={session.data.fullName ?? session.data.email} size="sm" />
-              <span className="hidden max-w-[14ch] truncate text-[13px] font-semibold sm:inline">
-                {displayNameFor(session.data.fullName ?? session.data.email)}
-              </span>
             </Link>
           ) : (
             <Link
@@ -115,17 +118,7 @@ export function SiteHeader() {
 
       <div className="border-t">
         <div className="mx-auto flex max-w-[1320px] items-center gap-6 overflow-x-auto px-7 py-[9px]">
-          <Link
-            to="/search"
-            className={cn(
-              'inline-flex shrink-0 items-center gap-2 text-[13px] font-bold whitespace-nowrap',
-              onSearchPage && !activeCategory ? 'text-primary' : 'hover:text-primary',
-            )}
-          >
-            <LayoutGrid className="size-3.5" aria-hidden />
-            All categories
-            <ChevronDown className="size-[11px]" aria-hidden />
-          </Link>
+          <AllCategoriesMenu activeCategory={activeCategory} />
 
           <nav aria-label="Product categories" className="flex flex-1 items-center gap-5">
             {navCategories.map((category) => (

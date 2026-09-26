@@ -21,6 +21,7 @@ const PRODUCT: ProductSummary = {
   priceFrom: 79.99,
   thumbnailUrl: null,
   avgRating: 4.5,
+  reviewCount: 128,
   inStock: true,
   defaultVariantId: 'v-1',
   defaultVariantPrice: 84.99,

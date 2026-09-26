@@ -3,13 +3,16 @@ import type { components } from '@/lib/api/schema'
 type Category = components['schemas']['Category']
 
 /**
- * The mock system category list. Mirrors the rows V14 seeds, so a test that picks
- * "Apparel" is picking something the real backend also has - a fixture category
- * that doesn't exist in the migration would pass here and 404 in production.
+ * The mock system category list. Mirrors the rows V14 seeds plus V16's Clothing, in
+ * the same position order the server returns them, so a test that picks "Apparel" is
+ * picking something the real backend also has - a fixture category that doesn't exist
+ * in the migrations would pass here and 404 in production.
  */
 export const systemCategories: Category[] = [
   { slug: 'electronics', name: 'Electronics' },
   { slug: 'apparel', name: 'Apparel' },
+  // V16, seated between Apparel (20) and Footwear (30).
+  { slug: 'clothing', name: 'Clothing' },
   { slug: 'footwear', name: 'Footwear' },
   { slug: 'kitchen', name: 'Kitchen' },
   { slug: 'outdoor', name: 'Outdoor' },

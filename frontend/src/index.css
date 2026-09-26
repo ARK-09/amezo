@@ -107,3 +107,20 @@
     @apply bg-background text-foreground text-sm font-sans;
   }
 }
+
+/* A horizontally scrollable strip that keeps its scrolling and loses its
+   scrollbar. Used by the category rail, where the bar sat under the tiles on
+   desktop and drew a grey line across the section.
+
+   Scrolling itself is untouched, which is the part that matters: the element
+   still scrolls with a wheel, a trackpad, a touch swipe, and the keyboard once
+   focused. Only the painted bar goes. `scrollbar-width` covers Firefox and
+   modern Chromium; the `::-webkit-scrollbar` rule covers Safari and older
+   Chromium, which ignore it. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

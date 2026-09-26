@@ -54,7 +54,7 @@ describe('CategorySelect', () => {
     renderSelect()
     await userEvent.click(await screen.findByRole('combobox', { name: 'Category' }))
 
-    await userEvent.type(screen.getByRole('textbox', { name: 'Search category' }), 'foot')
+    await userEvent.type(screen.getByRole('combobox', { name: 'Search category' }), 'foot')
 
     expect(screen.getByRole('option', { name: 'Footwear' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Electronics' })).not.toBeInTheDocument()
@@ -64,7 +64,7 @@ describe('CategorySelect', () => {
     renderSelect()
     await userEvent.click(await screen.findByRole('combobox', { name: 'Category' }))
 
-    await userEvent.type(screen.getByRole('textbox', { name: 'Search category' }), 'zzzz')
+    await userEvent.type(screen.getByRole('combobox', { name: 'Search category' }), 'zzzz')
 
     expect(screen.getByText('No category matches that')).toBeInTheDocument()
     expect(screen.queryAllByRole('option')).toHaveLength(0)
@@ -118,8 +118,10 @@ describe('CategorySelect', () => {
 
     await userEvent.click(await screen.findByRole('combobox', { name: 'Category' }))
 
-    expect(screen.getByRole('option', { name: 'Kitchen' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('option', { name: 'Outdoor' })).toHaveAttribute('aria-selected', 'false')
+    // aria-selected tracks the HIGHLIGHTED option under cmdk, not the chosen value -
+    // the chosen one is the one carrying the check mark.
+    expect(screen.getByRole('option', { name: 'Kitchen' })).toHaveClass('font-semibold')
+    expect(screen.getByRole('option', { name: 'Outdoor' })).not.toHaveClass('font-semibold')
   })
 
   /** Nothing to choose from is a dead control, not an empty list to puzzle over. */

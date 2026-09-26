@@ -25,7 +25,8 @@ class ProductMapper {
             boolean inStock,
             Offer defaultOffer,
             UUID defaultVariantId,
-            Double averageRating) {
+            Double averageRating,
+            long reviewCount) {
         return new ProductSummaryResponse(
                 product.getId(),
                 product.getSlug(),
@@ -42,6 +43,7 @@ class ProductMapper {
                 defaultVariantId,
                 defaultOffer != null ? defaultOffer.getPrice() : null,
                 averageRating,
+                reviewCount,
                 // The card needs this to refuse to add a seller's own product to
                 // their cart. It is the seller's id, which is already public in
                 // effect (a store front is addressable by brand), not a buyer's.

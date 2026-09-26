@@ -34,6 +34,7 @@ const BASE_PRODUCTS: BaseProduct[] = [
     priceFrom: 129.99,
     thumbnailUrl: null,
     avgRating: 4.5,
+    reviewCount: 128,
     inStock: true,
   },
   {
@@ -44,6 +45,7 @@ const BASE_PRODUCTS: BaseProduct[] = [
     priceFrom: 899,
     thumbnailUrl: null,
     avgRating: 4.8,
+    reviewCount: 42,
     inStock: true,
   },
   {
@@ -54,6 +56,7 @@ const BASE_PRODUCTS: BaseProduct[] = [
     priceFrom: 74.5,
     thumbnailUrl: null,
     avgRating: null,
+    reviewCount: 0,
     inStock: true,
   },
   {
@@ -64,6 +67,7 @@ const BASE_PRODUCTS: BaseProduct[] = [
     priceFrom: 64,
     thumbnailUrl: null,
     avgRating: 4.1,
+    reviewCount: 24,
     inStock: false,
   },
   {
@@ -74,6 +78,7 @@ const BASE_PRODUCTS: BaseProduct[] = [
     priceFrom: 149,
     thumbnailUrl: null,
     avgRating: 4.6,
+    reviewCount: 24,
     inStock: true,
   },
   {
@@ -84,6 +89,7 @@ const BASE_PRODUCTS: BaseProduct[] = [
     priceFrom: 22,
     thumbnailUrl: null,
     avgRating: null,
+    reviewCount: 0,
     inStock: true,
   },
 ]

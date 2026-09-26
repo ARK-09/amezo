@@ -87,7 +87,20 @@ export function ProductTile({
         {/* mt-auto anchors this row to the card's bottom edge regardless of
             whether the title above wrapped to one line or the full two. */}
         <div className="mt-auto flex items-center gap-2 pt-1">
-          {product.avgRating != null && <RatingBadge rating={product.avgRating} />}
+          {/* Real aggregates from the API, never a placeholder score. reviewCount
+              is what separates "nobody has rated this" from "the rating didn't
+              load": a product with no reviews says so rather than showing an
+              empty gap where every other card has a badge. */}
+          {product.reviewCount > 0 && product.avgRating != null ? (
+            <span className="flex items-center gap-1.5">
+              <RatingBadge rating={product.avgRating} />
+              <span className="text-xs text-muted-foreground" aria-label={`${product.reviewCount} reviews`}>
+                ({product.reviewCount})
+              </span>
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">No reviews yet</span>
+          )}
           <button
             type="button"
             className="ml-auto inline-flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"

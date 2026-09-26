@@ -10,10 +10,17 @@ describe('Avatar', () => {
     expect(screen.getByText('AL')).toBeInTheDocument()
   })
 
-  it('renders an image when one is given, labelled with the name', () => {
+  /**
+   * shadcn's Avatar holds the image back until it has actually loaded, which is the
+   * point of using it: no flash of a broken image, and no layout shift when a slow
+   * avatar arrives. jsdom never loads images, so the fallback is what renders here -
+   * asserting an <img> would be asserting behaviour the primitive deliberately does
+   * not have.
+   */
+  it('keeps showing initials until a supplied image has loaded', () => {
     render(<Avatar name="Ada Lovelace" src="https://cdn.example/ada.jpg" />)
-    const image = screen.getByRole('img', { name: 'Ada Lovelace' })
-    expect(image).toHaveAttribute('src', 'https://cdn.example/ada.jpg')
+    expect(screen.getByText('AL')).toBeInTheDocument()
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
   /** The same person is the same colour on every page, and between visits. */

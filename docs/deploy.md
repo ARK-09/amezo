@@ -255,6 +255,30 @@ itself.
   a `pg_temp` function created by an earlier migration is still there for a later one -
   both use `CREATE OR REPLACE`. A bare `CREATE` passes when each file is applied in its
   own psql session and fails on a real migration run.
+- **`V16` seeds the Clothing category.** Written to be safe on a database that
+  already has a `clothing` row: `V14` adopts whatever sellers had typed, so a
+  deployment whose catalog contained "Clothing" already carries one, at position
+  1000. `ON CONFLICT (slug) DO UPDATE` normalises that row in place - canonical
+  name, curated position 25, re-activated - keeping its id and every product filed
+  under it. Nothing is reparented and nothing is deleted, so `product.category_id`
+  stays valid throughout. Verified by running `V14`-`V16` through Flyway over a
+  database seeded with pre-`V14` products: one `clothing` row, promoted to position
+  25, products still linked, zero orphans.
+- **Known bug in `V14`, latent for already-migrated databases.** `V14`'s adoption
+  step reads `SELECT DISTINCT category FROM product` and inserts one category per
+  distinct string. Two casings of one name ("Clothing" and "clothing") are two
+  distinct strings that slug identically, and the `NOT EXISTS` guard is evaluated
+  against a pre-statement snapshot, so both pass it and the insert violates
+  `category_slug_key`. The migration then fails and rolls back, and the application
+  will not start. `V14`'s own comment claims casings converge, so this is a bug
+  against stated intent rather than a design choice.
+  It only bites a database that has pre-`V14` products AND two casings of one
+  category name - a fresh database has no products to adopt, and any database that
+  has already run `V14` is past it. **`V14` has deliberately not been edited**:
+  changing an applied migration changes its checksum, and Flyway would then refuse
+  to start against every database that already ran it. Fixing it for an
+  un-migrated database means editing `V14` *and* running `flyway repair` wherever
+  it already ran - a deployment decision, not a code one.
 - **What the API no longer accepts.** A product's category must be a live system
   category's slug (`GET /categories`); a checkout country must be an ISO 3166-1 alpha-2
   code (`GET /countries`). Both are validated server-side, so an old client posting a

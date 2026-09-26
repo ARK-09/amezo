@@ -21,7 +21,13 @@ import java.util.UUID;
  *
  * avgRating is real now: reviews' query interface takes a batch, so a page of
  * cards costs one aggregate query rather than one per card. Null means no reviews
- * yet, which the card shows as no badge rather than as a zero-star rating.
+ * yet, which the card shows as "No reviews yet" rather than as a zero-star rating.
+ *
+ * reviewCount travels with it because "4.6" alone doesn't say whether that is one
+ * opinion or four hundred, and because a count of zero is the unambiguous signal
+ * for "not reviewed" - avgRating being null cannot be told apart from a field the
+ * client failed to read. It is a plain long rather than a nullable Long: no
+ * reviews is 0, not absent.
  *
  * category is the whole {slug, name} pair, not a bare string. The slug is what a
  * filter or a link carries and is stable across renames; the name is what the
@@ -44,6 +50,7 @@ public record ProductSummaryResponse(
         UUID defaultVariantId,
         BigDecimal defaultVariantPrice,
         Double avgRating,
+        long reviewCount,
         UUID sellerId
 ) {
 }

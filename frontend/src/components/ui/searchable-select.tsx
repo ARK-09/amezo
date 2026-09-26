@@ -1,22 +1,33 @@
-import { Check, ChevronDown, Search } from 'lucide-react'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { useId, useState } from 'react'
 
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
 /**
- * A select you can type into. Both system lists need one - categories so a seller
- * doesn't scroll a dozen options, countries because there are 249 of them - and
- * neither should be a free-text field, which is the whole point of the change.
+ * A select you can type into - shadcn's Combobox pattern (Popover + Command), with a
+ * caller-supplied filter.
  *
- * Filtering happens here, over a list the caller already holds, rather than through
- * a request per keystroke: both lists are fetched once per session and are small
- * enough to search in memory.
+ * It was a hand-rolled combobox: its own open/close state, its own outside-click
+ * listener, its own arrow/Enter/Escape handling and its own active-index bookkeeping.
+ * All of that is what Popover and cmdk already do, and do better - focus is trapped
+ * and restored properly, the trigger gets aria-expanded/aria-controls without being
+ * told, the list is virtualisable, and dismissal handles pointer, focus and Escape
+ * rather than just pointerdown.
  *
- * Deliberately not the radix Select this codebase uses elsewhere: that one has no
- * search affordance, and bolting a text input inside its listbox fights its focus
- * management. The keyboard contract here is the one people expect from a combobox -
- * arrows to move, Enter to choose, Escape to dismiss, and the closed control is
- * reachable by tab.
+ * Filtering stays here rather than using cmdk's built-in scorer, and that is
+ * deliberate: the country list needs the short-query rule ("in" must not match
+ * United K-in-gdom) that filterCountries implements, and categories match on slug as
+ * well as name. cmdk's `shouldFilter={false}` is the documented way to keep its
+ * keyboard and selection behaviour while owning which items are shown.
  */
 export function SearchableSelect<T>({
   items,
@@ -33,6 +44,9 @@ export function SearchableSelect<T>({
   invalid = false,
   fallbackLabel,
   id,
+  triggerClassName,
+  renderTrigger,
+  panelClassName,
 }: {
   items: T[]
   /** The selected key, or null for nothing selected. */
@@ -55,147 +69,110 @@ export function SearchableSelect<T>({
    */
   fallbackLabel?: string
   id?: string
+  /**
+   * Replaces the default bordered-field trigger styling. The header's delivery
+   * picker is a two-line label in a nav bar, not a form field.
+   */
+  triggerClassName?: string
+  /** Replaces the trigger's contents. Receives the selected label, or null. */
+  renderTrigger?: (selectedLabel: string | null) => ReactNode
+  /** Extra classes for the dropdown panel, for when it shouldn't match the trigger's width. */
+  panelClassName?: string
 }) {
   const generatedId = useId()
   const controlId = id ?? generatedId
-  const listboxId = `${controlId}-listbox`
 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [activeIndex, setActiveIndex] = useState(0)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
 
-  const matches = useMemo(() => filter(items, query), [items, query, filter])
+  const matches = filter(items, query)
   const selected = items.find((item) => getKey(item) === value)
 
-  useEffect(() => {
-    if (!open) return
-    // Focus the search box on open, so typing works immediately rather than after a
-    // click nobody knows to make.
-    inputRef.current?.focus()
-    function onPointerDown(event: PointerEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
-  }, [open])
-
-  /**
-   * A filtered list can be shorter than the highlighted position, which would
-   * otherwise leave Enter pointing at nothing. Adjusted during render rather than in
-   * an effect - the same pattern SiteHeader uses to follow the URL's query - so the
-   * highlight is already correct on the pass that shows the filtered list, instead of
-   * being fixed up by a second render.
-   */
-  const [previousQuery, setPreviousQuery] = useState(query)
-  if (query !== previousQuery) {
-    setPreviousQuery(query)
-    setActiveIndex(0)
-  }
-
-  function choose(item: T) {
-    onChange(getKey(item))
+  function choose(key: string) {
+    onChange(key)
     setOpen(false)
     setQuery('')
   }
 
-  function onKeyDown(event: React.KeyboardEvent) {
-    if (event.key === 'Escape') {
-      setOpen(false)
-      setQuery('')
-      return
-    }
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault()
-      if (!open) {
-        setOpen(true)
-        return
-      }
-      const delta = event.key === 'ArrowDown' ? 1 : -1
-      setActiveIndex((current) => {
-        if (matches.length === 0) return 0
-        return (current + delta + matches.length) % matches.length
-      })
-      return
-    }
-    if (event.key === 'Enter' && open) {
-      event.preventDefault()
-      const item = matches[activeIndex]
-      if (item) choose(item)
-    }
-  }
-
   return (
-    <div ref={containerRef} className="relative" onKeyDown={onKeyDown}>
-      <button
-        type="button"
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) setQuery('')
+      }}
+    >
+      <PopoverTrigger
         id={controlId}
         role="combobox"
-        aria-expanded={open}
-        aria-controls={listboxId}
-        aria-haspopup="listbox"
         aria-label={label}
         aria-invalid={invalid || undefined}
         disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
+        // Popover opens on Enter and Space by itself. The combobox pattern also
+        // expects the arrows to open it, and that is how the keyboard reaches this
+        // control without a mouse.
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
         className={cn(
-          'flex h-9 w-full items-center justify-between gap-2 rounded-md border px-3 text-left text-sm',
           'outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
-          invalid && 'border-destructive',
+          triggerClassName ??
+            cn(
+              'flex h-9 w-full items-center justify-between gap-2 rounded-md border px-3 text-left text-sm',
+              invalid && 'border-destructive',
+            ),
         )}
       >
-        <span className={cn('truncate', !selected && !fallbackLabel && 'text-muted-foreground')}>
-          {selected ? getLabel(selected) : (fallbackLabel ?? placeholder)}
-        </span>
-        <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      </button>
+        {renderTrigger ? (
+          renderTrigger(selected ? getLabel(selected) : null)
+        ) : (
+          <>
+            <span className={cn('truncate', !selected && !fallbackLabel && 'text-muted-foreground')}>
+              {selected ? getLabel(selected) : (fallbackLabel ?? placeholder)}
+            </span>
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          </>
+        )}
+      </PopoverTrigger>
 
-      {open && (
-        <div className="absolute top-full left-0 z-30 mt-1 w-full rounded-lg border bg-popover shadow-md">
-          <div className="flex items-center gap-2 border-b px-2.5 py-2">
-            <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={searchPlaceholder}
-              aria-label={`Search ${label.toLowerCase()}`}
-              className="h-5 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-          </div>
-
-          <ul id={listboxId} role="listbox" aria-label={label} className="max-h-60 overflow-y-auto p-1">
-            {matches.length === 0 && (
-              <li className="px-2.5 py-2 text-sm text-muted-foreground">{emptyMessage}</li>
-            )}
-            {matches.map((item, index) => {
+      <PopoverContent
+        className={cn('p-0', panelClassName ?? 'w-[var(--radix-popover-trigger-width)]')}
+      >
+        {/* Our own filter runs above; cmdk keeps the keyboard and selection
+            behaviour but does not second-guess which items are shown. */}
+        {/* cmdk names its input from the Command's own `label`, and that wins over an
+            aria-label put on the input directly - so the search label belongs here.
+            The list takes cmdk's `label` prop too; its default is "Suggestions",
+            which tells a screen-reader user nothing about what is being suggested. */}
+        <Command shouldFilter={false} label={`Search ${label.toLowerCase()}`} loop>
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder={searchPlaceholder}
+          />
+          <CommandList label={label}>
+            <CommandEmpty>{emptyMessage}</CommandEmpty>
+            {matches.map((item) => {
               const key = getKey(item)
               const isSelected = key === value
               return (
-                <li key={key}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    onClick={() => choose(item)}
-                    onMouseEnter={() => setActiveIndex(index)}
-                    className={cn(
-                      'flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm',
-                      index === activeIndex && 'bg-accent',
-                      isSelected && 'font-semibold',
-                    )}
-                  >
-                    <span className="truncate">{getLabel(item)}</span>
-                    {isSelected && <Check className="size-3.5 shrink-0 text-primary" aria-hidden />}
-                  </button>
-                </li>
+                <CommandItem
+                  key={key}
+                  value={key}
+                  onSelect={choose}
+                  className={cn(isSelected && 'font-semibold')}
+                >
+                  <span className="truncate">{getLabel(item)}</span>
+                  {isSelected && <Check className="size-3.5 shrink-0 text-primary" aria-hidden />}
+                </CommandItem>
               )
             })}
-          </ul>
-        </div>
-      )}
-    </div>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   )
 }

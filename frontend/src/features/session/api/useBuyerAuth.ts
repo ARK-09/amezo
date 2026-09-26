@@ -36,17 +36,36 @@ export function useVerifyBuyerMagicLink() {
   })
 }
 
+/**
+ * Signs out whoever is signed in, from anywhere in the buyer app.
+ *
+ * Calls DELETE /sessions/current, not DELETE /auth/buyer/session. The buyer-scoped
+ * route is what made sign-out look broken on /account: that page is reachable by a
+ * seller session too, the route is hasRole("BUYER"), so a signed-in seller got a 403,
+ * this mutation rejected, and nothing on screen changed. The role-agnostic route
+ * revokes whichever session the cookie names.
+ *
+ * Clearing the cached identity is what evicts the persisted seller flag as well:
+ * SellerAuthProvider wraps the whole app and already drops localStorage when the
+ * session query resolves to null, so there is one place that owns that, not two.
+ */
 export function useBuyerSignOut() {
   const queryClient = useQueryClient()
 
   return useMutation<void, ProblemDetail, void>({
     mutationFn: async () => {
-      const { error } = await apiClient.DELETE('/auth/buyer/session')
+      const { error } = await apiClient.DELETE('/sessions/current')
       if (error) throw error
     },
     onSuccess: () => {
       // Known without asking: the cookie has just been revoked.
       queryClient.setQueryData(sessionKeys.current, null)
+      // Anything scoped to the person who just left. Removed rather than
+      // invalidated: invalidating refetches it, which on a shared machine means
+      // asking the server for the previous buyer's data a moment after they signed
+      // out. The catalog and the reference lists are nobody's in particular and stay.
+      queryClient.removeQueries({ queryKey: ['reviews'] })
+      queryClient.removeQueries({ queryKey: ['checkout', 'last-details'] })
     },
   })
 }

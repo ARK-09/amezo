@@ -8,6 +8,7 @@ import {
   signInBuyerSession,
 } from './fixtures/sellerAuth'
 import { systemCategories } from './fixtures/categories'
+import { currentLastCheckoutDetails } from './fixtures/checkoutDetails'
 import { mockCountries } from './fixtures/countries'
 import { productIdForPurchasedLine, purchasedLineFor } from './fixtures/purchases'
 import { findSellerOrder, listSellerOrders, summaryOf, updateSellerOrder } from './fixtures/sellerOrders'
@@ -89,7 +90,25 @@ export const handlers = [
     })
   }),
 
+  /**
+   * Buyer-scoped, exactly as SecurityConfig has it: hasRole("BUYER"), so a seller
+   * session gets a 403 here. The mock enforces it because a permissive mock is how
+   * the /account sign-out bug survived a green test suite - the app called this
+   * route with a seller cookie and only production said no.
+   */
   http.delete('http://localhost:8080/auth/buyer/session', () => {
+    const identity = currentSessionIdentity()
+    if (identity?.identityType !== 'BUYER') {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/forbidden',
+          title: 'Forbidden',
+          status: 403,
+          detail: 'Access is denied',
+        },
+        { status: 403 },
+      )
+    }
     clearSellerSession()
     return new HttpResponse(null, { status: 204 })
   }),
@@ -173,6 +192,51 @@ export const handlers = [
     }
     addWrittenReview(productId, review)
     return HttpResponse.json(review, { status: 201 })
+  }),
+
+  /**
+   * The role-agnostic sign-out. Mirrors the backend's DELETE /sessions/current:
+   * it revokes whichever session the cookie names, buyer or seller, which is the
+   * whole reason it exists - the buyer-scoped route 403'd for a signed-in seller
+   * and made sign-out look dead on /account.
+   */
+  http.delete('http://localhost:8080/sessions/current', () => {
+    if (!currentSessionIdentity()) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/unauthorized',
+          title: 'Unauthorized',
+          status: 401,
+          detail: 'Session is missing, expired, or invalid',
+        },
+        { status: 401 },
+      )
+    }
+    clearSellerSession()
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  /**
+   * The signed-in buyer's last delivery details. 204 for someone who has not
+   * ordered before - not an error, just an empty form. Tests opt in by calling
+   * setLastCheckoutDetails; the default is "no previous order".
+   */
+  http.get('http://localhost:8080/checkout/last-details', () => {
+    const identity = currentSessionIdentity()
+    if (!identity || identity.identityType !== 'BUYER') {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/unauthorized',
+          title: 'Unauthorized',
+          status: 401,
+          detail: 'Session is missing, expired, or invalid',
+        },
+        { status: 401 },
+      )
+    }
+    const details = currentLastCheckoutDetails()
+    if (!details) return new HttpResponse(null, { status: 204 })
+    return HttpResponse.json(details)
   }),
 
   // Answers from the same mock "cookie" the verify and sign-out handlers below
