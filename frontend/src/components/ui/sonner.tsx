@@ -1,15 +1,14 @@
-"use client"
-
-import { useTheme } from "next-themes"
+import type * as React from "react"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
+// Upstream reads the theme from next-themes. This app is a Vite SPA whose dark
+// mode is the `.dark` class variant in index.css, so the toaster follows the OS
+// the same way the rest of the app does.
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
-
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme="system"
       className="toaster group"
       icons={{
         success: (
