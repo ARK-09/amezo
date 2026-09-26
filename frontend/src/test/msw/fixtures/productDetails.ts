@@ -115,6 +115,29 @@ export function writtenReviewsFor(productId: string): Review[] {
   return writtenReviews.get(productId) ?? []
 }
 
+/**
+ * PATCH /api/v1/reviews/{id}. Only the rating and the body are editable: the
+ * purchase a review belongs to is not, or a review could be moved onto a
+ * different product after the fact.
+ */
+export function updateWrittenReview(
+  reviewId: string,
+  patch: { rating?: number; body?: string | null },
+): Review | 'not-found' {
+  for (const [productId, reviews] of writtenReviews) {
+    const index = reviews.findIndex((review) => review.id === reviewId)
+    if (index === -1) continue
+    const updated = {
+      ...reviews[index],
+      ...(patch.rating != null ? { rating: patch.rating } : {}),
+      ...(patch.body !== undefined ? { body: patch.body } : {}),
+    }
+    writtenReviews.set(productId, reviews.map((r, i) => (i === index ? updated : r)))
+    return updated
+  }
+  return 'not-found'
+}
+
 export function resetWrittenReviews() {
   writtenReviews.clear()
 }

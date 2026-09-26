@@ -45,6 +45,38 @@ export function getStoreProfile(): StoreProfile {
   return store
 }
 
+/**
+ * The two-step store-image upload, mirroring the product-image flow: reserve a
+ * slot, PUT the bytes to the returned URL, then confirm. Nothing is live on the
+ * storefront until confirm runs, so an abandoned upload leaves the profile as
+ * it was rather than half-applied.
+ */
+const pendingStoreImages = new Map<string, 'COVER' | 'LOGO'>()
+
+export function reserveStoreImage(slot: 'COVER' | 'LOGO'): { id: string; uploadUrl: string } {
+  const id = crypto.randomUUID()
+  pendingStoreImages.set(id, slot)
+  return { id, uploadUrl: `https://mock-s3.local/store/${id}` }
+}
+
+export function confirmStoreImage(
+  id: string,
+  slot: 'COVER' | 'LOGO',
+): StoreProfile | 'not-found' | 'slot-mismatch' {
+  const reserved = pendingStoreImages.get(id)
+  if (!reserved) return 'not-found'
+  // The slot is named twice on purpose - reserving a cover and confirming it as
+  // a logo would silently put a 1600x400 banner in an 88px circle.
+  if (reserved !== slot) return 'slot-mismatch'
+  pendingStoreImages.delete(id)
+  const url = `https://mock-s3.local/store/${id}`
+  return patchStoreProfile(slot === 'COVER' ? { coverUrl: url } : { logoUrl: url })
+}
+
+export function resetStoreImages() {
+  pendingStoreImages.clear()
+}
+
 export function patchStoreProfile(patch: Partial<StoreProfile>): StoreProfile {
   store = { ...store, ...patch, updatedAt: new Date().toISOString() }
   return store

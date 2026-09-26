@@ -19,8 +19,10 @@ import { productIdForPurchasedLine, purchasedLineFor } from './fixtures/purchase
 import { categoryBreakdown, metricsFor, topProducts } from './fixtures/sellerMetrics'
 import {
   TAKEN_HANDLES,
+  confirmStoreImage,
   getStoreProfile,
   patchStoreProfile,
+  reserveStoreImage,
 } from './fixtures/storeProfile'
 import {
   findStoreByHandle,
@@ -65,6 +67,7 @@ import {
   listSellerProductRows,} from './fixtures/sellerProducts'
 import {
   addWrittenReview,
+  updateWrittenReview,
   productDetails,
   reviewsFor,
   writtenReviewsFor,
@@ -238,6 +241,48 @@ export const handlers = [
    * here because a mock that accepts anything is how a form ships without the
    * error states the real endpoint will show it.
    */
+  http.post('http://localhost:8080/api/v1/sellers/me/store/images', async ({ request }) => {
+    const seller = currentSessionIdentity()
+    if (!seller || seller.identityType !== 'SELLER') return unauthorized()
+    const { slot, contentType } = (await request.json()) as { slot: 'COVER' | 'LOGO'; contentType: string }
+    if (!contentType?.startsWith('image/')) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/validation',
+          title: 'Validation failed',
+          status: 422,
+          errors: [{ field: 'contentType', reason: 'must be an image' }],
+        },
+        { status: 422 },
+      )
+    }
+    const reserved = reserveStoreImage(slot)
+    return HttpResponse.json(
+      { ...reserved, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() },
+      { status: 201 },
+    )
+  }),
+
+  http.post('http://localhost:8080/api/v1/sellers/me/store/images/confirm', async ({ request }) => {
+    const seller = currentSessionIdentity()
+    if (!seller || seller.identityType !== 'SELLER') return unauthorized()
+    const { id, slot } = (await request.json()) as { id: string; slot: 'COVER' | 'LOGO' }
+    const result = confirmStoreImage(id, slot)
+    if (result === 'not-found') return notFound()
+    if (result === 'slot-mismatch') {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/validation',
+          title: 'Validation failed',
+          status: 422,
+          errors: [{ field: 'slot', reason: 'does not match the reserved slot' }],
+        },
+        { status: 422 },
+      )
+    }
+    return HttpResponse.json(result)
+  }),
+
   http.post('http://localhost:8080/api/v1/stores/:handle/messages', async ({ params, request }) => {
     // Checked before the handle lookup, the way a security filter runs ahead of
     // the controller. The seller answers to the address on the caller's account,
@@ -721,6 +766,27 @@ export const handlers = [
     }
     addWrittenReview(productId, review)
     return HttpResponse.json(review, { status: 201 })
+  }),
+
+  http.patch('http://localhost:8080/api/v1/reviews/:reviewId', async ({ params, request }) => {
+    const identity = currentSessionIdentity()
+    if (!identity || identity.identityType !== 'BUYER') return unauthorized()
+
+    const body = (await request.json()) as { rating?: number; body?: string | null }
+    if (body.rating != null && (body.rating < 1 || body.rating > 5)) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/validation',
+          title: 'Validation failed',
+          status: 422,
+          errors: [{ field: 'rating', reason: 'must be between 1 and 5' }],
+        },
+        { status: 422 },
+      )
+    }
+    const updated = updateWrittenReview(String(params.reviewId), body)
+    if (updated === 'not-found') return notFound()
+    return HttpResponse.json(updated)
   }),
 
   /**

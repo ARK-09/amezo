@@ -1314,6 +1314,88 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
 
+  /api/v1/sellers/me/orders/facets:
+    get:
+      operationId: getSellerOrderFacets
+      description: >-
+        Counts and bucket values for the order tabs. A separate resource rather
+        than a field on the list, because the tabs show every bucket at once:
+        embedding them in a filtered response would zero every tab but the one
+        being viewed. Honours q and the date range, and deliberately ignores
+        status - that is what the tabs are choosing between.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacetList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/sellers/me/refund-requests/facets:
+    get:
+      operationId: getSellerRefundFacets
+      description: Counts for the refund queue's tabs. Ignores status, as above.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacetList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /api/v1/orders/facets:
+    get:
+      operationId: getBuyerOrderFacets
+      description: >-
+        Counts for the buyer's order tabs. Keyed by the same group values GET
+        /api/v1/orders takes, not by raw status - the tabs are groups.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: period
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacetList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
   /api/v1/sellers/me/metrics:
     get:
       operationId: getSellerMetrics
@@ -2329,6 +2411,28 @@ components:
         logoUrl: { type: string, nullable: true }
         status: { $ref: '#/components/schemas/StoreStatus' }
         vacationNote: { type: string }
+    Facet:
+      type: object
+      description: >-
+        One tab. `key` is whatever the matching list endpoint accepts for that
+        bucket, so a tab needs no translation table to become a filter.
+      required: [key, count]
+      properties:
+        key: { type: string }
+        count: { type: integer }
+        # Money in this bucket, where the design prints it. Absent where a
+        # bucket has no meaningful total rather than sent as zero.
+        value: { type: number, nullable: true }
+        currency: { type: string, nullable: true }
+
+    FacetList:
+      type: object
+      required: [facets]
+      properties:
+        facets:
+          type: array
+          items: { $ref: '#/components/schemas/Facet' }
+
     StorePolicies:
       type: object
       description: >-
@@ -2492,6 +2596,9 @@ components:
         hub: { type: string }
         # Shown to the buyer on the order's timeline.
         note: { type: string }
+        # When it actually happened, for a seller recording yesterday's handover
+        # today. Omitted means now. The server refuses a future one.
+        occurredAt: { type: string, format: date-time }
 
     MetricPoint:
       type: object
