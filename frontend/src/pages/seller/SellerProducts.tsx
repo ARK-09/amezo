@@ -68,7 +68,7 @@ export function SellerProducts() {
                     {product.title}
                   </Link>
                 </TableCell>
-                <TableCell>{product.category}</TableCell>
+                <TableCell>{product.category.name}</TableCell>
                 <TableCell>{product.variantCount}</TableCell>
                 <TableCell>{new Date(product.createdAt).toLocaleDateString()}</TableCell>
                 <TableCell className="text-right">

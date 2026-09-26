@@ -49,8 +49,21 @@ public class Product {
     @Column(columnDefinition = "text")
     private String description;
 
-    @Column(nullable = false)
-    private String category;
+    /**
+     * The URL segment this product is reachable by, in place of its id. Generated
+     * from the title once, at creation (Slugs.uniqueSlug), and then stable: a
+     * later rename leaves it alone so existing links keep resolving.
+     */
+    @Column(nullable = false, unique = true)
+    private String slug;
+
+    /**
+     * A plain id rather than a @ManyToOne. A page of sixteen cards would otherwise
+     * be sixteen lazy loads, and CategoryService already hands out the whole
+     * (dozen-row) table as one map for exactly that mapping step.
+     */
+    @Column(name = "category_id", nullable = false)
+    private UUID categoryId;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

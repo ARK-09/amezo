@@ -5,7 +5,11 @@ import {
   consumeMagicLinkToken,
   currentSessionIdentity,
   issueMagicLinkToken,
+  signInBuyerSession,
 } from './fixtures/sellerAuth'
+import { systemCategories } from './fixtures/categories'
+import { mockCountries } from './fixtures/countries'
+import { productIdForPurchasedLine, purchasedLineFor } from './fixtures/purchases'
 import { findSellerOrder, listSellerOrders, summaryOf, updateSellerOrder } from './fixtures/sellerOrders'
 import {
   addSellerProduct,
@@ -22,7 +26,12 @@ import {
   updateSellerProductDetail,
   updateSellerVariant,
 } from './fixtures/sellerProducts'
-import { productDetails, reviewsFor } from './fixtures/productDetails'
+import {
+  addWrittenReview,
+  productDetails,
+  reviewsFor,
+  writtenReviewsFor,
+} from './fixtures/productDetails'
 import { seedProducts } from './fixtures/products'
 import { variantOffers } from './fixtures/variants'
 
@@ -36,6 +45,14 @@ interface CheckoutRequestBody {
   lines: CheckoutLineBody[]
 }
 
+/** The backend's slug rule, close enough for a mock: see Slugs.slugify. */
+function mockSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 function notFound() {
   return HttpResponse.json(
     { type: 'https://api/errors/not-found', title: 'Not found', status: 404 },
@@ -44,6 +61,120 @@ function notFound() {
 }
 
 export const handlers = [
+  // The system reference lists. Both are public, and both are what their selectors
+  // read - so a test cannot pick a category or country the API would refuse.
+  http.get('http://localhost:8080/categories', () => HttpResponse.json(systemCategories)),
+  http.get('http://localhost:8080/countries', () => HttpResponse.json(mockCountries)),
+
+  http.post('http://localhost:8080/auth/buyer/magic-link', async ({ request }) => {
+    const { email } = (await request.json()) as { email: string }
+    issueMagicLinkToken(email)
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post('http://localhost:8080/auth/buyer/verify', async ({ request }) => {
+    const { token } = (await request.json()) as { token: string }
+    const consumed = consumeMagicLinkToken(token)
+    if (!consumed) {
+      return HttpResponse.json(
+        { type: 'https://api/errors/invalid-token', title: 'Invalid or expired token', status: 401 },
+        { status: 401 },
+      )
+    }
+    const identity = signInBuyerSession({ buyerIdentityId: consumed.sellerId, email: consumed.email })
+    return HttpResponse.json({
+      buyerIdentityId: identity.identityId,
+      email: identity.email,
+      fullName: identity.fullName,
+    })
+  }),
+
+  http.delete('http://localhost:8080/auth/buyer/session', () => {
+    clearSellerSession()
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  /**
+   * Whether the signed-in buyer may review this product. Mirrors the backend's three
+   * answers: 401 with no buyer session, ALREADY_REVIEWED once they have, and
+   * NOT_PURCHASED unless the test says they bought it.
+   */
+  http.get('http://localhost:8080/products/:productRef/reviews/eligibility', ({ params }) => {
+    const identity = currentSessionIdentity()
+    if (!identity || identity.identityType !== 'BUYER') {
+      return HttpResponse.json(
+        { type: 'https://api/errors/unauthorized', title: 'Unauthorized', status: 401 },
+        { status: 401 },
+      )
+    }
+    const detail = productDetails[params.productRef as string]
+    if (!detail) return notFound()
+
+    const existing = writtenReviewsFor(detail.id)[0]
+    if (existing) {
+      return HttpResponse.json({
+        eligible: false,
+        reason: 'ALREADY_REVIEWED',
+        orderLineId: null,
+        existingReview: existing,
+      })
+    }
+    const orderLineId = purchasedLineFor(detail.id)
+    if (!orderLineId) {
+      return HttpResponse.json({
+        eligible: false,
+        reason: 'NOT_PURCHASED',
+        orderLineId: null,
+        existingReview: null,
+      })
+    }
+    return HttpResponse.json({ eligible: true, reason: null, orderLineId, existingReview: null })
+  }),
+
+  /**
+   * Writing a review. The mock enforces the same gates the server does, so a test
+   * cannot pass by skipping them: a buyer session, and a purchase this fixture knows
+   * about.
+   */
+  http.post('http://localhost:8080/reviews', async ({ request }) => {
+    const identity = currentSessionIdentity()
+    if (!identity || identity.identityType !== 'BUYER') {
+      return HttpResponse.json(
+        { type: 'https://api/errors/unauthorized', title: 'Unauthorized', status: 401 },
+        { status: 401 },
+      )
+    }
+    const body = (await request.json()) as { orderLineId: string; rating: number; body?: string | null }
+    const productId = productIdForPurchasedLine(body.orderLineId)
+    if (!productId) {
+      return HttpResponse.json(
+        { type: 'https://api/errors/forbidden', title: 'Forbidden', status: 403 },
+        { status: 403 },
+      )
+    }
+    if (writtenReviewsFor(productId).length > 0) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/already-reviewed',
+          title: 'Already reviewed',
+          status: 409,
+          detail: 'You have already reviewed this product',
+        },
+        { status: 409 },
+      )
+    }
+    const review = {
+      id: crypto.randomUUID(),
+      rating: body.rating,
+      body: body.body ?? null,
+      variantLabel: productDetails[productId]?.variants[0]?.label ?? null,
+      createdAt: new Date().toISOString(),
+      reviewerName: identity.fullName ?? identity.email,
+    }
+    addWrittenReview(productId, review)
+    return HttpResponse.json(review, { status: 201 })
+  }),
+
   // Answers from the same mock "cookie" the verify and sign-out handlers below
   // maintain. No session is a 401, matching the backend's SessionController -
   // which the frontend reads as "nobody is signed in", not as an error.
@@ -234,6 +365,23 @@ export const handlers = [
   // Absent fields are left alone, same as the backend's PATCH semantics.
   http.patch('http://localhost:8080/products/:productId', async ({ params, request }) => {
     const patch = (await request.json()) as Record<string, unknown>
+    if (typeof patch.categorySlug === 'string') {
+      const category = systemCategories.find((c) => c.slug === patch.categorySlug)
+      if (!category) {
+        return HttpResponse.json(
+          {
+            type: 'https://api/errors/not-found',
+            title: 'Not found',
+            status: 404,
+            detail: `Category '${patch.categorySlug}' does not exist or is no longer available`,
+          },
+          { status: 404 },
+        )
+      }
+      // The detail store holds the resolved pair, not the slug that was sent.
+      delete patch.categorySlug
+      patch.category = category
+    }
     const updated = updateSellerProductDetail(params.productId as string, patch)
     return updated ? HttpResponse.json(updated) : notFound()
   }),
@@ -264,15 +412,30 @@ export const handlers = [
   http.post('http://localhost:8080/sellers/me/products', async ({ request }) => {
     const body = (await request.json()) as {
       title: string
-      category: string
+      categorySlug: string
       variants: unknown[]
+    }
+    // The category has to exist, exactly as the backend requires - a mock that
+    // accepted anything would let a test pass against a request production refuses.
+    const category = systemCategories.find((c) => c.slug === body.categorySlug)
+    if (!category) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/not-found',
+          title: 'Not found',
+          status: 404,
+          detail: `Category '${body.categorySlug}' does not exist or is no longer available`,
+        },
+        { status: 404 },
+      )
     }
     const id = crypto.randomUUID()
     addSellerProduct({
       id,
+      slug: mockSlug(body.title),
       title: body.title,
       thumbnailUrl: null,
-      category: body.category,
+      category,
       variantCount: body.variants.length,
       createdAt: new Date().toISOString(),
     })
@@ -352,13 +515,16 @@ export const handlers = [
     return HttpResponse.json(found)
   }),
 
-  http.get('http://localhost:8080/products/:productId/reviews', ({ params, request }) => {
-    const productId = params.productId as string
+  http.get('http://localhost:8080/products/:productRef/reviews', ({ params, request }) => {
+    const detail = productDetails[params.productRef as string]
+    if (!detail) return notFound()
     const url = new URL(request.url)
     const page = Number(url.searchParams.get('page') ?? 0)
     const size = Number(url.searchParams.get('size') ?? 10)
 
-    const all = reviewsFor(productId)
+    // Newest first, so a review written during the test appears above the seeded
+    // ones - the same order the API returns.
+    const all = [...writtenReviewsFor(detail.id), ...reviewsFor(detail.id)]
     const content = all.slice(page * size, page * size + size)
 
     return HttpResponse.json({
@@ -369,8 +535,10 @@ export const handlers = [
     })
   }),
 
-  http.get('http://localhost:8080/products/:productId', ({ params }) => {
-    const detail = productDetails[params.productId as string]
+  // Resolves a slug or a legacy id - productDetails is keyed by both, as the API
+  // resolves both.
+  http.get('http://localhost:8080/products/:productRef', ({ params }) => {
+    const detail = productDetails[params.productRef as string]
     if (!detail) {
       return HttpResponse.json(
         { type: 'about:blank', title: 'Not found', status: 404 },
@@ -392,7 +560,8 @@ export const handlers = [
 
     const filtered = seedProducts.filter((p) => {
       if (q && !p.title.toLowerCase().includes(q)) return false
-      if (category && p.category.toLowerCase() !== category) return false
+      // Matched on the SLUG, which is what a ?category= filter carries.
+      if (category && p.category.slug !== category) return false
       if (priceMin && p.priceFrom < Number(priceMin)) return false
       if (priceMax && p.priceFrom > Number(priceMax)) return false
       if (inStockOnly && !p.inStock) return false

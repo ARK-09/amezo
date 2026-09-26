@@ -1,5 +1,7 @@
 import { Link } from 'react-router'
 
+import type { Category } from '@/features/reference/api/useCategories'
+
 // The design's three campaign tiles (groceries, a phone launch, a clearance
 // push) are merchandising this app has no campaign API to fill. They keep
 // their exact treatment - dark, light, brand orange - but point at real
@@ -12,7 +14,7 @@ const LIGHT_STRIPES =
 const ORANGE_STRIPES =
   'repeating-linear-gradient(45deg,rgba(255,255,255,0.14) 0 10px,rgba(255,255,255,0.02) 10px 20px)'
 
-export function PromoTiles({ category, brand }: { category?: string; brand?: string }) {
+export function PromoTiles({ category, brand }: { category?: Category; brand?: string }) {
   if (!category && !brand) return null
 
   return (
@@ -25,10 +27,10 @@ export function PromoTiles({ category, brand }: { category?: string; brand?: str
           <div className="absolute inset-0" style={{ background: DARK_STRIPES }} />
           <div className="relative">
             <div className="text-xs font-bold tracking-[0.08em] text-primary">SHOP THE RANGE</div>
-            <div className="mt-1 text-3xl leading-[1.1] font-extrabold text-white">{category}</div>
+            <div className="mt-1 text-3xl leading-[1.1] font-extrabold text-white">{category.name}</div>
           </div>
           <Link
-            to={`/search?category=${encodeURIComponent(category)}`}
+            to={`/search?category=${encodeURIComponent(category.slug)}`}
             className="relative w-fit rounded-lg bg-primary px-[18px] py-2.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Shop now

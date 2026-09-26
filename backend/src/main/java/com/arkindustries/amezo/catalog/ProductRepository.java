@@ -7,11 +7,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ProductRepository extends JpaRepository<Product, UUID> {
 
     Page<Product> findBySellerId(UUID sellerId, Pageable pageable);
+
+    Optional<Product> findBySlug(String slug);
+
+    boolean existsBySlug(String slug);
 
     /**
      * Search plus the catalog filters, in one query. Native because none of it is
@@ -23,6 +28,10 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
      * without the cast the whole statement fails to prepare - the filters being
      * optional is exactly why each one is compared against NULL first.
      *
+     * The category filter takes a SLUG and joins the category table rather than
+     * comparing a denormalised name: the slug is the stable value a bookmarked
+     * ?category= URL carries, so renaming a category cannot break a saved filter.
+     *
      * price_from is MIN(offer.price) across the product's variants - the number
      * shown on a card - so a price filter accepts a product whose cheapest offer
      * falls in the range, and inStockOnly keeps products with at least one offer
@@ -32,6 +41,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
      */
     @Query(
         value = "SELECT p.* FROM product p " +
+                "JOIN category cat ON cat.id = p.category_id " +
                 "LEFT JOIN LATERAL (" +
                 "  SELECT MIN(o.price) AS price_from, MAX(o.stock_qty) AS max_stock " +
                 "  FROM variant v JOIN offer o ON o.variant_id = v.id " +
@@ -39,7 +49,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                 ") agg ON TRUE " +
                 "WHERE (CAST(:query AS text) IS NULL " +
                 "       OR p.search_vector @@ plainto_tsquery('english', CAST(:query AS text))) " +
-                "  AND (CAST(:category AS text) IS NULL OR p.category = CAST(:category AS text)) " +
+                "  AND (CAST(:categorySlug AS text) IS NULL OR cat.slug = CAST(:categorySlug AS text)) " +
                 "  AND (CAST(:priceMin AS numeric) IS NULL OR agg.price_from >= CAST(:priceMin AS numeric)) " +
                 "  AND (CAST(:priceMax AS numeric) IS NULL OR agg.price_from <= CAST(:priceMax AS numeric)) " +
                 "  AND (CAST(:inStockOnly AS boolean) = FALSE OR COALESCE(agg.max_stock, 0) > 0) " +
@@ -53,6 +63,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                 // equally-ranked rows can repeat or skip products.
                 "  p.created_at DESC, p.id",
         countQuery = "SELECT count(*) FROM product p " +
+                "JOIN category cat ON cat.id = p.category_id " +
                 "LEFT JOIN LATERAL (" +
                 "  SELECT MIN(o.price) AS price_from, MAX(o.stock_qty) AS max_stock " +
                 "  FROM variant v JOIN offer o ON o.variant_id = v.id " +
@@ -60,7 +71,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                 ") agg ON TRUE " +
                 "WHERE (CAST(:query AS text) IS NULL " +
                 "       OR p.search_vector @@ plainto_tsquery('english', CAST(:query AS text))) " +
-                "  AND (CAST(:category AS text) IS NULL OR p.category = CAST(:category AS text)) " +
+                "  AND (CAST(:categorySlug AS text) IS NULL OR cat.slug = CAST(:categorySlug AS text)) " +
                 "  AND (CAST(:priceMin AS numeric) IS NULL OR agg.price_from >= CAST(:priceMin AS numeric)) " +
                 "  AND (CAST(:priceMax AS numeric) IS NULL OR agg.price_from <= CAST(:priceMax AS numeric)) " +
                 "  AND (CAST(:inStockOnly AS boolean) = FALSE OR COALESCE(agg.max_stock, 0) > 0)",
@@ -68,7 +79,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     )
     Page<Product> search(
             @Param("query") String query,
-            @Param("category") String category,
+            @Param("categorySlug") String categorySlug,
             @Param("priceMin") BigDecimal priceMin,
             @Param("priceMax") BigDecimal priceMax,
             @Param("inStockOnly") boolean inStockOnly,

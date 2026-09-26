@@ -78,13 +78,14 @@ describe('StoreFront', () => {
     )
   })
 
-  it('links each listing to its product page', async () => {
+  /** By slug, not by id - no raw database key appears in a product URL. */
+  it('links each listing to its product page by slug', async () => {
     renderStore('Aurora Audio')
 
     const tile = await screen.findByText('Wireless Noise-Cancelling Headphones')
     expect(within(tile.closest('article')!).getAllByRole('link')[0]).toHaveAttribute(
       'href',
-      '/products/11111111-1111-1111-1111-111111111111',
+      '/products/wireless-noise-cancelling-headphones',
     )
   })
 })

@@ -26,5 +26,10 @@ function validateAddress(address: AddressFormValues, prefix: string, errors: Fie
   if (!address.city.trim()) errors[`${prefix}.city`] = 'Required'
   if (!address.state.trim()) errors[`${prefix}.state`] = 'Required'
   if (!address.postalCode.trim()) errors[`${prefix}.postalCode`] = 'Required'
-  if (address.country.trim().length !== 2) errors[`${prefix}.country`] = 'Use a 2-letter country code'
+  // The value comes from a selector fed by GET /countries, so the only failure left
+  // to catch here is not having chosen one. Whether a chosen code is real is the
+  // server's call, and the selector cannot offer one that isn't.
+  // Worded so it doesn't read identically to the selector's own placeholder, which
+  // sits a few pixels above it.
+  if (!address.country.trim()) errors[`${prefix}.country`] = 'Choose a delivery country'
 }

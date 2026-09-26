@@ -2,6 +2,7 @@ package com.arkindustries.amezo.catalog;
 
 import com.arkindustries.amezo.identity.Seller;
 import com.arkindustries.amezo.identity.SellerRepository;
+import com.arkindustries.amezo.support.Fixtures;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -38,6 +39,9 @@ class ProductSearchApiTest {
     private ProductRepository productRepository;
 
     @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
     private SellerRepository sellerRepository;
 
     @Test
@@ -52,7 +56,7 @@ class ProductSearchApiTest {
                 .title("Mechanical Keyboard")
                 .brandName("Keychron")
                 .description("Hot-swappable mechanical keyboard")
-                .category("electronics")
+                .categoryId(Fixtures.categoryId(categoryRepository, "electronics")).slug(Fixtures.uniqueSlug("fixture"))
                 .build());
 
         mockMvc.perform(get("/products").param("q", "mechanical"))

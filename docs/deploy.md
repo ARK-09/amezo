@@ -245,6 +245,23 @@ itself.
   retry (`createAppQueryClient`): a checkout POST that timed out may already have
   been committed, and a retry would place a second order — those surface the
   failure and let the user press the button again.
+- **Two migrations run backfills over existing data.** `V14` creates the `category`
+  table, seeds the system list, and moves `product.category` (free text) to a
+  `category_id` FK - adopting any category name sellers had typed that isn't in the
+  seed, rather than discarding it. `V15` adds `product.slug` and generates one per
+  existing row, numbering duplicate titles. Both are idempotent per deploy and both
+  drop their helper function afterwards; neither needs a Postgres extension.
+  One trap worth knowing: Flyway runs every pending migration on **one connection**, so
+  a `pg_temp` function created by an earlier migration is still there for a later one -
+  both use `CREATE OR REPLACE`. A bare `CREATE` passes when each file is applied in its
+  own psql session and fails on a real migration run.
+- **What the API no longer accepts.** A product's category must be a live system
+  category's slug (`GET /categories`); a checkout country must be an ISO 3166-1 alpha-2
+  code (`GET /countries`). Both are validated server-side, so an old client posting a
+  typed category name or `UK` gets a `404`/`422` rather than writing bad data.
+- **Product URLs changed shape.** They are slugs now. Old id URLs still resolve, both
+  in the API and in the app (which redirects to the slug), so existing links do not
+  break - but anything that *builds* a product URL from an id should be updated.
 - **Memory.** `-XX:MaxRAMPercentage=70` in the Dockerfile keeps the heap inside
   a 512 MB container; the JVM would otherwise size the heap against the host's
   RAM and get OOM-killed. If the service dies on boot with exit 137, that's

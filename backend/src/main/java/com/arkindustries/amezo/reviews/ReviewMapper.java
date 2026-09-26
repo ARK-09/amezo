@@ -11,7 +11,24 @@ class ReviewMapper {
                 projection.getRating(),
                 projection.getBody(),
                 projection.getCreatedAt(),
-                projection.getVariantLabel()
+                projection.getVariantLabel(),
+                projection.getReviewerName()
+        );
+    }
+
+    /**
+     * For a review this request just wrote or looked up by key, where there is no
+     * native projection to hand - the variant label and reviewer name come from the
+     * caller, which already resolved them.
+     */
+    static ReviewResponse toResponse(Review review, String variantLabel, String reviewerName) {
+        return new ReviewResponse(
+                review.getId(),
+                review.getRating(),
+                review.getBody(),
+                review.getCreatedAt(),
+                variantLabel,
+                reviewerName
         );
     }
 }

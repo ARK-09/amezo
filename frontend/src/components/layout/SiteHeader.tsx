@@ -3,10 +3,12 @@ import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 
+import { Avatar } from '@/components/Avatar'
+import { displayNameFor } from '@/lib/displayName'
 import { DeliveryLocation } from '@/components/layout/DeliveryLocation'
 import { CartTrigger } from '@/features/cart/components/CartTrigger'
+import { useCategories } from '@/features/reference/api/useCategories'
 import { useSession } from '@/features/session/api/useSession'
-import { useCategoryOptions } from '@/features/search/api/useSearchProducts'
 import { cn } from '@/lib/utils'
 
 // Enough to fill the nav row on a laptop without wrapping it to two lines.
@@ -16,9 +18,11 @@ export function SiteHeader() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  // Shared (staleTime'd) with the landing page's category rail, so the nav
-  // costs one request per session rather than one per page view.
-  const categories = useCategoryOptions()
+  // The system category list, shared (and staleTime'd) with the landing page's
+  // rail and the search filter, so the whole app costs one request for it. It used
+  // to be guessed by sampling a page of products, which meant the nav could only
+  // ever show categories that happened to have something listed in them.
+  const categories = useCategories()
   const session = useSession()
 
   const onSearchPage = location.pathname === '/search'
@@ -87,13 +91,16 @@ export function SiteHeader() {
         <div className="ml-auto flex items-center gap-3 md:ml-0 md:gap-5">
           <DeliveryLocation />
           <CartTrigger />
-          {/* No buyer sign-in page exists yet, so this slot shows the magic-link
-              identity when checkout established one and otherwise points at the
-              one auth entry the app really has. */}
-          {session.data?.email ? (
-            <span className="hidden max-w-[18ch] truncate text-[13px] font-semibold sm:inline">
-              {session.data.email}
-            </span>
+          {/* An avatar, not an email address: printing someone's address in the
+              header is noise, and a small privacy leak on a shared screen. The name
+              still travels, as the avatar's title and the adjacent label. */}
+          {session.data ? (
+            <Link to="/account" className="flex items-center gap-2" aria-label="Your account">
+              <Avatar name={session.data.fullName ?? session.data.email} size="sm" />
+              <span className="hidden max-w-[14ch] truncate text-[13px] font-semibold sm:inline">
+                {displayNameFor(session.data.fullName ?? session.data.email)}
+              </span>
+            </Link>
           ) : (
             <Link
               to="/seller/sign-in"
@@ -123,14 +130,17 @@ export function SiteHeader() {
           <nav aria-label="Product categories" className="flex flex-1 items-center gap-5">
             {navCategories.map((category) => (
               <Link
-                key={category}
-                to={`/search?category=${encodeURIComponent(category)}`}
+                key={category.slug}
+                // The slug is what the filter matches on; the name is what is shown.
+                to={`/search?category=${encodeURIComponent(category.slug)}`}
                 className={cn(
                   'text-[13px] whitespace-nowrap hover:text-primary',
-                  activeCategory === category ? 'font-semibold text-primary' : 'text-muted-foreground',
+                  activeCategory === category.slug
+                    ? 'font-semibold text-primary'
+                    : 'text-muted-foreground',
                 )}
               >
-                {category}
+                {category.name}
               </Link>
             ))}
           </nav>

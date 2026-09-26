@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Navigate, useSearchParams } from 'react-router'
 
 import { useHomeRail } from '@/features/home/api/useHomeRail'
@@ -6,27 +7,55 @@ import { DealRail } from '@/features/home/components/DealRail'
 import { PromoHero } from '@/features/home/components/PromoHero'
 import { PromoTiles } from '@/features/home/components/PromoTiles'
 import { SearchBanner } from '@/features/home/components/SearchBanner'
-import { useCategoryOptions } from '@/features/search/api/useSearchProducts'
+import { useCategories, type Category } from '@/features/reference/api/useCategories'
 
 const RAIL_SIZE = 6
 
+/**
+ * A stable empty list for before the categories load. `?? []` would mint a new array
+ * every render, which defeats the memo below and hands CategoryRail a changed prop on
+ * every pass.
+ */
+const NO_CATEGORIES: Category[] = []
+
 export function Landing() {
   const [searchParams] = useSearchParams()
-  const categories = useCategoryOptions()
-  const categoryList = categories.data ?? []
+  // The system list, not a guess derived from whatever products came back. The rail
+  // now shows every category the marketplace has, in its own merchandising order.
+  const categories = useCategories()
+  const categoryList = categories.data ?? NO_CATEGORIES
 
   const deals = useHomeRail({ sort: 'relevance', size: RAIL_SIZE, inStockOnly: true })
   const fresh = useHomeRail({ sort: 'newest', size: RAIL_SIZE })
-  // The design runs two category rails ("Top deals in electronics", "Best
-  // sellers in beauty & health"). Which categories those are is the catalog's
-  // business, not a hard-coded pair, so they follow whatever it returns.
-  const [firstCategory, secondCategory] = categoryList
+
+  /**
+   * The design runs two category rails ("Top picks in Electronics", "Best sellers in
+   * Footwear"). Which two is the catalog's business, not a hard-coded pair - and it
+   * has to be two categories that actually have stock, or the rail renders a heading
+   * over nothing and is dropped.
+   *
+   * So they are taken from the products this page has already loaded, in the system
+   * list's merchandising order, rather than from the head of the system list (which
+   * can be a category nobody has listed in yet) or from a request of their own.
+   */
+  const [firstCategory, secondCategory] = useMemo(() => {
+    const stocked = new Map(
+      [...(deals.data?.content ?? []), ...(fresh.data?.content ?? [])].map((product) => [
+        product.category.slug,
+        product.category,
+      ]),
+    )
+    const ordered = categoryList.filter((category) => stocked.has(category.slug))
+    // Nothing loaded yet (or no overlap): fall back to the list's own order so the
+    // rails still have something to be about once the products arrive.
+    return ordered.length > 0 ? ordered : categoryList
+  }, [categoryList, deals.data, fresh.data])
   const categoryOne = useHomeRail(
-    { sort: 'relevance', size: RAIL_SIZE, category: firstCategory },
+    { sort: 'relevance', size: RAIL_SIZE, category: firstCategory?.slug },
     { enabled: Boolean(firstCategory) },
   )
   const categoryTwo = useHomeRail(
-    { sort: 'relevance', size: RAIL_SIZE, category: secondCategory },
+    { sort: 'relevance', size: RAIL_SIZE, category: secondCategory?.slug },
     { enabled: Boolean(secondCategory) },
   )
 
@@ -81,8 +110,8 @@ export function Landing() {
       {firstCategory && (
         <DealRail
           id="rail-category-one"
-          title={`Top picks in ${firstCategory}`}
-          viewAllTo={`/search?category=${encodeURIComponent(firstCategory)}`}
+          title={`Top picks in ${firstCategory.name}`}
+          viewAllTo={`/search?category=${encodeURIComponent(firstCategory.slug)}`}
           products={categoryOne.data?.content ?? []}
           isLoading={categoryOne.isLoading}
           isError={categoryOne.isError}
@@ -94,8 +123,8 @@ export function Landing() {
       {secondCategory && (
         <DealRail
           id="rail-category-two"
-          title={`Best sellers in ${secondCategory}`}
-          viewAllTo={`/search?category=${encodeURIComponent(secondCategory)}`}
+          title={`Best sellers in ${secondCategory.name}`}
+          viewAllTo={`/search?category=${encodeURIComponent(secondCategory.slug)}`}
           products={categoryTwo.data?.content ?? []}
           isLoading={categoryTwo.isLoading}
           isError={categoryTwo.isError}

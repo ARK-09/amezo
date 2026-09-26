@@ -1,9 +1,11 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { CartProvider, useCartState } from '@/features/cart/context/CartContext'
+import { createAppQueryClient } from '@/lib/api/queryClient'
 import { STORAGE_KEY } from '@/features/cart/storage'
 import type { ProductSummary } from '@/features/search/schema/types'
 
@@ -11,9 +13,11 @@ import { ProductTile } from './ProductTile'
 
 const PRODUCT: ProductSummary = {
   id: 'p-1',
+  slug: 'trail-backpack',
+  sellerId: 'seller-1',
   title: 'Trail Backpack',
   brandName: 'Summit',
-  category: 'Outdoor',
+  category: { slug: 'outdoor', name: 'Outdoor' },
   priceFrom: 79.99,
   thumbnailUrl: null,
   avgRating: 4.5,
@@ -32,14 +36,21 @@ function CartReadout() {
   )
 }
 
+/**
+ * The card asks the session whether the viewer is this product's seller (so it can
+ * refuse to add their own listing), which is why there is a QueryClient here. The
+ * session query itself resolves to "nobody signed in" from the default handler.
+ */
 function renderTile(product: ProductSummary = PRODUCT) {
   return render(
-    <CartProvider>
-      <MemoryRouter>
-        <ProductTile product={product} />
-        <CartReadout />
-      </MemoryRouter>
-    </CartProvider>,
+    <QueryClientProvider client={createAppQueryClient()}>
+      <CartProvider>
+        <MemoryRouter>
+          <ProductTile product={product} />
+          <CartReadout />
+        </MemoryRouter>
+      </CartProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -53,8 +64,11 @@ describe('ProductTile add to cart', () => {
    * cart lives in localStorage and had no business waiting on the network.
    */
   it('adds to the cart without issuing any request', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
     renderTile()
+    // Counted from just before the click: the card's own render asks the session who
+    // is viewing, which is one shared query for the whole page. What matters is that
+    // pressing the button adds no request of its own.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
     await userEvent.click(screen.getByRole('button', { name: 'Add to cart' }))
 

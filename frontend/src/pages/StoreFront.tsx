@@ -31,23 +31,36 @@ function sortProducts(rows: ProductSummary[], sort: StoreSort): ProductSummary[]
   return sorted
 }
 
+/** Sentinel for the unfiltered chip - not a real slug, so it can't collide. */
+const ALL_CATEGORIES = '__all__'
+
 export function StoreFront() {
   const { brand: brandParam } = useParams<{ brand: string }>()
   const brand = decodeURIComponent(brandParam ?? '')
   const query = useStoreProducts(brand)
 
-  const [category, setCategory] = useState('All')
+  // Holds a category SLUG, or the sentinel for "no category filter".
+  const [category, setCategory] = useState(ALL_CATEGORIES)
   const [sort, setSort] = useState<StoreSort>('relevance')
 
   const products = useMemo(() => query.data ?? [], [query.data])
 
-  const categories = useMemo(
-    () => ['All', ...Array.from(new Set(products.map((p) => p.category))).sort()],
-    [products],
-  )
+  /**
+   * The categories this store actually lists, de-duplicated by slug. Derived from the
+   * products rather than the system list on purpose: a store front's chips should
+   * offer what this seller sells, not every category the marketplace has.
+   */
+  const categories = useMemo(() => {
+    const bySlug = new Map(products.map((p) => [p.category.slug, p.category]))
+    return [
+      { slug: ALL_CATEGORIES, name: 'All' },
+      ...Array.from(bySlug.values()).sort((a, b) => a.name.localeCompare(b.name)),
+    ]
+  }, [products])
 
   const visible = useMemo(() => {
-    const filtered = category === 'All' ? products : products.filter((p) => p.category === category)
+    const filtered =
+      category === ALL_CATEGORIES ? products : products.filter((p) => p.category.slug === category)
     return sortProducts(filtered, sort)
   }, [products, category, sort])
 
@@ -145,18 +158,18 @@ export function StoreFront() {
             <div className="mt-7 flex flex-wrap items-center gap-2.5">
               {categories.map((option) => (
                 <button
-                  key={option}
+                  key={option.slug}
                   type="button"
-                  onClick={() => setCategory(option)}
-                  aria-pressed={option === category}
+                  onClick={() => setCategory(option.slug)}
+                  aria-pressed={option.slug === category}
                   className={cn(
                     'rounded-full border px-3.5 py-1.5 text-xs transition-colors',
-                    option === category
+                    option.slug === category
                       ? 'border-primary bg-primary text-primary-foreground font-semibold'
                       : 'bg-background hover:bg-accent',
                   )}
                 >
-                  {option}
+                  {option.name}
                 </button>
               ))}
             </div>
@@ -189,7 +202,7 @@ export function StoreFront() {
             {query.isLoading
               ? Array.from({ length: 5 }, (_, i) => <ProductCardSkeleton key={i} />)
               : visible.map((product) => (
-                  <ProductTile key={product.id} product={product} subtitle={product.category} />
+                  <ProductTile key={product.id} product={product} subtitle={product.category.name} />
                 ))}
           </div>
         </>

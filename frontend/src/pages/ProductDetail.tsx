@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, Navigate, useParams } from 'react-router'
 
 import { RatingBadge } from '@/components/RatingBadge'
 import { Button } from '@/components/ui/button'
 import { useAddToCart } from '@/features/catalog/api/useAddToCart'
+import { useIsOwnProduct } from '@/features/session/api/useIsOwnProduct'
 import { useProduct } from '@/features/catalog/api/useProduct'
 import { Breadcrumb } from '@/features/catalog/components/Breadcrumb'
 import { BuyBox } from '@/features/catalog/components/BuyBox'
@@ -14,9 +15,12 @@ import { ReviewsPanel } from '@/features/catalog/components/ReviewsPanel'
 import { VariantSelector } from '@/features/catalog/components/VariantSelector'
 import { apiErrorMessage } from '@/lib/api/transient'
 
+/** A path segment that is a UUID came from a link minted before slugs existed. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export function ProductDetail() {
-  const { productId } = useParams<{ productId: string }>()
-  const query = useProduct(productId!)
+  const { productRef } = useParams<{ productRef: string }>()
+  const query = useProduct(productRef!)
   const { addToCart, isPending } = useAddToCart()
 
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
@@ -24,6 +28,13 @@ export function ProductDetail() {
   const [tab, setTab] = useState<ProductTab>('details')
 
   const product = query.data
+  // Old links keep working, but they don't linger: once the product resolves, swap
+  // the id in the address bar for its slug. `replace` so Back doesn't bounce between
+  // the two URLs.
+  const arrivedByLegacyId = Boolean(productRef && UUID_PATTERN.test(productRef))
+  // The seller looking at their own listing. The rule is enforced in checkout - this
+  // is what stops the buy box offering something the order will refuse.
+  const isOwnProduct = useIsOwnProduct(product?.sellerId)
   const selectedVariant =
     product?.variants.find((v) => v.id === selectedVariantId) ??
     product?.variants.find((v) => v.stockQty > 0) ??
@@ -32,6 +43,10 @@ export function ProductDetail() {
   function selectVariant(variantId: string) {
     setSelectedVariantId(variantId)
     setQuantity(1)
+  }
+
+  if (product && arrivedByLegacyId) {
+    return <Navigate to={`/products/${product.slug}`} replace />
   }
 
   return (
@@ -67,15 +82,17 @@ export function ProductDetail() {
                 <span className="border-l pl-3 text-sm text-muted-foreground">
                   {product.reviewSummary.count} reviews
                 </span>
-                <span className="text-sm text-muted-foreground">
-                  Sold by{' '}
-                  <Link
-                    to={`/stores/${encodeURIComponent(product.brandName)}`}
-                    className="font-semibold text-foreground underline decoration-border underline-offset-[3px] hover:decoration-primary"
-                  >
-                    {product.brandName}
-                  </Link>
-                </span>
+                {product.brandName && (
+                  <span className="text-sm text-muted-foreground">
+                    Sold by{' '}
+                    <Link
+                      to={`/stores/${encodeURIComponent(product.brandName)}`}
+                      className="font-semibold text-foreground underline decoration-border underline-offset-[3px] hover:decoration-primary"
+                    >
+                      {product.brandName}
+                    </Link>
+                  </span>
+                )}
               </div>
 
               <VariantSelector
@@ -91,6 +108,7 @@ export function ProductDetail() {
               quantity={quantity}
               onQuantityChange={setQuantity}
               isAdding={isPending}
+              isOwnProduct={isOwnProduct}
               onAddToCart={() => addToCart(selectedVariant.id, quantity, selectedVariant.price)}
             />
           </div>
@@ -106,7 +124,7 @@ export function ProductDetail() {
 
             {tab === 'reviews' && (
               <ReviewsPanel
-                productId={product.id}
+                productSlug={product.slug}
                 averageRating={product.reviewSummary.averageRating}
                 reviewCount={product.reviewSummary.count}
               />

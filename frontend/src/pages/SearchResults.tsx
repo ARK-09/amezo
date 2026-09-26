@@ -5,13 +5,15 @@ import { ProductCardSkeleton } from '@/features/search/components/ProductCardSke
 import { ProductGrid } from '@/features/search/components/ProductGrid'
 import { ResultsHeader } from '@/features/search/components/ResultsHeader'
 import { useSearchFilters } from '@/features/search/hooks/useSearchFilters'
-import { useCategoryOptions, useSearchProducts } from '@/features/search/api/useSearchProducts'
+import { useCategories } from '@/features/reference/api/useCategories'
+import { useSearchProducts } from '@/features/search/api/useSearchProducts'
 import { apiErrorMessage } from '@/lib/api/transient'
 
 export function SearchResults() {
   const { filters, update, setPage, removeFilter, clearAll } = useSearchFilters()
   const query = useSearchProducts(filters)
-  const categoryOptions = useCategoryOptions()
+  // The same cached system list the header and the landing rail read.
+  const categoryOptions = useCategories()
 
   return (
     <div className="mx-auto flex w-full max-w-[1320px] flex-1 gap-6 px-7 py-6">
@@ -31,7 +33,12 @@ export function SearchResults() {
           onSortChange={(sort) => update({ sort })}
         />
 
-        <ActiveFilterChips filters={filters} onRemove={removeFilter} onClearAll={clearAll} />
+        <ActiveFilterChips
+          filters={filters}
+          categories={categoryOptions.data ?? []}
+          onRemove={removeFilter}
+          onClearAll={clearAll}
+        />
 
         {query.isLoading && (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">

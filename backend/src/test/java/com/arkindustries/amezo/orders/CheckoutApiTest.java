@@ -10,6 +10,8 @@ import com.arkindustries.amezo.identity.Seller;
 import com.arkindustries.amezo.identity.SellerRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.arkindustries.amezo.catalog.CategoryRepository;
+import com.arkindustries.amezo.support.Fixtures;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -47,6 +49,9 @@ class CheckoutApiTest {
     private SellerRepository sellerRepository;
 
     @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
     private ProductRepository productRepository;
 
     @Autowired
@@ -59,7 +64,7 @@ class CheckoutApiTest {
         Seller seller = sellerRepository.save(Seller.builder()
                 .email("checkout-" + emailSuffix + "@example.com").fullName("Checkout Seller").build());
         Product product = productRepository.save(Product.builder()
-                .sellerId(seller.getId()).title("Trail Backpack").category("outdoor").build());
+                .sellerId(seller.getId()).title("Trail Backpack").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant variant = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("Blue / M").sku("SKU-CHK-" + emailSuffix).build());
         return offerRepository.save(Offer.builder()

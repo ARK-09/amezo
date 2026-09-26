@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router'
 import { Button } from '@/components/ui/button'
 import type { ProblemDetail } from '@/lib/api/client'
 import { Input } from '@/components/ui/input'
+import { CategorySelect } from '@/features/reference/components/CategorySelect'
 import { apiErrorMessage } from '@/lib/api/transient'
 import {
   Table,
@@ -75,14 +76,20 @@ function ProductFields({
   product,
 }: {
   productId: string
-  product: { title: string; brandName?: string | null; description?: string | null; category: string }
+  product: {
+    title: string
+    brandName?: string | null
+    description?: string | null
+    category: { slug: string; name: string }
+  }
 }) {
   const { mutate, isPending, isError, error, isSuccess } = useUpdateProduct(productId)
 
   const [title, setTitle] = useState(product.title)
   const [brandName, setBrandName] = useState(product.brandName ?? '')
   const [description, setDescription] = useState(product.description ?? '')
-  const [category, setCategory] = useState(product.category)
+  // The selected SLUG, since that is what the selector and the API both deal in.
+  const [categorySlug, setCategorySlug] = useState(product.category.slug)
 
   // Re-seed when the product itself changes (a save's response, or a refetch);
   // without this the form would keep showing the values it mounted with.
@@ -90,14 +97,14 @@ function ProductFields({
     setTitle(product.title)
     setBrandName(product.brandName ?? '')
     setDescription(product.description ?? '')
-    setCategory(product.category)
+    setCategorySlug(product.category.slug)
   }, [product])
 
   const dirty =
     title !== product.title ||
     brandName !== (product.brandName ?? '') ||
     description !== (product.description ?? '') ||
-    category !== product.category
+    categorySlug !== product.category.slug
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -107,7 +114,7 @@ function ProductFields({
       ...(title !== product.title ? { title } : {}),
       ...(brandName !== (product.brandName ?? '') ? { brandName } : {}),
       ...(description !== (product.description ?? '') ? { description } : {}),
-      ...(category !== product.category ? { category } : {}),
+      ...(categorySlug !== product.category.slug ? { categorySlug } : {}),
     })
   }
 
@@ -120,7 +127,14 @@ function ProductFields({
           <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} required />
         </Field>
         <Field label="Category" htmlFor="category">
-          <Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} required />
+          <CategorySelect
+            id="category"
+            value={categorySlug}
+            onChange={setCategorySlug}
+            // Already known from the product, so the control shows it straight away
+            // instead of a loading placeholder.
+            selectedName={categorySlug === product.category.slug ? product.category.name : undefined}
+          />
         </Field>
         <Field label="Brand" htmlFor="brandName">
           <Input id="brandName" value={brandName} onChange={(e) => setBrandName(e.target.value)} />

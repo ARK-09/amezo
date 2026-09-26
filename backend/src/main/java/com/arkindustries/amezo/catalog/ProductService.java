@@ -1,7 +1,9 @@
 package com.arkindustries.amezo.catalog;
 
 import com.arkindustries.amezo.catalog.api.ProductExistenceQuery;
+import com.arkindustries.amezo.catalog.api.ProductReferenceResolver;
 import com.arkindustries.amezo.catalog.api.ProductVariantSummaryQuery;
+import com.arkindustries.amezo.catalog.dto.CategoryResponse;
 import com.arkindustries.amezo.catalog.dto.ProductDetailResponse;
 import com.arkindustries.amezo.catalog.dto.ProductSummaryResponse;
 import com.arkindustries.amezo.catalog.dto.VariantOfferResponse;
@@ -20,18 +22,21 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
-public class ProductService implements ProductExistenceQuery, ProductVariantSummaryQuery {
+public class ProductService
+        implements ProductExistenceQuery, ProductVariantSummaryQuery, ProductReferenceResolver {
 
     private final ProductRepository productRepository;
     private final VariantRepository variantRepository;
     private final OfferRepository offerRepository;
     private final ImageRepository imageRepository;
     private final ReviewSummaryQuery reviewSummaryQuery;
+    private final CategoryService categoryService;
     private final ImageUrlResolver imageUrls;
 
     public ProductService(
@@ -40,18 +45,20 @@ public class ProductService implements ProductExistenceQuery, ProductVariantSumm
             OfferRepository offerRepository,
             ImageRepository imageRepository,
             ReviewSummaryQuery reviewSummaryQuery,
+            CategoryService categoryService,
             ImageUrlResolver imageUrls) {
         this.productRepository = productRepository;
         this.variantRepository = variantRepository;
         this.offerRepository = offerRepository;
         this.imageRepository = imageRepository;
         this.reviewSummaryQuery = reviewSummaryQuery;
+        this.categoryService = categoryService;
         this.imageUrls = imageUrls;
     }
 
     public Page<ProductSummaryResponse> search(
             String query,
-            String category,
+            String categorySlug,
             BigDecimal priceMin,
             BigDecimal priceMax,
             boolean inStockOnly,
@@ -64,11 +71,13 @@ public class ProductService implements ProductExistenceQuery, ProductVariantSumm
         // sorts on actually exists.
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
         Page<Product> products = productRepository.search(
-                query, category, priceMin, priceMax, inStockOnly, sort, unsorted);
+                query, categorySlug, priceMin, priceMax, inStockOnly, sort, unsorted);
 
         List<UUID> productIds = products.getContent().stream().map(Product::getId).toList();
+        Map<UUID, CategoryResponse> categoriesById = categoryService.byId();
         if (productIds.isEmpty()) {
-            return products.map(product -> ProductMapper.toSummary(product, null, null, false, null, null));
+            return products.map(product -> ProductMapper.toSummary(
+                    product, categoriesById.get(product.getCategoryId()), null, null, false, null, null, null));
         }
 
         // Three batched lookups for the whole page, not per card: variants to reach
@@ -96,16 +105,22 @@ public class ProductService implements ProductExistenceQuery, ProductVariantSumm
             defaultOfferByProductId.merge(productId, offer, ProductService::preferredOffer);
         }
         Map<UUID, String> thumbnailsByProductId = thumbnailUrlsByProductId(productIds);
+        // The fourth batched lookup, and the reason avgRating is finally real on a
+        // card: one grouped aggregate for the page instead of one per product.
+        Map<UUID, ReviewSummaryView> summariesByProductId = reviewSummaryQuery.getSummaries(productIds);
 
         return products.map(product -> {
             Offer defaultOffer = defaultOfferByProductId.get(product.getId());
+            ReviewSummaryView summary = summariesByProductId.get(product.getId());
             return ProductMapper.toSummary(
                     product,
+                    categoriesById.get(product.getCategoryId()),
                     priceFromByProductId.get(product.getId()),
                     thumbnailsByProductId.get(product.getId()),
                     inStockByProductId.getOrDefault(product.getId(), false),
                     defaultOffer,
-                    defaultOffer != null ? defaultOffer.getVariantId() : null);
+                    defaultOffer != null ? defaultOffer.getVariantId() : null,
+                    summary != null ? summary.averageRating() : null);
         });
     }
 
@@ -157,11 +172,13 @@ public class ProductService implements ProductExistenceQuery, ProductVariantSumm
                     return new VariantOfferResponse(
                             variant.getId(),
                             product.getId(),
+                            product.getSlug(),
                             product.getTitle(),
                             variant.getLabel(),
                             thumbnailsByProductId.get(product.getId()),
                             offer.getPrice(),
-                            offer.getStockQty());
+                            offer.getStockQty(),
+                            product.getSellerId());
                 })
                 .filter(Objects::nonNull)
                 .toList();
@@ -178,9 +195,15 @@ public class ProductService implements ProductExistenceQuery, ProductVariantSumm
                         (first, second) -> first));
     }
 
-    public ProductDetailResponse getDetail(UUID id) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Product " + id + " not found"));
+    /**
+     * By slug, or by id for links minted before slugs existed. The public product
+     * page is addressed by slug; nothing about this response changes depending on
+     * which one got you here.
+     */
+    public ProductDetailResponse getDetail(String reference) {
+        Product product = findByReference(reference)
+                .orElseThrow(() -> new NotFoundException("Product '" + reference + "' not found"));
+        UUID id = product.getId();
 
         List<Image> images = imageRepository.findTop7ByProductIdAndStatusOrderByPositionAsc(id, ImageStatus.STORED);
         List<Variant> variants = variantRepository.findByProductId(id);
@@ -195,7 +218,40 @@ public class ProductService implements ProductExistenceQuery, ProductVariantSumm
         // repository import - per the architecture rules.
         ReviewSummaryView summary = reviewSummaryQuery.getSummary(id);
 
-        return ProductMapper.toDetail(product, images, variants, offersByVariantId, summary, imageUrls);
+        return ProductMapper.toDetail(
+                product,
+                categoryService.byIdOrThrow(product.getCategoryId()),
+                images,
+                variants,
+                offersByVariantId,
+                summary,
+                imageUrls);
+    }
+
+    /**
+     * A segment that parses as a UUID is an id, anything else is a slug. Checking
+     * the shape rather than trying both in turn keeps a slug lookup from ever
+     * costing two queries, and slugs can't collide with UUIDs: slugify() only emits
+     * [a-z0-9-], and a bare UUID's hyphenated hex form would have to be a product
+     * literally titled with one.
+     */
+    private Optional<Product> findByReference(String reference) {
+        return asUuid(reference)
+                .map(productRepository::findById)
+                .orElseGet(() -> productRepository.findBySlug(reference));
+    }
+
+    private static Optional<UUID> asUuid(String value) {
+        try {
+            return Optional.of(UUID.fromString(value));
+        } catch (IllegalArgumentException notAUuid) {
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public Optional<UUID> resolveId(String reference) {
+        return findByReference(reference).map(Product::getId);
     }
 
     @Override

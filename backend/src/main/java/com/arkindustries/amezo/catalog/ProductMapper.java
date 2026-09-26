@@ -1,5 +1,6 @@
 package com.arkindustries.amezo.catalog;
 
+import com.arkindustries.amezo.catalog.dto.CategoryResponse;
 import com.arkindustries.amezo.catalog.dto.ImageResponse;
 import com.arkindustries.amezo.catalog.dto.ProductDetailResponse;
 import com.arkindustries.amezo.catalog.dto.ProductSummaryResponse;
@@ -18,16 +19,19 @@ class ProductMapper {
 
     static ProductSummaryResponse toSummary(
             Product product,
+            CategoryResponse category,
             BigDecimal priceFrom,
             String thumbnailUrl,
             boolean inStock,
             Offer defaultOffer,
-            UUID defaultVariantId) {
+            UUID defaultVariantId,
+            Double averageRating) {
         return new ProductSummaryResponse(
                 product.getId(),
+                product.getSlug(),
                 product.getTitle(),
                 product.getBrandName(),
-                product.getCategory(),
+                category,
                 // A product with no offer has no price to show. Zero rather than
                 // null because the field is non-nullable in the frontend contract,
                 // and inStock is false alongside it, so the card renders as
@@ -36,12 +40,18 @@ class ProductMapper {
                 thumbnailUrl,
                 inStock,
                 defaultVariantId,
-                defaultOffer != null ? defaultOffer.getPrice() : null
+                defaultOffer != null ? defaultOffer.getPrice() : null,
+                averageRating,
+                // The card needs this to refuse to add a seller's own product to
+                // their cart. It is the seller's id, which is already public in
+                // effect (a store front is addressable by brand), not a buyer's.
+                product.getSellerId()
         );
     }
 
     static ProductDetailResponse toDetail(
             Product product,
+            CategoryResponse category,
             List<Image> images,
             List<Variant> variants,
             Map<UUID, Offer> offersByVariantId,
@@ -62,9 +72,11 @@ class ProductMapper {
 
         return new ProductDetailResponse(
                 product.getId(),
+                product.getSlug(),
+                product.getSellerId(),
                 product.getTitle(),
                 product.getBrandName(),
-                product.getCategory(),
+                category,
                 product.getDescription(),
                 imageResponses,
                 variantResponses,

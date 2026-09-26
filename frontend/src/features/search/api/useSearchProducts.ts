@@ -38,21 +38,3 @@ export function useSearchProducts(filters: SearchFilters) {
     placeholderData: keepPreviousData,
   })
 }
-
-// No facets endpoint exists to list distinct categories (flagged separately) —
-// this samples an unfiltered page and derives options from it client-side, so
-// the dropdown doesn't collapse to one option once a category is selected.
-export function useCategoryOptions() {
-  return useQuery({
-    queryKey: [...searchKeys.all, 'categories'] as const,
-    queryFn: async ({ signal }) => {
-      const { data, error } = await apiClient.GET('/products', {
-        signal,
-        params: { query: { page: 0, size: 100 } },
-      })
-      if (error) throw error
-      return Array.from(new Set(data.content.map((p) => p.category))).sort()
-    },
-    staleTime: 5 * 60 * 1000,
-  })
-}

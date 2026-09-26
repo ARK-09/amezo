@@ -1,25 +1,41 @@
 import { Star } from 'lucide-react'
+import { Link } from 'react-router'
 import { useState } from 'react'
 
+import { Avatar } from '@/components/Avatar'
+import { displayNameFor } from '@/lib/displayName'
 import { Button } from '@/components/ui/button'
+import { useProductReviews, useReviewEligibility } from '@/features/reviews/api/useReviews'
+import { ReviewForm } from '@/features/reviews/components/ReviewForm'
+import { useSession } from '@/features/session/api/useSession'
 
-import { useProductReviews } from '../api/useProductReviews'
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 
 export function ReviewsPanel({
-  productId,
+  productSlug,
   averageRating,
   reviewCount,
 }: {
-  productId: string
+  /** Reviews are addressed by the product's slug, like the product itself. */
+  productSlug: string
   averageRating: number | null
   reviewCount: number
 }) {
   const [page, setPage] = useState(0)
-  const query = useProductReviews(productId, page, true)
+  // Survives the eligibility answer flipping to ALREADY_REVIEWED, which is what
+  // publishing causes - so the buyer sees a confirmation of what they just did rather
+  // than being told they had already done it.
+  const [justPublished, setJustPublished] = useState(false)
+  const query = useProductReviews(productSlug, page, true)
+  const session = useSession()
+
+  // Only a signed-in buyer can review, so only for them is the question worth
+  // asking - for anyone else there is no form to offer and no request to make.
+  const isBuyer = session.data?.identityType === 'BUYER'
+  const eligibility = useReviewEligibility(productSlug, isBuyer)
 
   return (
     <div>
@@ -39,6 +55,43 @@ export function ReviewsPanel({
         </div>
       </div>
 
+      {/* Three states, and each says something different: sign in, buy it first, or
+          here is the form. A visitor who can't review is told why rather than shown a
+          form that would be refused. */}
+      {!session.isPending && !isBuyer && (
+        <p className="mb-5 rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+          <Link to="/sign-in" className="font-semibold text-foreground underline">
+            Sign in
+          </Link>{' '}
+          to review something you've bought.
+        </p>
+      )}
+
+      {justPublished && (
+        <p role="status" className="mb-5 rounded-lg border bg-muted/40 p-4 text-sm">
+          Thanks — your review is published.
+        </p>
+      )}
+
+      {!justPublished && isBuyer && eligibility.data?.eligible && eligibility.data.orderLineId && (
+        <ReviewForm
+          orderLineId={eligibility.data.orderLineId}
+          onPublished={() => setJustPublished(true)}
+        />
+      )}
+
+      {!justPublished && isBuyer && eligibility.data?.reason === 'NOT_PURCHASED' && (
+        <p className="mb-5 rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+          Only buyers can review this product.
+        </p>
+      )}
+
+      {!justPublished && isBuyer && eligibility.data?.reason === 'ALREADY_REVIEWED' && (
+        <p className="mb-5 rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+          You've already reviewed this product.
+        </p>
+      )}
+
       {query.isLoading && <p className="text-sm text-muted-foreground">Loading reviews…</p>}
 
       {query.isError && (
@@ -54,8 +107,8 @@ export function ReviewsPanel({
           {query.data.content.map((review) => (
             <div key={review.id} className="border-b py-4.5">
               <div className="mb-2 flex flex-wrap items-center gap-3">
-                <span className="size-8 shrink-0 rounded-full bg-muted" aria-hidden />
-                <span className="text-sm font-bold">{review.reviewerFirstName}</span>
+                <Avatar name={review.reviewerName} size="sm" />
+                <span className="text-sm font-bold">{displayNameFor(review.reviewerName)}</span>
                 <span className="flex gap-0.5 text-[#ffc53d]">
                   {Array.from({ length: 5 }, (_, i) => (
                     <Star key={i} className="size-3" fill={i < review.rating ? 'currentColor' : 'none'} />

@@ -63,12 +63,17 @@ describe('SiteHeader', () => {
     expect(location()).toBe('/search?inStockOnly=true')
   })
 
-  it('lists the catalog categories as nav links', async () => {
+  /** The system list, linked by slug - not a guess derived from search results. */
+  it('lists the system categories as nav links', async () => {
     renderHeader()
 
     expect(await screen.findByRole('link', { name: 'Electronics' })).toHaveAttribute(
       'href',
-      '/search?category=Electronics',
+      '/search?category=electronics',
+    )
+    expect(screen.getByRole('link', { name: 'Apparel' })).toHaveAttribute(
+      'href',
+      '/search?category=apparel',
     )
     expect(screen.getByRole('link', { name: /All categories/ })).toHaveAttribute('href', '/search')
   })

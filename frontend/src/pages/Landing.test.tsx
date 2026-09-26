@@ -58,17 +58,28 @@ describe('Landing', () => {
     expect(hero.getByText(LAPTOP)).toBeInTheDocument()
   })
 
-  it('offers a tile per catalog category', async () => {
+  /**
+   * The rail comes from the system category list now, not from sampling whatever
+   * products happened to come back - so it shows every category the marketplace has,
+   * including ones with nothing listed in them yet, and links by the stable slug.
+   */
+  it('offers a tile per system category, linked by slug', async () => {
     renderPage()
 
     const rail = within(await screen.findByRole('region', { name: 'Explore popular categories' }))
     expect(rail.getByRole('link', { name: 'Electronics' })).toHaveAttribute(
       'href',
-      '/search?category=Electronics',
+      '/search?category=electronics',
     )
     expect(rail.getByRole('link', { name: 'Outdoor' })).toHaveAttribute(
       'href',
-      '/search?category=Outdoor',
+      '/search?category=outdoor',
+    )
+    // Present in the system list but with nothing listed under it - the old derived
+    // rail could never have shown this one.
+    expect(rail.getByRole('link', { name: 'Beauty' })).toHaveAttribute(
+      'href',
+      '/search?category=beauty',
     )
   })
 
@@ -83,7 +94,13 @@ describe('Landing', () => {
     expect(await fresh.findByText(SHOES)).toBeInTheDocument()
   })
 
-  it('builds the category rails from whatever the catalog returns', async () => {
+  /**
+   * The rails name categories that actually have stock, in the system list's
+   * merchandising order - so they never render a heading over an empty strip, which
+   * is what following the head of the system list would do for a category nobody has
+   * listed in yet.
+   */
+  it('builds the category rails from categories that have listings', async () => {
     renderPage()
 
     const electronics = within(
@@ -94,6 +111,10 @@ describe('Landing', () => {
 
     const footwear = within(await screen.findByRole('region', { name: 'Best sellers in Footwear' }))
     expect(await footwear.findByText(SHOES)).toBeInTheDocument()
+
+    // Beauty is in the system list and has nothing listed, so it gets no rail - but
+    // it is still in the navigation above.
+    expect(screen.queryByRole('region', { name: /Beauty/ })).not.toBeInTheDocument()
   })
 
   it('points a promo tile at the featured seller storefront', async () => {

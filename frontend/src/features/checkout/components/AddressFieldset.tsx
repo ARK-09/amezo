@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { Input } from '@/components/ui/input'
+import { CountrySelect } from '@/features/reference/components/CountrySelect'
 
 import type { AddressFormValues, FieldErrors } from '../schema/types'
 
@@ -71,12 +72,15 @@ export function AddressFieldset({
           onChange={(e) => onChange({ postalCode: e.target.value })}
         />
       </Field>
-      <Field label="Country (2-letter code)" id={`${idPrefix}-country`} error={errorFor('country')}>
-        <Input
+      {/* A selector, not a text box. Nobody should be typing "UK" and finding out at
+          the end that the ISO code is GB - and the backend validates the code either
+          way, so a typed field could only ever be a slower route to the same refusal. */}
+      <Field label="Country" id={`${idPrefix}-country`} error={errorFor('country')}>
+        <CountrySelect
           id={`${idPrefix}-country`}
-          value={values.country}
-          maxLength={2}
-          onChange={(e) => onChange({ country: e.target.value.toUpperCase() })}
+          value={values.country || null}
+          onChange={(code) => onChange({ country: code })}
+          invalid={Boolean(errorFor('country'))}
         />
       </Field>
     </div>

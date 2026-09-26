@@ -33,22 +33,28 @@ function variantsFor(id: string, basePrice: number, inStock: boolean) {
   ]
 }
 
+/**
+ * Keyed by BOTH slug and id, because the API resolves either - a page reached by a
+ * legacy id URL has to find the same product the slug does.
+ */
 export const productDetails: Record<string, ProductDetail> = Object.fromEntries(
-  seedProducts.map((p) => [
-    p.id,
+  seedProducts.flatMap((p) => [p.id, p.slug].map((key) => [
+    key,
     {
       id: p.id,
+      slug: p.slug,
+      // The same owner the summary carries, so the own-product rule behaves
+      // identically whether a test starts from a card or from the detail page.
+      sellerId: p.sellerId,
       title: p.title,
       brandName: p.brandName,
       description: DESCRIPTIONS[p.id] ?? '',
       category: p.category,
-      sellerId: '99999999-9999-9999-9999-999999999999',
-      sellerName: p.brandName,
       images: [],
       variants: variantsFor(p.id, p.priceFrom, p.inStock),
       reviewSummary: { averageRating: p.avgRating ?? null, count: p.avgRating != null ? 3 : 0 },
     } satisfies ProductDetail,
-  ]),
+  ])),
 )
 
 const REVIEW_TEMPLATES: [string, number, string][] = [
@@ -67,6 +73,25 @@ export function reviewsFor(productId: string): Review[] {
     body,
     variantLabel,
     createdAt: new Date(2026, 5 + i, 10).toISOString(),
-    reviewerFirstName: name,
+    reviewerName: name,
   }))
+}
+
+/**
+ * Reviews written during a test, keyed by product id. Separate from the templated
+ * seed reviews so a test can assert on exactly what it submitted without the three
+ * canned ones in the way.
+ */
+const writtenReviews = new Map<string, Review[]>()
+
+export function addWrittenReview(productId: string, review: Review) {
+  writtenReviews.set(productId, [review, ...(writtenReviews.get(productId) ?? [])])
+}
+
+export function writtenReviewsFor(productId: string): Review[] {
+  return writtenReviews.get(productId) ?? []
+}
+
+export function resetWrittenReviews() {
+  writtenReviews.clear()
 }

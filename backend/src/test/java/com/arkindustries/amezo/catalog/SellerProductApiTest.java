@@ -8,6 +8,7 @@ import com.arkindustries.amezo.identity.Session;
 import com.arkindustries.amezo.identity.SessionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
+import com.arkindustries.amezo.support.Fixtures;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,6 +77,9 @@ class SellerProductApiTest {
     private SellerRepository sellerRepository;
 
     @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
     private SessionRepository sessionRepository;
 
     @Autowired
@@ -115,8 +119,8 @@ class SellerProductApiTest {
         Seller other = seller("other@example.com");
         Cookie myCookie = sessionCookieFor(me);
 
-        productRepository.save(Product.builder().sellerId(me.getId()).title("Mine").category("outdoor").build());
-        productRepository.save(Product.builder().sellerId(other.getId()).title("Not mine").category("outdoor").build());
+        productRepository.save(Product.builder().sellerId(me.getId()).title("Mine").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
+        productRepository.save(Product.builder().sellerId(other.getId()).title("Not mine").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
 
         mockMvc.perform(get("/sellers/me/products").cookie(myCookie))
                 .andExpect(status().isOk())
@@ -140,7 +144,7 @@ class SellerProductApiTest {
                   "title": "Trail Backpack",
                   "brandName": "Northpeak",
                   "description": "40L hiking backpack",
-                  "category": "outdoor",
+                  "categorySlug": "outdoor",
                   "variants": [
                     { "label": "Blue / M", "sku": "SKU-1", "price": 89.99, "stockQty": 5 },
                     { "label": "Red / L", "sku": "SKU-2", "price": 94.99, "stockQty": 0 }
@@ -173,7 +177,7 @@ class SellerProductApiTest {
         Cookie cookie = sessionCookieFor(me);
 
         String body = """
-                { "title": "No variants", "category": "outdoor", "variants": [] }
+                { "title": "No variants", "categorySlug": "outdoor", "variants": [] }
                 """;
 
         mockMvc.perform(post("/sellers/me/products").cookie(cookie).contentType("application/json").content(body))
@@ -186,7 +190,7 @@ class SellerProductApiTest {
         Cookie cookie = sessionCookieFor(me);
 
         Product product = productRepository.save(
-                Product.builder().sellerId(me.getId()).title("To delete").category("outdoor").build());
+                Product.builder().sellerId(me.getId()).title("To delete").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant variant = variantRepository.save(
                 Variant.builder().productId(product.getId()).label("Only").sku("SKU-DEL").build());
         offerRepository.save(Offer.builder().variantId(variant.getId()).price(new BigDecimal("10.00")).stockQty(1).build());
@@ -206,7 +210,7 @@ class SellerProductApiTest {
         Cookie cookie = sessionCookieFor(me);
 
         Product product = productRepository.save(
-                Product.builder().sellerId(owner.getId()).title("Not yours").category("outdoor").build());
+                Product.builder().sellerId(owner.getId()).title("Not yours").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
 
         mockMvc.perform(delete("/products/{id}", product.getId()).cookie(cookie))
                 .andExpect(status().isNotFound());
@@ -241,7 +245,7 @@ class SellerProductApiTest {
     void uploadUrlIsRefusedForAFileOverThePerFileLimit() throws Exception {
         Seller me = seller("bigfile@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Has images").category("outdoor").build());
+                .sellerId(me.getId()).title("Has images").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
 
         // 20 MiB against the 10 MiB default in application.yml.
         mockMvc.perform(post("/products/" + product.getId() + "/images/upload-url")
@@ -257,7 +261,7 @@ class SellerProductApiTest {
     void uploadUrlRequiresADeclaredSize() throws Exception {
         Seller me = seller("nosize@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("No size").category("outdoor").build());
+                .sellerId(me.getId()).title("No size").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
 
         mockMvc.perform(post("/products/" + product.getId() + "/images/upload-url")
                         .cookie(sessionCookieFor(me))
@@ -278,7 +282,7 @@ class SellerProductApiTest {
     void uploadUrlIsRefusedOnceTheDeploymentsStorageCapIsReached() throws Exception {
         Seller hog = seller("hog@example.com");
         Product hogged = productRepository.save(Product.builder()
-                .sellerId(hog.getId()).title("Already full").category("outdoor").build());
+                .sellerId(hog.getId()).title("Already full").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         imageRepository.save(Image.builder()
                 .productId(hogged.getId())
                 .s3Key("products/" + hogged.getId() + "/filler")
@@ -289,7 +293,7 @@ class SellerProductApiTest {
 
         Seller other = seller("other-seller@example.com");
         Product theirs = productRepository.save(Product.builder()
-                .sellerId(other.getId()).title("Wants one pixel").category("outdoor").build());
+                .sellerId(other.getId()).title("Wants one pixel").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
 
         mockMvc.perform(post("/products/" + theirs.getId() + "/images/upload-url")
                         .cookie(sessionCookieFor(other))
@@ -309,7 +313,7 @@ class SellerProductApiTest {
     void anExpiredPendingUploadStopsCountingAgainstTheCap() throws Exception {
         Seller me = seller("expired-pending@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Abandoned upload").category("outdoor").build());
+                .sellerId(me.getId()).title("Abandoned upload").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
 
         Image abandoned = imageRepository.save(Image.builder()
                 .productId(product.getId())
@@ -345,7 +349,7 @@ class SellerProductApiTest {
     void confirmRecordsTheSizeTheBucketReportsNotTheOneTheClientDeclared() throws Exception {
         Seller me = seller("confirm-size@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Sized").category("outdoor").build());
+                .sellerId(me.getId()).title("Sized").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Cookie cookie = sessionCookieFor(me);
 
         // Declared 8 KiB at presign; the object that actually landed is 4242 bytes.
@@ -377,7 +381,7 @@ class SellerProductApiTest {
     void confirmIsRefusedWhenNothingWasEverUploaded() throws Exception {
         Seller me = seller("confirm-missing@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Never uploaded").category("outdoor").build());
+                .sellerId(me.getId()).title("Never uploaded").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Cookie cookie = sessionCookieFor(me);
 
         String uploadResponse = mockMvc.perform(post("/products/" + product.getId() + "/images/upload-url")
@@ -413,7 +417,7 @@ class SellerProductApiTest {
     void deletingAProductRemovesItsObjectsFromTheBucket() throws Exception {
         Seller me = seller("delete-objects@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("With images").category("outdoor").build());
+                .sellerId(me.getId()).title("With images").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         imageRepository.save(Image.builder()
                 .productId(product.getId())
                 .s3Key("products/" + product.getId() + "/first")
@@ -439,7 +443,7 @@ class SellerProductApiTest {
     void aBucketFailureDoesNotFailTheProductDelete() throws Exception {
         Seller me = seller("delete-objects-fail@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Stubborn bucket").category("outdoor").build());
+                .sellerId(me.getId()).title("Stubborn bucket").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         imageRepository.save(Image.builder()
                 .productId(product.getId())
                 .s3Key("products/" + product.getId() + "/only")
@@ -458,7 +462,7 @@ class SellerProductApiTest {
         Seller me = seller("view-detail@example.com");
         Product product = productRepository.save(Product.builder()
                 .sellerId(me.getId()).title("Viewable").brandName("Acme")
-                .description("Full text").category("outdoor").build());
+                .description("Full text").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant variant = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("Large").sku("VIEW-L").build());
         offerRepository.save(Offer.builder()
@@ -485,7 +489,7 @@ class SellerProductApiTest {
         Seller other = seller("owner@example.com");
         Seller me = seller("intruder@example.com");
         Product theirs = productRepository.save(Product.builder()
-                .sellerId(other.getId()).title("Not yours").category("outdoor").build());
+                .sellerId(other.getId()).title("Not yours").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Cookie mine = sessionCookieFor(me);
 
         mockMvc.perform(get("/sellers/me/products/" + theirs.getId()).cookie(mine))
@@ -502,7 +506,7 @@ class SellerProductApiTest {
         Seller me = seller("patch-product@example.com");
         Product product = productRepository.save(Product.builder()
                 .sellerId(me.getId()).title("Old title").brandName("Keep me")
-                .description("Keep this too").category("outdoor").build());
+                .description("Keep this too").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
 
         mockMvc.perform(patch("/products/" + product.getId()).cookie(sessionCookieFor(me))
                         .contentType("application/json")
@@ -519,7 +523,7 @@ class SellerProductApiTest {
     void patchRejectsABlankTitleRatherThanStoringIt() throws Exception {
         Seller me = seller("patch-blank@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Has a title").category("outdoor").build());
+                .sellerId(me.getId()).title("Has a title").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
 
         mockMvc.perform(patch("/products/" + product.getId()).cookie(sessionCookieFor(me))
                         .contentType("application/json")
@@ -536,7 +540,7 @@ class SellerProductApiTest {
     void patchVariantWritesAcrossBothTables() throws Exception {
         Seller me = seller("patch-variant@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Has variants").category("outdoor").build());
+                .sellerId(me.getId()).title("Has variants").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant variant = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("Small").sku("PV-S").build());
         Offer offer = offerRepository.save(Offer.builder()
@@ -564,7 +568,7 @@ class SellerProductApiTest {
     void patchVariantRefusesASkuAnotherVariantAlreadyHas() throws Exception {
         Seller me = seller("sku-clash@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Two variants").category("outdoor").build());
+                .sellerId(me.getId()).title("Two variants").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant first = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("One").sku("CLASH-1").build());
         offerRepository.save(Offer.builder()
@@ -593,7 +597,7 @@ class SellerProductApiTest {
     void deleteIsRefusedWhenTheProductHasBeenOrdered() throws Exception {
         Seller me = seller("sold-product@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Already sold").category("outdoor").build());
+                .sellerId(me.getId()).title("Already sold").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant variant = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("Only").sku("SOLD-1").build());
         offerRepository.save(Offer.builder()
@@ -611,7 +615,7 @@ class SellerProductApiTest {
     void addsAVariantToAnExistingProduct() throws Exception {
         Seller me = seller("add-variant@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Growing").category("outdoor").build());
+                .sellerId(me.getId()).title("Growing").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant first = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("One").sku("GROW-1").build());
         offerRepository.save(Offer.builder()
@@ -633,7 +637,7 @@ class SellerProductApiTest {
     void addingAVariantWithATakenSkuIsRefused() throws Exception {
         Seller me = seller("add-variant-clash@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Clashing").category("outdoor").build());
+                .sellerId(me.getId()).title("Clashing").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant first = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("One").sku("TAKEN-SKU").build());
         offerRepository.save(Offer.builder()
@@ -653,7 +657,7 @@ class SellerProductApiTest {
     void deletesAVariantAndItsOffer() throws Exception {
         Seller me = seller("delete-variant@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Two variants").category("outdoor").build());
+                .sellerId(me.getId()).title("Two variants").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant keep = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("Keep").sku("DV-KEEP").build());
         offerRepository.save(Offer.builder()
@@ -676,7 +680,7 @@ class SellerProductApiTest {
     void theLastVariantCannotBeDeleted() throws Exception {
         Seller me = seller("last-variant@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Only one").category("outdoor").build());
+                .sellerId(me.getId()).title("Only one").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant only = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("Only").sku("LV-1").build());
         offerRepository.save(Offer.builder()
@@ -693,7 +697,7 @@ class SellerProductApiTest {
     void aSoldVariantCannotBeDeleted() throws Exception {
         Seller me = seller("sold-variant@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Sold one").category("outdoor").build());
+                .sellerId(me.getId()).title("Sold one").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant sold = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("Sold").sku("SV-1").build());
         offerRepository.save(Offer.builder()
@@ -716,7 +720,7 @@ class SellerProductApiTest {
     void deletingAnImageRemovesTheRowAndTheObject() throws Exception {
         Seller me = seller("delete-image@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Has an image").category("outdoor").build());
+                .sellerId(me.getId()).title("Has an image").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Image image = imageRepository.save(Image.builder()
                 .productId(product.getId())
                 .s3Key("products/" + product.getId() + "/only")
@@ -736,7 +740,7 @@ class SellerProductApiTest {
         Seller other = seller("image-owner@example.com");
         Seller me = seller("image-intruder@example.com");
         Product theirs = productRepository.save(Product.builder()
-                .sellerId(other.getId()).title("Not yours").category("outdoor").build());
+                .sellerId(other.getId()).title("Not yours").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         Image image = imageRepository.save(Image.builder()
                 .productId(theirs.getId())
                 .s3Key("products/" + theirs.getId() + "/theirs")
@@ -753,7 +757,7 @@ class SellerProductApiTest {
     void anEighthImageIsRefused() throws Exception {
         Seller me = seller("image-cap@example.com");
         Product product = productRepository.save(Product.builder()
-                .sellerId(me.getId()).title("Full gallery").category("outdoor").build());
+                .sellerId(me.getId()).title("Full gallery").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
         for (int i = 0; i < 7; i++) {
             imageRepository.save(Image.builder()
                     .productId(product.getId())

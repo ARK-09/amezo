@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetClose, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { formatPrice } from '@/lib/formatPrice'
 import { apiErrorMessage } from '@/lib/api/transient'
+import { useSession } from '@/features/session/api/useSession'
 
 import { useCartOffers } from '../api/useCartOffers'
 import { useCart } from '../context/CartContext'
@@ -13,6 +14,10 @@ import { CartLineRow } from './CartLineRow'
 export function CartDrawer() {
   const navigate = useNavigate()
   const { lines, isOpen, close, setQuantity, removeLine, acknowledgePrice, clear } = useCart()
+  // Only so a line can say "your own product". The rule is enforced in checkout.
+  const session = useSession()
+  const viewerSellerId =
+    session.data?.identityType === 'SELLER' ? session.data.identityId : undefined
   const variantIds = lines.map((line) => line.variantId)
   const query = useCartOffers(variantIds, isOpen)
 
@@ -62,6 +67,10 @@ export function CartDrawer() {
                 onQuantityChange={setQuantity}
                 onRemove={removeLine}
                 onAcknowledgePrice={acknowledgePrice}
+                isOwnProduct={
+                  viewerSellerId != null &&
+                  offersById.get(line.variantId)?.sellerId === viewerSellerId
+                }
               />
             ))}
         </div>

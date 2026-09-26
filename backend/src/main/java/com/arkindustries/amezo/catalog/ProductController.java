@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
 /**
  * GET /products (search + filters) and GET /products/{id} (detail), both public
@@ -32,6 +31,9 @@ public class ProductController {
     @GetMapping
     public Page<ProductSummaryResponse> search(
             @RequestParam(required = false) String q,
+            // A category SLUG, from GET /categories. An unknown slug simply
+            // matches nothing, so a stale bookmarked filter shows an empty result
+            // rather than 400ing at the buyer.
             @RequestParam(required = false) String category,
             @RequestParam(required = false) BigDecimal priceMin,
             @RequestParam(required = false) BigDecimal priceMax,
@@ -44,8 +46,14 @@ public class ProductController {
         return productService.search(q, category, priceMin, priceMax, inStockOnly, sort, pageable);
     }
 
-    @GetMapping("/{id}")
-    public ProductDetailResponse getDetail(@PathVariable UUID id) {
-        return productService.getDetail(id);
+    /**
+     * The path segment is the product's slug. A UUID is still accepted, and
+     * resolves to the same product, so links and bookmarks from before slugs
+     * existed keep working instead of 404ing - the frontend turns those into a
+     * redirect to the slug URL.
+     */
+    @GetMapping("/{productRef}")
+    public ProductDetailResponse getDetail(@PathVariable String productRef) {
+        return productService.getDetail(productRef);
     }
 }

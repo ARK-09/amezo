@@ -12,10 +12,16 @@ export function CartLineRow({
   onQuantityChange,
   onRemove,
   onAcknowledgePrice,
+  isOwnProduct = false,
 }: {
   line: CartLine
   offer: VariantOffer | undefined
   isLoading: boolean
+  /**
+   * The viewer is this product's seller. Checkout refuses the order, so the line says
+   * so here rather than letting them get all the way to the end.
+   */
+  isOwnProduct?: boolean
   onQuantityChange: (variantId: string, quantity: number) => void
   onRemove: (variantId: string) => void
   onAcknowledgePrice: (variantId: string, price: number) => void
@@ -65,6 +71,12 @@ export function CartLineRow({
         <p className="line-clamp-2 text-sm font-medium">{offer.productTitle}</p>
         <p className="text-xs text-muted-foreground">{offer.variantLabel}</p>
         <p className="text-sm">{formatPrice(offer.price)} each</p>
+
+        {isOwnProduct && (
+          <p className="text-xs font-medium text-destructive">
+            Your own product — remove it to check out
+          </p>
+        )}
 
         {outOfStock && <p className="text-xs font-medium text-destructive">Out of stock</p>}
         {lowStock && <p className="text-xs font-medium text-destructive">Only {offer.stockQty} left</p>}

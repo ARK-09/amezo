@@ -38,8 +38,9 @@ describe('SellerProductDetail', () => {
       {
         id: PRODUCT_ID,
         title: 'Trail Backpack',
+        slug: 'trail-backpack',
         thumbnailUrl: null,
-        category: 'Outdoor',
+        category: { slug: 'outdoor', name: 'Outdoor' },
         variantCount: 2,
         createdAt: '2026-01-01T00:00:00Z',
       },
@@ -51,7 +52,8 @@ describe('SellerProductDetail', () => {
     renderPage()
 
     expect(await screen.findByDisplayValue('Trail Backpack')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Outdoor')).toBeInTheDocument()
+    // A combobox showing the category's name, not a text field holding it.
+    expect(screen.getByRole('combobox', { name: 'Category' })).toHaveTextContent('Outdoor')
 
     const detail = findSellerProductDetail(PRODUCT_ID)!
     for (const variant of detail.variants) {
@@ -85,7 +87,7 @@ describe('SellerProductDetail', () => {
     // Untouched fields keep their values rather than being rewritten with the
     // form's own copy - the PATCH only carries what changed.
     expect(findSellerProductDetail(PRODUCT_ID)!.description).toBe('Demo description.')
-    expect(findSellerProductDetail(PRODUCT_ID)!.category).toBe('Outdoor')
+    expect(findSellerProductDetail(PRODUCT_ID)!.category.slug).toBe('outdoor')
   })
 
   it('saves one variant without touching the others', async () => {
@@ -188,8 +190,9 @@ describe('SellerProductDetail', () => {
       {
         id: PRODUCT_ID,
         title: 'Single Variant',
+        slug: 'single-variant',
         thumbnailUrl: null,
-        category: 'Outdoor',
+        category: { slug: 'outdoor', name: 'Outdoor' },
         variantCount: 1,
         createdAt: '2026-01-01T00:00:00Z',
       },
@@ -237,8 +240,9 @@ describe('SellerProductDetail images', () => {
       {
         id: PRODUCT_ID,
         title: 'Trail Backpack',
+        slug: 'trail-backpack',
         thumbnailUrl: null,
-        category: 'Outdoor',
+        category: { slug: 'outdoor', name: 'Outdoor' },
         variantCount: 2,
         createdAt: '2026-01-01T00:00:00Z',
       },

@@ -15,6 +15,11 @@ public record UpdateProductRequest(
         @Pattern(regexp = ".*\\S.*", message = "must not be blank") String title,
         String brandName,
         String description,
-        @Pattern(regexp = ".*\\S.*", message = "must not be blank") String category
+        /**
+         * A live category's slug, or null to leave the category alone. Editing the
+         * title does NOT move the product's slug: see Product.slug on why an
+         * existing URL is worth more than a tidy one.
+         */
+        @Pattern(regexp = ".*\\S.*", message = "must not be blank") String categorySlug
 ) {
 }

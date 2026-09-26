@@ -18,6 +18,8 @@ import com.arkindustries.amezo.orders.OrderRepository;
 import com.arkindustries.amezo.orders.OrderStatus;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.arkindustries.amezo.catalog.CategoryRepository;
+import com.arkindustries.amezo.support.Fixtures;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -61,6 +63,9 @@ class ReviewsApiTest {
     private SellerRepository sellerRepository;
 
     @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
     private BuyerIdentityRepository buyerIdentityRepository;
 
     @Autowired
@@ -86,7 +91,7 @@ class ReviewsApiTest {
         Seller seller = sellerRepository.save(Seller.builder()
                 .email("reviews-seller1@example.com").fullName("Reviews Seller").build());
         Product product = productRepository.save(Product.builder()
-                .sellerId(seller.getId()).title("Mechanical Keyboard").category("electronics").build());
+                .sellerId(seller.getId()).title("Mechanical Keyboard").categoryId(Fixtures.categoryId(categoryRepository, "electronics")).slug(Fixtures.uniqueSlug("fixture")).build());
         Variant variant = variantRepository.save(Variant.builder()
                 .productId(product.getId()).label("Hot-Swappable / White").sku("SKU-REVIEWS-A").build());
         Offer offer = offerRepository.save(Offer.builder()
@@ -121,7 +126,7 @@ class ReviewsApiTest {
         Seller seller = sellerRepository.save(Seller.builder()
                 .email("reviews-seller2@example.com").fullName("Reviews Seller Two").build());
         Product product = productRepository.save(Product.builder()
-                .sellerId(seller.getId()).title("Standing Desk").category("furniture").build());
+                .sellerId(seller.getId()).title("Standing Desk").categoryId(Fixtures.categoryId(categoryRepository, "furniture")).slug(Fixtures.uniqueSlug("fixture")).build());
 
         mockMvc.perform(get("/products/{id}/reviews", product.getId()))
                 .andExpect(status().isOk())

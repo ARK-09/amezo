@@ -26,13 +26,14 @@ import java.util.List;
  * cookie-authenticated APIs.
  *
  * Route table (see docs/api-design.md for the full endpoint list):
- *   public        - GET /products/**, GET /variants, POST /magic-links,
- *                    POST /sessions,
+ *   public        - GET /products/**, GET /variants, GET /categories,
+ *                    GET /countries, POST /magic-links, POST /sessions,
  *                    POST /orders (guest checkout), the OpenAPI spec path
  *                    (springdoc.api-docs.path, wherever that points),
- *                    POST /auth/seller/magic-link, POST /auth/seller/verify
+ *                    POST /auth/{seller,buyer}/magic-link and /verify
  *   either role   - GET /sessions/current (SessionController)
- *   buyer only    - GET /orders/**, POST /reviews
+ *   buyer only    - POST /reviews, the per-product review eligibility read
+ *                    (GET under a product's reviews), DELETE /auth/buyer/session
  *   seller only   - every method under /sellers/me/** (own product list,
  *                    product create, orders, ship), plus product/variant/image
  *                    writes under /products/**, /variants/** and /images/**,
@@ -63,14 +64,25 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // Buyer-scoped, so it has to be matched BEFORE the blanket
+                // GET /products/** rule below - Spring Security takes the first
+                // matching rule, and a permitAll there would let an anonymous
+                // caller reach a method that assumes a buyer principal.
+                .requestMatchers(HttpMethod.GET, "/products/*/reviews/eligibility").hasRole("BUYER")
                 .requestMatchers(HttpMethod.GET, "/products/**").permitAll()
+                // The system reference lists. Public because the category
+                // navigation and the checkout country selector both render before
+                // anyone signs in.
+                .requestMatchers(HttpMethod.GET, "/categories", "/countries").permitAll()
                 // The cart's batch lookup. Public for the same reason the rest of the
                 // catalog read surface is: a cart exists before anyone signs in.
                 .requestMatchers(HttpMethod.GET, "/variants").permitAll()
                 .requestMatchers(HttpMethod.POST, "/magic-links").permitAll()
                 .requestMatchers(HttpMethod.POST, "/sessions").permitAll()
                 .requestMatchers(HttpMethod.POST, "/orders").permitAll()
-                .requestMatchers(HttpMethod.POST, "/auth/seller/magic-link", "/auth/seller/verify").permitAll()
+                .requestMatchers(HttpMethod.POST,
+                        "/auth/seller/magic-link", "/auth/seller/verify",
+                        "/auth/buyer/magic-link", "/auth/buyer/verify").permitAll()
                 .requestMatchers(apiDocsPath + "/**").permitAll()
                 // Spring's internal error dispatch, not a real route - without this,
                 // anyRequest().denyAll() masks every unhandled exception behind a 403
@@ -88,10 +100,19 @@ public class SecurityConfig {
                 // DELETE /auth/seller/session; nothing calls a second one.
                 .requestMatchers(HttpMethod.GET, "/sessions/current").authenticated()
 
-                .requestMatchers(HttpMethod.GET, "/orders/**").hasRole("BUYER")
+                // GET /orders/** had a rule here and no controller behind it, the
+                // same dead-rule shape that made /sessions/current answer 404. A
+                // buyer order history isn't built, so the path is now plainly not a
+                // route (403 from denyAll) rather than looking like a broken one.
+                //
+                // Writing a review requires being a signed-in buyer; ReviewService
+                // then checks that the order line is actually theirs. The role is
+                // the door, the ownership check is the lock - a buyer session alone
+                // does not entitle anyone to review a stranger's purchase.
                 .requestMatchers(HttpMethod.POST, "/reviews").hasRole("BUYER")
 
                 .requestMatchers(HttpMethod.DELETE, "/auth/seller/session").hasRole("SELLER")
+                .requestMatchers(HttpMethod.DELETE, "/auth/buyer/session").hasRole("BUYER")
 
                 // Every method, not just GET: /sellers/me/** is the seller's own
                 // namespace by construction, and a method-by-method allow-list is

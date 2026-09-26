@@ -7,7 +7,7 @@ export const issuedMagicLinkTokens = new Map<string, string>() // token -> email
 const sellerIdsByEmail = new Map<string, string>()
 
 export interface SessionIdentityFixture {
-  identityType: 'SELLER'
+  identityType: 'SELLER' | 'BUYER'
   identityId: string
   email: string
   fullName: string | null
@@ -33,6 +33,26 @@ export function signInSellerSession(identity: { sellerId: string; email: string 
     identityId: identity.sellerId,
     email: identity.email,
     fullName: null,
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  }
+  return currentSession
+}
+
+/**
+ * A signed-in BUYER, which is what a review needs. Same mock cookie as the seller
+ * one - the real system uses one session table and tells them apart by
+ * identity_type, so the mock does too.
+ */
+export function signInBuyerSession(identity: {
+  buyerIdentityId: string
+  email: string
+  fullName?: string | null
+}): SessionIdentityFixture {
+  currentSession = {
+    identityType: 'BUYER',
+    identityId: identity.buyerIdentityId,
+    email: identity.email,
+    fullName: identity.fullName ?? null,
     expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
   }
   return currentSession

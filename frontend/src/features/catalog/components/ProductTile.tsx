@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 
 import { RatingBadge } from '@/components/RatingBadge'
 import { useAddToCart } from '@/features/catalog/api/useAddToCart'
+import { useIsOwnProduct } from '@/features/session/api/useIsOwnProduct'
 import type { ProductSummary } from '@/features/search/schema/types'
 import { formatPrice } from '@/lib/formatPrice'
 
@@ -25,12 +26,18 @@ export function ProductTile({
   compareAt?: number
 }) {
   const { addToCart } = useAddToCart()
+  // A seller cannot buy their own listing. Checkout enforces it; the card knowing
+  // costs nothing (the summary already carries the owner) and saves the seller from
+  // finding out at the end of a checkout.
+  const isOwnProduct = useIsOwnProduct(product.sellerId)
   // The summary carries the variant to add, so this button does no work beyond a
   // reducer dispatch - no request, nothing to wait for. It used to fetch the
   // whole product on click just to learn a variant id, which on a cold backend
   // meant the cart sat empty for as long as that took.
-  const addable = product.inStock && product.defaultVariantId != null
-  const href = `/products/${product.id}`
+  const addable = product.inStock && product.defaultVariantId != null && !isOwnProduct
+  // Slug, not id: product URLs are readable and stable, and the raw key stays
+  // internal.
+  const href = `/products/${product.slug}`
   const discount =
     compareAt && compareAt > product.priceFrom
       ? Math.round((1 - product.priceFrom / compareAt) * 100)
@@ -85,7 +92,13 @@ export function ProductTile({
             type="button"
             className="ml-auto inline-flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
             disabled={!addable}
-            aria-label={product.inStock ? 'Add to cart' : 'Out of stock'}
+            aria-label={
+              isOwnProduct
+                ? 'Your own product'
+                : product.inStock
+                  ? 'Add to cart'
+                  : 'Out of stock'
+            }
             onClick={() =>
               addable &&
               addToCart(

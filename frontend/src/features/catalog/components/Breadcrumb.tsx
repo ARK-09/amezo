@@ -1,19 +1,23 @@
 import { ChevronRight } from 'lucide-react'
 import { Link } from 'react-router'
 
+import type { Category } from '@/features/reference/api/useCategories'
+
 export function Breadcrumb({
   category,
   brandName,
   title,
 }: {
-  category: string
-  brandName: string
+  category: Category
+  /** Null for a product with no brand - the crumb is simply left out. */
+  brandName: string | null
   title: string
 }) {
   const crumbs = [
     { label: 'Home', to: '/' },
-    { label: category, to: `/search?category=${encodeURIComponent(category)}` },
-    { label: brandName, to: `/stores/${encodeURIComponent(brandName)}` },
+    // The crumb reads as the category's name and navigates by its slug.
+    { label: category.name, to: `/search?category=${encodeURIComponent(category.slug)}` },
+    ...(brandName ? [{ label: brandName, to: `/stores/${encodeURIComponent(brandName)}` }] : []),
   ]
 
   return (

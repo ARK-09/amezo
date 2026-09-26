@@ -8,14 +8,21 @@ import java.util.UUID;
  * variant ids and quantities), so this is what the drawer re-fetches on open to
  * price those lines against the catalog rather than trusting whatever was stored
  * when the item was added - price changes and stock-outs show up here.
+ *
+ * productSlug is what the drawer links back to. sellerId lets it mark a line the
+ * viewer cannot buy because they are its seller: the rule is enforced in checkout,
+ * but a cart that stays silent until the order is refused is a worse way to find
+ * out.
  */
 public record VariantOfferResponse(
         UUID id,
         UUID productId,
+        String productSlug,
         String productTitle,
         String variantLabel,
         String thumbnailUrl,
         BigDecimal price,
-        int stockQty
+        int stockQty,
+        UUID sellerId
 ) {
 }

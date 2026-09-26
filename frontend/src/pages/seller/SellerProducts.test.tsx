@@ -30,9 +30,10 @@ describe('SellerProducts', () => {
   it('lists products with their variant count and category', async () => {
     addSellerProduct({
       id: 'p1',
+      slug: 'trail-backpack',
       title: 'Trail Backpack',
       thumbnailUrl: null,
-      category: 'outdoor',
+      category: { slug: 'outdoor', name: 'Outdoor' },
       variantCount: 2,
       createdAt: '2026-01-01T00:00:00Z',
     })
@@ -40,16 +41,18 @@ describe('SellerProducts', () => {
     renderPage()
 
     expect(await screen.findByText('Trail Backpack')).toBeInTheDocument()
-    expect(screen.getByText('outdoor')).toBeInTheDocument()
+    // The row prints the category's display name, not its slug.
+    expect(screen.getByText('Outdoor')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
   })
 
   it('deletes a product', async () => {
     addSellerProduct({
       id: 'p1',
+      slug: 'trail-backpack',
       title: 'Trail Backpack',
       thumbnailUrl: null,
-      category: 'outdoor',
+      category: { slug: 'outdoor', name: 'Outdoor' },
       variantCount: 1,
       createdAt: '2026-01-01T00:00:00Z',
     })
