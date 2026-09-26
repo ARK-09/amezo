@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
+import { ArrowDown, ArrowUp, Minus, TriangleAlert } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -12,6 +12,8 @@ export function StatTile({
   current,
   previous,
   invertTone = false,
+  flag,
+  caption,
 }: {
   label: string
   value: string
@@ -19,6 +21,16 @@ export function StatTile({
   previous?: number | null
   /** For measures where down is good. Nothing uses it yet; refunds will. */
   invertTone?: boolean
+  /**
+   * A standing state rather than a movement - "2 out of stock". Some measures
+   * have no previous window to compare against, and printing "No prior data"
+   * at a count of stock alerts says nothing a seller can act on. Takes the
+   * change line's place when it is given, and wears an icon for the same
+   * reason the arrows do.
+   */
+  flag?: string
+  /** One more line under the change, for what the headline number leaves out. */
+  caption?: string
 }) {
   // "There is no previous window" and "the previous window was zero" are
   // different facts. Treating both as flat reported the biggest movement a
@@ -38,33 +50,41 @@ export function StatTile({
     <div role="group" aria-label={label} className="rounded-xl border p-5">
       <p className="text-xs font-bold tracking-[0.06em] text-muted-foreground uppercase">{label}</p>
       <p className="mt-2 text-2xl font-bold tabular-nums">{value}</p>
-      <p
-        className={cn(
-          'mt-1 inline-flex items-center gap-1 text-[13px] font-medium',
-          !hasPrevious || flat
-            ? 'text-muted-foreground'
-            : good
-              ? 'text-[#1f7a45]'
-              : 'text-[#b42318]',
-        )}
-      >
-        {!hasPrevious ? null : flat ? (
-          <Minus className="size-3.5" aria-hidden />
-        ) : up ? (
-          <ArrowUp className="size-3.5" aria-hidden />
-        ) : (
-          <ArrowDown className="size-3.5" aria-hidden />
-        )}
-        {!hasPrevious
-          ? 'No prior data'
-          : flat
-            ? 'Flat'
-            : fromZero
-              ? 'New'
-              : `${up ? '+' : ''}${change.toFixed(1)}%`}
-        {/* Nothing to compare against means no "vs prev" to claim. */}
-        {hasPrevious && <span className="text-muted-foreground">vs prev</span>}
-      </p>
+      {flag ? (
+        <p className="mt-1 inline-flex items-center gap-1 text-[13px] font-medium text-[#8a5a00]">
+          <TriangleAlert className="size-3.5" aria-hidden />
+          {flag}
+        </p>
+      ) : (
+        <p
+          className={cn(
+            'mt-1 inline-flex items-center gap-1 text-[13px] font-medium',
+            !hasPrevious || flat
+              ? 'text-muted-foreground'
+              : good
+                ? 'text-[#1f7a45]'
+                : 'text-[#b42318]',
+          )}
+        >
+          {!hasPrevious ? null : flat ? (
+            <Minus className="size-3.5" aria-hidden />
+          ) : up ? (
+            <ArrowUp className="size-3.5" aria-hidden />
+          ) : (
+            <ArrowDown className="size-3.5" aria-hidden />
+          )}
+          {!hasPrevious
+            ? 'No prior data'
+            : flat
+              ? 'Flat'
+              : fromZero
+                ? 'New'
+                : `${up ? '+' : ''}${change.toFixed(1)}%`}
+          {/* Nothing to compare against means no "vs prev" to claim. */}
+          {hasPrevious && <span className="text-muted-foreground">vs prev</span>}
+        </p>
+      )}
+      {caption && <p className="mt-1 text-xs text-muted-foreground">{caption}</p>}
     </div>
   )
 }

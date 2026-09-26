@@ -21,13 +21,42 @@ function renderPage() {
   )
 }
 
+/** The four queue widgets, in the order a browser that has never been told
+ *  otherwise shows them. */
+const WIDGET_TITLES = ['Waiting to ship', 'Low stock', 'Recent orders', 'Refunds to review']
+
+function widgetTitles() {
+  return screen
+    .getAllByRole('heading', { level: 2 })
+    .map((heading) => heading.textContent ?? '')
+    .filter((title) => WIDGET_TITLES.includes(title))
+}
+
+/** Everything a low-stock row carries apart from the bits each case sets. */
+const LOW_STOCK_ROW = {
+  id: 'p0',
+  productRef: 'low-stock-product',
+  title: 'Low stock product',
+  brandName: null,
+  thumbnailUrl: null,
+  imageCount: 0,
+  category: { slug: 'electronics', name: 'Electronics' },
+  status: 'ACTIVE',
+  variantCount: 1,
+  totalStock: 0,
+  priceFrom: 10,
+  priceTo: 10,
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
+}
+
 describe('SellerDashboard', () => {
   beforeEach(() => resetSellerOrders())
 
   it('shows the headline measures with their change against the previous window', async () => {
     renderPage()
 
-    for (const label of ['Revenue', 'Orders', 'Views', 'Conversion']) {
+    for (const label of ['Revenue', 'Orders', 'Conversion']) {
       const tile = await screen.findByRole('group', { name: label })
       // Direction is words and an arrow, never colour alone.
       expect(within(tile).getByText(/vs prev/)).toBeInTheDocument()
@@ -49,13 +78,23 @@ describe('SellerDashboard', () => {
     await waitFor(() => expect(new Set(ranges).size).toBeGreaterThan(1))
   })
 
-  it('ranks top products by revenue share', async () => {
+  it('ranks top products by revenue share, with their units and a footer', async () => {
     renderPage()
 
     const panel = (await screen.findByText('Top products')).closest('section')!
-    const rows = await within(panel).findAllByRole('listitem')
-    expect(within(rows[0]).getByText('14" Ultrabook Laptop, 16GB RAM')).toBeInTheDocument()
-    expect(within(rows[0]).getByText('$27,869.00')).toBeInTheDocument()
+    await within(panel).findByText('14" Ultrabook Laptop, 16GB RAM')
+    // Row 0 is the header; the ranked products follow it in order.
+    const rows = within(panel).getAllByRole('row')
+    expect(within(rows[1]).getByRole('cell', { name: '1' })).toBeInTheDocument()
+    expect(within(rows[1]).getByText('14" Ultrabook Laptop, 16GB RAM')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('31 units · $899.00 each')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('$27,869.00')).toBeInTheDocument()
+    expect(within(rows[2]).getByRole('cell', { name: '2' })).toBeInTheDocument()
+
+    // The footer measures the five against the whole window, so it names how
+    // many it is actually showing rather than claiming a top five of four.
+    expect(within(panel).getByText(/^Top 4 share of \$/)).toBeInTheDocument()
+    expect(within(panel).getByText('$43,869.00')).toBeInTheDocument()
   })
 
   it('builds its queue widgets from the existing lists, not new endpoints', async () => {
@@ -224,5 +263,186 @@ describe('SellerDashboard', () => {
 
     const orders = screen.getByRole('heading', { name: 'Orders', level: 2 }).closest('section')!
     expect(within(orders).getByText('No activity in this window.')).toBeInTheDocument()
+  })
+
+  it('lists the newest orders with their buyer, total and status', async () => {
+    resetSellerOrders([
+      {
+        id: 'aaaaaaaa-0000-0000-0000-000000000001',
+        buyerEmail: 'maya@example.com',
+        placedAt: '2026-01-03T00:00:00Z',
+        total: 50,
+        status: 'PLACED',
+        lines: [
+          { id: 'l1', productTitle: 'Backpack', variantLabel: 'Blue', quantity: 2, unitPrice: 25, lineTotal: 50 },
+        ],
+      },
+      {
+        id: 'aaaaaaaa-0000-0000-0000-000000000002',
+        buyerEmail: 'rhea@example.com',
+        placedAt: '2026-01-01T00:00:00Z',
+        total: 163,
+        status: 'SHIPPED',
+        lines: [
+          { id: 'l2', productTitle: 'Lamp', variantLabel: 'Standard', quantity: 1, unitPrice: 163, lineTotal: 163 },
+        ],
+      },
+    ])
+    renderPage()
+
+    const panel = (await screen.findByText('Recent orders')).closest('section')!
+    const rows = await within(panel).findAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    // Newest first, and each row carries the buyer, the money and the status.
+    expect(within(rows[0]).getByText('Maya')).toBeInTheDocument()
+    expect(within(rows[0]).getByText('$50.00')).toBeInTheDocument()
+    expect(within(rows[0]).getByText('Placed')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('Rhea')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('Shipped')).toBeInTheDocument()
+  })
+
+  it('gives each queue row its action and its second line', async () => {
+    resetSellerOrders([
+      {
+        id: 'aaaaaaaa-0000-0000-0000-000000000003',
+        buyerEmail: 'maya@example.com',
+        // Days old, so the queue says so rather than only colouring it.
+        placedAt: '2026-01-03T00:00:00Z',
+        total: 50,
+        status: 'PLACED',
+        lines: [
+          { id: 'l1', productTitle: 'Backpack', variantLabel: 'Blue', quantity: 2, unitPrice: 25, lineTotal: 50 },
+        ],
+      },
+    ])
+    renderPage()
+
+    const panel = (await screen.findByText('Waiting to ship')).closest('section')!
+    const row = (await within(panel).findAllByRole('listitem'))[0]
+    expect(within(row).getByText('Maya')).toBeInTheDocument()
+    expect(within(row).getByText(/2 items/)).toBeInTheDocument()
+    expect(within(row).getByText(/waiting$/)).toBeInTheDocument()
+    // The action names what it acts on, so five "Ship" links are five names.
+    const ship = within(row).getByRole('link', { name: /^Ship/ })
+    expect(ship).toHaveAttribute('href', '/seller/orders/aaaaaaaa-0000-0000-0000-000000000003')
+  })
+
+  it('draws the category split as a donut whose legend names every slice', async () => {
+    renderPage()
+
+    const panel = (await screen.findByText('Revenue by category')).closest('section')!
+    const legend = await within(panel).findAllByRole('listitem')
+    expect(legend).toHaveLength(3)
+    // Identity is never colour alone: each slice is named, with its share and
+    // its money, beside the swatch.
+    expect(within(legend[0]).getByText('Electronics')).toBeInTheDocument()
+    expect(within(legend[0]).getByText('94%')).toBeInTheDocument()
+    expect(within(legend[0]).getByText('$42,230.00')).toBeInTheDocument()
+    expect(within(legend[1]).getByText('Kitchen')).toBeInTheDocument()
+    expect(within(legend[2]).getByText('Outdoor')).toBeInTheDocument()
+
+    // A ring with the window's total in the hole. The arcs themselves are laid
+    // out from a measured box, which jsdom never gives recharts, so what the
+    // ring is made of is checked in categoryPalette.test.ts instead.
+    expect(within(panel).getByText('Total')).toBeInTheDocument()
+    expect(panel.querySelector('[data-slot="chart"]')).not.toBeNull()
+  })
+
+  it('counts stock alerts as a headline measure, split into what they are', async () => {
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/products', () =>
+        HttpResponse.json({
+          content: [
+            { ...LOW_STOCK_ROW, id: 'p1', title: 'Out A', totalStock: 0 },
+            { ...LOW_STOCK_ROW, id: 'p2', title: 'Out B', totalStock: 0 },
+            { ...LOW_STOCK_ROW, id: 'p3', title: 'Low A', totalStock: 3 },
+            { ...LOW_STOCK_ROW, id: 'p4', title: 'Low B', totalStock: 4 },
+            { ...LOW_STOCK_ROW, id: 'p5', title: 'Low C', totalStock: 6 },
+          ],
+          page: 0,
+          totalElements: 5,
+          totalPages: 1,
+        }),
+      ),
+    )
+    renderPage()
+
+    const tile = await screen.findByRole('group', { name: 'Stock alerts' })
+    await within(tile).findByText('2 out of stock')
+    expect(within(tile).getByText('5')).toBeInTheDocument()
+    expect(within(tile).getByText('3 below 10 units')).toBeInTheDocument()
+    // A count of alerts has no previous window, and saying so would be noise.
+    expect(within(tile).queryByText('No prior data')).not.toBeInTheDocument()
+  })
+
+  it('will not state an out-of-stock count it cannot see the end of', async () => {
+    server.use(
+      http.get('http://localhost:8080/api/v1/sellers/me/products', () =>
+        HttpResponse.json({
+          content: Array.from({ length: 5 }, (_, i) => ({
+            ...LOW_STOCK_ROW,
+            id: `p${i}`,
+            title: `Out ${i}`,
+            totalStock: 0,
+          })),
+          page: 0,
+          totalElements: 9,
+          totalPages: 2,
+        }),
+      ),
+    )
+    renderPage()
+
+    const tile = await screen.findByRole('group', { name: 'Stock alerts' })
+    // The page ran out while the zero-stock products were still coming, so
+    // four more could be either kind - the tile says what it knows.
+    await within(tile).findByText('at least 5 out of stock')
+    expect(within(tile).queryByText(/below 10 units/)).not.toBeInTheDocument()
+  })
+
+  it('moves a panel one place, and remembers it for the next visit', async () => {
+    const first = renderPage()
+    await screen.findByRole('heading', { name: 'Low stock', level: 2 })
+
+    expect(widgetTitles()).toEqual([
+      'Waiting to ship',
+      'Low stock',
+      'Recent orders',
+      'Refunds to review',
+    ])
+    // The first panel has nowhere earlier to go.
+    expect(screen.getByRole('button', { name: 'Move Waiting to ship earlier' })).toBeDisabled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Move Low stock earlier' }))
+    expect(widgetTitles()).toEqual([
+      'Low stock',
+      'Waiting to ship',
+      'Recent orders',
+      'Refunds to review',
+    ])
+
+    // The order is this browser's preference, so it survives the page going away.
+    first.unmount()
+    renderPage()
+    await screen.findByRole('heading', { name: 'Low stock', level: 2 })
+    expect(widgetTitles()).toEqual([
+      'Low stock',
+      'Waiting to ship',
+      'Recent orders',
+      'Refunds to review',
+    ])
+  })
+
+  it('falls back to the default order when the stored one is unusable', async () => {
+    localStorage.setItem('amezo.seller-dashboard.widgets', 'not json')
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Low stock', level: 2 })
+    expect(widgetTitles()).toEqual([
+      'Waiting to ship',
+      'Low stock',
+      'Recent orders',
+      'Refunds to review',
+    ])
   })
 })
