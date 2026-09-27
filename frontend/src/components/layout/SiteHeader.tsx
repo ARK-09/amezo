@@ -1,6 +1,6 @@
 import { Search, ShoppingBag, Store, Tag } from 'lucide-react'
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 
 import { Avatar } from '@/components/Avatar'
@@ -14,6 +14,17 @@ import { cn } from '@/lib/utils'
 
 // Enough to fill the nav row on a laptop without wrapping it to two lines.
 const MAX_NAV_CATEGORIES = 8
+
+/**
+ * Where arriving means wanting to search, so the box takes focus on load.
+ *
+ * Deliberately not every page. This header is rendered by the buyer layout route, so
+ * an unconditional autofocus would take the caret on a product page - where space
+ * stops scrolling and starts typing - and on the account and checkout pages, where a
+ * search box is not what anybody came for. The search RESULTS page has no input of
+ * its own; this is the one it uses, which is why it is on the list.
+ */
+const SEARCH_FIRST_PATHS = ['/', '/search']
 
 export function SiteHeader() {
   const navigate = useNavigate()
@@ -29,6 +40,7 @@ export function SiteHeader() {
   const session = useSession()
   const { isSeller, isBuyer } = useViewerRole()
 
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const onSearchPage = location.pathname === '/search'
   // Every buyer page renders this header from the layout route, so none of
   // them can pass the current query down as a prop - the header reads it off
@@ -40,6 +52,28 @@ export function SiteHeader() {
     setPrevUrlQ(urlQ)
     setValue(urlQ)
   }
+
+  /**
+   * Focus the search box on the pages where searching is the task.
+   *
+   * Keyed on pathname, so it fires on arrival and NOT on every filter change - those
+   * only rewrite the query string, and yanking the caret back mid-refinement would be
+   * worse than never focusing at all.
+   *
+   * Skipped on a coarse pointer, which is a touchscreen: focusing there opens the
+   * on-screen keyboard, and on a phone that covers half of what the reader came to
+   * look at before they have asked for anything. `autoFocus` on the element could not
+   * have made that distinction.
+   *
+   * preventScroll, because this box lives in a sticky header - focusing it from
+   * further down a long results page would otherwise scroll the reader back to the
+   * top of it.
+   */
+  useEffect(() => {
+    if (!SEARCH_FIRST_PATHS.includes(location.pathname)) return
+    if (window.matchMedia?.('(pointer: coarse)').matches) return
+    searchInputRef.current?.focus({ preventScroll: true })
+  }, [location.pathname])
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -76,6 +110,7 @@ export function SiteHeader() {
           className="order-last flex w-full items-center gap-1 rounded-full border-[1.5px] border-primary py-0.5 pr-0.5 pl-4 md:order-none md:mx-auto md:w-auto md:max-w-[576px] md:flex-1"
         >
           <input
+            ref={searchInputRef}
             type="text"
             value={value}
             onChange={(e) => setValue(e.target.value)}

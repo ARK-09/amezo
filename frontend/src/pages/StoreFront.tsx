@@ -99,7 +99,9 @@ function StoreHeaderSkeleton() {
           under the reader the moment the store loads. */}
       <Skeleton className="aspect-[4/1] w-full rounded-none" />
       <div className="flex flex-wrap items-end gap-6 px-6 pb-[22px]">
-        <Skeleton className="-mt-[38px] size-[88px] shrink-0 rounded-xl" />
+        {/* The same lift as the real tile, so the header does not shift under the
+            reader when the store lands. */}
+        <Skeleton className="-mt-[44px] size-[88px] shrink-0 self-start rounded-xl" />
         <div className="min-w-[260px] flex-1 pt-4">
           <Skeleton className="h-7 w-52" />
           <Skeleton className="mt-2.5 h-4 w-80" />
@@ -243,7 +245,26 @@ export function StoreFront() {
             </div>
 
             <div className="flex flex-wrap items-end gap-6 px-6 pb-[22px]">
-              <div className="-mt-[38px] flex size-[88px] shrink-0 items-center justify-center overflow-hidden rounded-xl border-[3px] border-background bg-muted">
+              {/*
+                Straddling the cover's bottom edge, with a shadow under it.
+
+                self-start is doing the real work, and the negative margin only started
+                working once it was there. This row is items-end, which pins an item by
+                its margin-box BOTTOM - so a negative margin-top shortened the tile's
+                margin box and moved the tile itself not at all. The -mt here has been
+                inert for as long as it has existed, which is why the tile sat almost
+                entirely below the band (11px of its 88 overlapped) and read as a box
+                under the cover rather than a badge on it.
+
+                Aligned to the top of the row instead, -mt-[44px] means exactly what it
+                says: half the tile over the band. It still costs no layout - the tile
+                is not the tallest item in the row, so what it does is move itself.
+
+                The shadow separates it from the page BELOW the band, where the 3px
+                white border is invisible against a white background. Between them they
+                work over a pale cover, a dark one and a busy one alike.
+              */}
+              <div className="-mt-[44px] flex size-[88px] shrink-0 items-center justify-center self-start overflow-hidden rounded-xl border-[3px] border-background bg-muted shadow-lg">
                 {store.data.logoUrl ? (
                   <img
                     src={store.data.logoUrl}

@@ -16,7 +16,10 @@ export function CategoryRail({
     return (
       <section>
         <div className="mb-[18px] h-7 w-64 animate-pulse rounded bg-muted" />
-        <div className="flex gap-4 overflow-hidden">
+        {/* Same box as the loaded rail below, so the tiles do not move sideways under
+            the reader when the categories arrive. overflow-hidden rather than
+            overflow-x-auto: there is nothing to scroll to yet. */}
+        <div className="flex gap-4 overflow-hidden pb-1">
           {Array.from({ length: 7 }, (_, i) => (
             <div key={i} className="flex w-[132px] shrink-0 flex-col items-center gap-3">
               <div className="aspect-square w-full animate-pulse rounded-full bg-muted" />
@@ -33,17 +36,36 @@ export function CategoryRail({
   return (
     <section aria-labelledby="popular-categories">
       <SectionHeading id="popular-categories" title="Explore popular categories" viewAllTo="/search" />
-      {/* Scrolls horizontally with no scrollbar painted under the tiles - see the
-          rail-no-scrollbar utility in index.css. Swipe, wheel and keyboard scrolling
-          all still work; only the bar is hidden, and only here. */}
-      <div className="rail-no-scrollbar -mx-7 flex gap-4 overflow-x-auto px-7 pb-1">
+      {/*
+        Scrolls horizontally with no scrollbar painted under the tiles - see the
+        rail-no-scrollbar utility in index.css. Swipe, wheel and keyboard scrolling
+        all still work; only the bar is hidden, and only here.
+
+        NO -mx-7/px-7 bleed any more. It let the tiles scroll out into the page's own
+        28px gutter, so this was the one section on the landing page whose content
+        did not stop where every other section's does - most visible below 1320px,
+        where tiles ran to the very edge of the window while the grids beside them
+        stayed inset. Sitting inside the container costs a tile being clipped flush
+        mid-scroll, which is what a grid section does at its edge too.
+
+        scroll-smooth animates the jumps something else drives - a keyboard's arrow
+        keys, End, a future pair of arrow buttons - rather than teleporting. snap-x is
+        PROXIMITY snapping in Tailwind unless told otherwise, and deliberately so: it
+        settles a swipe onto a tile edge when it lands near one and otherwise leaves
+        the reader exactly where they stopped, where mandatory snapping would fight
+        anyone trying to look between two tiles.
+
+        overscroll-x-contain keeps a swipe that reaches the end of the rail from
+        continuing into the browser's own back gesture.
+      */}
+      <div className="rail-no-scrollbar flex snap-x gap-4 overflow-x-auto overscroll-x-contain scroll-smooth pb-1">
         {categories.map((category) => {
           const image = categoryImage(category.slug)
           return (
             <Link
               key={category.slug}
               to={`/search?category=${encodeURIComponent(category.slug)}`}
-              className="group flex w-[132px] shrink-0 flex-col items-center gap-3"
+              className="group flex w-[132px] shrink-0 snap-start flex-col items-center gap-3"
             >
               <span className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-full border bg-muted transition-colors group-hover:border-primary/50">
                 {image ? (
