@@ -144,6 +144,29 @@ describe('StoreFront', () => {
     expect(cover.className).toContain('object-cover')
   })
 
+  /**
+   * The logo tile reads as sitting ON the cover rather than being cut into it.
+   *
+   * The 3px white border was doing the separating on its own, which works over a pale
+   * cover and disappears over a dark or busy one - and this page's fallback cover is
+   * the dark band. A shadow does not depend on what is behind it, and the extra lift
+   * is what gives the shadow somewhere to fall.
+   */
+  it('lifts the store logo off the cover with a shadow', async () => {
+    seed(undefined, { logoUrl: 'https://cdn.example.com/logo.png' })
+    renderStore()
+
+    await screen.findByRole('heading', { name: 'Aurora Audio' })
+    const tile = document.querySelector<HTMLElement>('img[src="https://cdn.example.com/logo.png"]')!
+      .parentElement!
+    expect(tile.className).toContain('shadow-lg')
+    // Half the tile over the band. self-start is load-bearing: the row is items-end,
+    // which pins an item by its margin-box bottom, so the negative margin beside it
+    // moved nothing at all until this was added.
+    expect(tile.className).toContain('-mt-[44px]')
+    expect(tile.className).toContain('self-start')
+  })
+
   it('shows the about text and the seller’s own policies', async () => {
     seed()
     renderStore()

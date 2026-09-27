@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { SiteHeader } from '@/components/layout/SiteHeader'
 import { CartProvider } from '@/features/cart/context/CartProvider'
@@ -35,6 +35,80 @@ function renderHeader(initialEntry = '/') {
 function location() {
   return screen.getByTestId('location').textContent
 }
+
+/**
+ * Stands in for the device's pointer. jsdom has no matchMedia at all, so every test
+ * that does not call this sees `undefined` and the header's optional call short-circuits
+ * to "not a touchscreen" - which is the branch most of these tests want anyway.
+ */
+function pointer(kind: 'fine' | 'coarse') {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('coarse') && kind === 'coarse',
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }))
+}
+
+afterEach(() => vi.unstubAllGlobals())
+
+/**
+ * Where the caret lands on arrival.
+ *
+ * The header is rendered by the buyer LAYOUT route, so "focus the search box on load"
+ * is not one decision - it is a decision per page. Taking focus on a product page
+ * would stop space scrolling it and start typing into a box nobody asked for, so the
+ * pages where searching IS the task are named explicitly and the rest are left alone.
+ */
+describe('SiteHeader search focus', () => {
+  it('takes the caret on the landing page', async () => {
+    pointer('fine')
+    renderHeader('/')
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Search products')).toHaveFocus(),
+    )
+  })
+
+  it('takes the caret on the results page, which has no input of its own', async () => {
+    pointer('fine')
+    renderHeader('/search?q=laptop')
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Search products')).toHaveFocus(),
+    )
+  })
+
+  it('leaves the caret alone on a product page', async () => {
+    pointer('fine')
+    renderHeader('/products/wireless-noise-cancelling-headphones')
+
+    // Nothing to wait for, so the wait is for the effects to have run at all.
+    await waitFor(() => expect(screen.getByLabelText('Search products')).toBeInTheDocument())
+    expect(screen.getByLabelText('Search products')).not.toHaveFocus()
+  })
+
+  it('leaves the caret alone on the account page', async () => {
+    pointer('fine')
+    renderHeader('/account')
+
+    await waitFor(() => expect(screen.getByLabelText('Search products')).toBeInTheDocument())
+    expect(screen.getByLabelText('Search products')).not.toHaveFocus()
+  })
+
+  /**
+   * A touchscreen is the one case where focusing costs the reader something: it opens
+   * the on-screen keyboard, which on a phone covers half of what they came to look at
+   * before they have asked for anything.
+   */
+  it('does not open a phone keyboard over the page', async () => {
+    pointer('coarse')
+    renderHeader('/')
+
+    await waitFor(() => expect(screen.getByLabelText('Search products')).toBeInTheDocument())
+    expect(screen.getByLabelText('Search products')).not.toHaveFocus()
+  })
+})
 
 describe('SiteHeader', () => {
   it('sends a search from any page to /search', async () => {
