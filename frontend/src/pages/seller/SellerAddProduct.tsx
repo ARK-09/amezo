@@ -1,47 +1,39 @@
 import { useNavigate } from 'react-router'
 
-import { Button } from '@/components/ui/button'
-import {
-  ProductCreateFields,
-  StatusSegmented,
-} from '@/features/seller-portal/components/ProductCreateForm'
-import { useProductCreateForm } from '@/features/seller-portal/components/useProductCreateForm'
+import { ProductFormPage } from '@/features/seller-portal/components/ProductFormPage'
+import { useProductForm } from '@/features/seller-portal/components/useProductForm'
 
 /**
- * The standalone "add a product" route.
+ * The standalone "add a product" route - what the add drawer's "Full page"
+ * opens, and a URL a seller can go straight to.
  *
- * It used to hold its own copy of the whole form. The products list now opens
- * the same form in a drawer, so both render ProductCreateFields from one
- * useProductCreateForm - this page is the page chrome around it and nothing
- * else. The route stays because it is linkable and because the drawer's
- * expanded state is not a URL.
+ * The same controller and the same fields the drawer uses; this file is the
+ * page chrome around them and nothing else.
  */
 export function SellerAddProduct() {
   const navigate = useNavigate()
-  const form = useProductCreateForm({ onCreated: () => navigate('/seller/products') })
+
+  const controller = useProductForm({
+    mode: 'add',
+    onCreated: ({ id }, imageFailures) => {
+      // The product exists either way - only the pictures can fail after it. So
+      // a listing whose images did not all upload goes to its own edit page,
+      // carrying what failed, rather than back to a list that would say nothing
+      // about it.
+      if (imageFailures.length > 0) {
+        navigate(`/seller/products/${id}`, { state: { imageFailures } })
+        return
+      }
+      navigate('/seller/products')
+    },
+  })
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">Add product</h1>
-        <StatusSegmented value={form.status} onChange={form.setStatus} />
-      </div>
-
-      <ProductCreateFields form={form} />
-
-      {/* One save, gated on the form being complete AND changed - the same
-          boundary the drawer's footer uses, from the same state. */}
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-        <p className="text-[13px] text-muted-foreground">{form.footerNote}</p>
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={() => navigate('/seller/products')}>
-            Cancel
-          </Button>
-          <Button type="button" disabled={!form.canSave} onClick={() => void form.submit()}>
-            {form.isPending ? 'Saving…' : form.saveLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
+    <ProductFormPage
+      controller={controller}
+      heading="Add product"
+      meta="Publishes to your store."
+      onCancel={() => navigate('/seller/products')}
+    />
   )
 }

@@ -1,4 +1,4 @@
-import { ImageOff, Plus, Search } from 'lucide-react'
+import { ImageOff, Plus, Search, Trash2 } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 
@@ -38,11 +38,14 @@ import {
   DrawerTitle,
 } from '@/features/seller-portal/components/Drawer'
 import {
-  ProductCreateFields,
+  ProductFormFields,
   StatusSegmented,
-} from '@/features/seller-portal/components/ProductCreateForm'
-import { useProductCreateForm } from '@/features/seller-portal/components/useProductCreateForm'
-import { ProductFormPanel } from '@/features/seller-portal/components/ProductFormPanel'
+} from '@/features/seller-portal/components/ProductFormFields'
+import {
+  ProductFormActions,
+  SaveFailures,
+} from '@/features/seller-portal/components/ProductFormPage'
+import { useProductForm } from '@/features/seller-portal/components/useProductForm'
 import { ProductViewPanel } from '@/features/seller-portal/components/ProductViewPanel'
 import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
 import { formatPrice } from '@/lib/formatPrice'
@@ -215,6 +218,8 @@ export function SellerProducts() {
         </div>
       )}
 
+      {/* The design splits this row: search and the two filters share the left,
+          and the sort sits on its own at the right edge. */}
       <div className="flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative max-w-[360px] min-w-[220px] flex-1">
           <Search
@@ -260,8 +265,14 @@ export function SellerProducts() {
           </SelectContent>
         </Select>
 
+        {hasFilters && (
+          <Button variant="ghost" size="sm" onClick={() => setSearchParams(new URLSearchParams())}>
+            Clear filters
+          </Button>
+        )}
+
         <Select value={sort} onValueChange={(value) => patch({ sort: value })}>
-          <SelectTrigger aria-label="Sort products" className="h-9 w-[180px] text-[13px]">
+          <SelectTrigger aria-label="Sort products" className="ml-auto h-9 w-[180px] text-[13px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -272,12 +283,6 @@ export function SellerProducts() {
             ))}
           </SelectContent>
         </Select>
-
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={() => setSearchParams(new URLSearchParams())}>
-            Clear filters
-          </Button>
-        )}
       </div>
 
       {/* The confirm popover closes as soon as the request settles, so a delete
@@ -452,17 +457,19 @@ export function SellerProducts() {
                         >
                           Edit
                         </TableAction>
-                        <Button
-                          variant="ghost"
-                          size="sm"
+                        {/* An icon, as the design has it: the row already says
+                            what it is, and a second word competes with Edit. */}
+                        <button
+                          type="button"
                           aria-label={`Delete ${row.title}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             setConfirmingId(row.id)
                           }}
+                          className="rounded-md border px-2 py-1.5 text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
                         >
-                          Delete
-                        </Button>
+                          <Trash2 className="size-3.5" aria-hidden />
+                        </button>
                       </div>
                     )}
                   </TableCell>
@@ -499,13 +506,34 @@ export function SellerProducts() {
           />
         )}
 
-        {drawer?.mode === 'edit' && <EditDrawerContent row={drawer.row} id={drawer.id} onDone={closeDrawer} />}
+        {drawer?.mode === 'edit' && (
+          <EditDrawerContent
+            row={drawer.row}
+            id={drawer.id}
+            onCancel={closeDrawer}
+            onSaved={(title) => {
+              closeDrawer()
+              showFlash(`Saved changes to ${title}.`)
+            }}
+          />
+        )}
 
         {drawer?.mode === 'add' && (
           <AddDrawerContent
-            onCreated={(title) => {
+            onCreated={(product, imageFailures) => {
+              // The listing itself is saved by now; only its pictures can fail
+              // after that. Rather than close on a half-finished product, the
+              // drawer becomes that product's edit drawer so the missing images
+              // can be added where they are missing from.
+              if (imageFailures.length > 0) {
+                setDrawer({ mode: 'edit', id: product.id, row: null })
+                showFlash(
+                  `Added ${product.title}, but ${imageFailures.length} ${imageFailures.length === 1 ? 'image' : 'images'} didn't upload.`,
+                )
+                return
+              }
               closeDrawer()
-              showFlash(`Added ${title}.`)
+              showFlash(`Added ${product.title}.`)
             }}
             onCancel={closeDrawer}
           />
@@ -579,7 +607,11 @@ function ViewDrawerContent({
         <ProductViewPanel productId={id} />
       </DrawerBody>
 
-      <DrawerFooter className="justify-start">
+      {/* The design's action bar: Edit product takes the width, Delete sits
+          beside it. The footer's own actions group is content-sized, so it is
+          told to grow - the same arbitrary-variant idiom the drawer itself uses
+          to hide the sheet's built-in close button. */}
+      <DrawerFooter className="justify-start [&>div:last-child]:grow">
         <Button className="flex-1" onClick={onEdit}>
           Edit product
         </Button>
@@ -614,33 +646,67 @@ function ViewDrawerContent({
 function EditDrawerContent({
   id,
   row,
-  onDone,
+  onSaved,
+  onCancel,
 }: {
   id: string
   row: SellerProductRow | null
-  onDone: () => void
+  onSaved: (title: string) => void
+  onCancel: () => void
 }) {
+  const controller = useProductForm({ mode: 'edit', productId: id, onSaved })
+
+  // The SAVED name and category. The row already has them, so the header reads
+  // right before the detail request comes back, and it does not follow the
+  // title as it is being edited - this line says which listing is open.
+  const meta = controller.product
+    ? `${controller.product.title} · ${controller.product.category.name}`
+    : row
+      ? `${row.title} · ${row.category.name}`
+      : 'Editing this listing'
+
   return (
     <>
-      <DrawerHeader>
+      <DrawerHeader
+        actions={<StatusSegmented value={controller.status} onChange={controller.setStatus} />}
+      >
         <DrawerTitle>Edit product</DrawerTitle>
-        <DrawerSubline>
-          {row ? `${row.title} · ${row.category.name}` : 'Editing this listing'}
-        </DrawerSubline>
+        <DrawerSubline>{meta}</DrawerSubline>
       </DrawerHeader>
 
       <DrawerBody>
-        <ProductFormPanel productId={id} />
+        {controller.isLoading && (
+          <div className="flex flex-col gap-4">
+            <Skeleton className="h-52 w-full rounded-xl" />
+            <Skeleton className="h-40 w-full rounded-xl" />
+            <Skeleton className="h-48 w-full rounded-xl" />
+          </div>
+        )}
+
+        {controller.loadError && (
+          <div className="flex flex-col items-start gap-3 rounded-xl border p-6">
+            <p className="font-medium">Couldn&apos;t load this product</p>
+            <p className="text-sm text-muted-foreground">
+              {controller.loadError.detail ?? controller.loadError.title}
+            </p>
+            <Button variant="outline" onClick={controller.reloadProduct}>
+              Try again
+            </Button>
+          </div>
+        )}
+
+        {!controller.isLoading && !controller.loadError && (
+          <ProductFormFields controller={controller} />
+        )}
+
+        <SaveFailures failures={controller.failures} />
       </DrawerBody>
 
-      {/* ProductFormPanel still owns its own saves - see the note in the report:
-          its variants and images are separate endpoints, so unifying them behind
-          one footer button is a rewrite of that panel, not a wiring change. The
-          note says so rather than leaving a dead Save here. */}
-      <DrawerFooter note="Each section above saves on its own.">
-        <Button variant="outline" onClick={onDone}>
-          Done
-        </Button>
+      {/* One save for the whole listing, as the design has it. The product, its
+          variants and its images are three endpoints behind this button, not
+          three buttons. */}
+      <DrawerFooter note={controller.footerNote}>
+        <ProductFormActions controller={controller} onCancel={onCancel} />
       </DrawerFooter>
     </>
   )
@@ -650,34 +716,29 @@ function AddDrawerContent({
   onCreated,
   onCancel,
 }: {
-  onCreated: (title: string) => void
+  onCreated: (product: { id: string; title: string }, imageFailures: string[]) => void
   onCancel: () => void
 }) {
   // Lives here, above both the body and the footer, so the footer's Save can
   // read whether the form is complete without the fields having to pass it up.
-  const form = useProductCreateForm({ onCreated: ({ title }) => onCreated(title) })
+  const controller = useProductForm({ mode: 'add', onCreated })
 
   return (
     <>
-      <DrawerHeader>
+      <DrawerHeader
+        actions={<StatusSegmented value={controller.status} onChange={controller.setStatus} />}
+      >
         <DrawerTitle>Add product</DrawerTitle>
         <DrawerSubline>Publishes to your store.</DrawerSubline>
-        <div className="mt-2">
-          <StatusSegmented value={form.status} onChange={form.setStatus} />
-        </div>
       </DrawerHeader>
 
       <DrawerBody>
-        <ProductCreateFields form={form} />
+        <ProductFormFields controller={controller} />
+        <SaveFailures failures={controller.failures} />
       </DrawerBody>
 
-      <DrawerFooter note={form.footerNote}>
-        <Button variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button disabled={!form.canSave} onClick={() => void form.submit()}>
-          {form.isPending ? 'Saving…' : form.saveLabel}
-        </Button>
+      <DrawerFooter note={controller.footerNote}>
+        <ProductFormActions controller={controller} onCancel={onCancel} />
       </DrawerFooter>
     </>
   )

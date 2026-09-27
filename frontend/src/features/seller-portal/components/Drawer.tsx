@@ -142,15 +142,24 @@ export function Drawer({
  *
  * `children` is the title and sub-line under that row, and the drawer's own
  * controls - "Full page", then close - always sit on the right.
+ *
+ * `actions` is the one slot on that right-hand side. The design puts the
+ * product form's Active/Draft control there, inline with "Full page", because
+ * in edit and add mode the listing's status is a control rather than a badge -
+ * and a control belongs with the other controls, not above the title where the
+ * `status` pill goes. Anything passed here renders before "Full page"; drawers
+ * that have no such control pass nothing and are unchanged.
  */
 export function DrawerHeader({
   status,
   meta,
+  actions,
   children,
   className,
 }: {
   status?: ReactNode
   meta?: ReactNode
+  actions?: ReactNode
   children: ReactNode
   className?: string
 }) {
@@ -168,6 +177,7 @@ export function DrawerHeader({
         {children}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        {actions}
         {fullPageTo && (
           // target=_blank, so the list behind the drawer - and the filter, page
           // and scroll position the seller was on - is still there afterwards.

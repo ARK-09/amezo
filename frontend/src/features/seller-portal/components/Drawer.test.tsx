@@ -24,12 +24,14 @@ function Harness({
   ariaLabel = 'Product details',
   fullPageTo = '/seller/products/p1',
   canSave = true,
+  actions,
 }: {
   mode?: DrawerMode
   ariaLabel?: string
   /** null for a drawer whose record has no page of its own. */
   fullPageTo?: string | null
   canSave?: boolean
+  actions?: React.ReactNode
 }) {
   const [open, setOpen] = useState(true)
 
@@ -43,7 +45,7 @@ function Harness({
         width={520}
         fullPageTo={fullPageTo ?? undefined}
       >
-        <DrawerHeader status={<span>Active</span>} meta="Electronics">
+        <DrawerHeader status={<span>Active</span>} meta="Electronics" actions={actions}>
           <DrawerTitle>Aurora One Wireless Headphones</DrawerTitle>
           <DrawerSubline>Aurora Audio</DrawerSubline>
         </DrawerHeader>
@@ -174,6 +176,29 @@ describe('Drawer', () => {
     expect(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save' }),
     ).toBeEnabled()
+  })
+
+  /**
+   * The product form's Active/Draft control goes here: in edit and add mode the
+   * listing's status is a control, and a control belongs with the drawer's
+   * other controls rather than above the title where the pill sits.
+   */
+  it('puts the actions slot on the right, before Full page', async () => {
+    render(<Harness actions={<button type="button">Draft</button>} />)
+
+    const drawer = await screen.findByRole('dialog')
+    const action = within(drawer).getByRole('button', { name: 'Draft' })
+    const fullPage = within(drawer).getByRole('link', { name: 'Full page' })
+
+    expect(action.compareDocumentPosition(fullPage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(action.parentElement).toContainElement(fullPage)
+  })
+
+  it('renders no actions area for a drawer that passes none', async () => {
+    render(<Harness />)
+
+    const drawer = await screen.findByRole('dialog')
+    expect(within(drawer).queryByRole('button', { name: 'Draft' })).not.toBeInTheDocument()
   })
 
   it('closes from its own close button', async () => {
