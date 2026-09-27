@@ -3,6 +3,7 @@ import { Navigate, NavLink, Outlet } from 'react-router'
 
 import { BackendWakingBanner } from '@/components/layout/BackendWakingBanner'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { useSellerSignOut } from '@/features/seller-portal/api/useSellerAuth'
 import { useSellerAuth } from '@/features/seller-portal/context/SellerAuthContext'
 import { cn } from '@/lib/utils'
@@ -15,13 +16,26 @@ const NAV_ITEMS = [
   { to: '/seller/store', label: 'Store settings', icon: Store },
 ]
 
-// Same flag SellerSignIn uses to bypass the real magic-link flow - see its
-// comment. Banner makes the bypass visible rather than silent.
-const DEMO_AUTH = import.meta.env.VITE_DEMO_SELLER_AUTH === 'true'
-
 export function SellerPortalLayout() {
-  const { seller, signOut } = useSellerAuth()
+  const { seller, isUnknown, signOut } = useSellerAuth()
   const { mutate: signOutRequest } = useSellerSignOut()
+
+  // Nobody has said yet whether this cookie is any good. Waiting rather than
+  // redirecting: the local flag that used to answer instantly is gone (it was half
+  // of the demo session), and treating "not answered yet" as "not signed in" would
+  // bounce every seller to the sign-in page on every cold load - and keep them there
+  // for as long as a sleeping instance took to wake up, which is the case this state
+  // exists for. The banner is inside it so that wait explains itself.
+  if (isUnknown) {
+    return (
+      <div className="flex h-screen flex-col">
+        <BackendWakingBanner />
+        <div className="flex flex-1 items-center justify-center" role="status" aria-label="Loading">
+          <Spinner className="size-6 text-primary" />
+        </div>
+      </div>
+    )
+  }
 
   if (!seller) {
     return <Navigate to="/seller/sign-in" replace />
@@ -77,14 +91,6 @@ export function SellerPortalLayout() {
         {/* Outside the scroll well, so both banners stay put while the page
             under them scrolls. */}
         <BackendWakingBanner />
-        {DEMO_AUTH && (
-          <div
-            role="status"
-            className="border-b border-primary/50 bg-primary/5 px-4 py-2 text-center text-sm font-medium text-primary"
-          >
-            Demo mode — authentication is mocked.
-          </div>
-        )}
         {/* The one scrolling region, and the one place the portal's gutter is
             set. Every page under this outlet rendered flush against the
             sidebar and the window edge because each was a bare flex column

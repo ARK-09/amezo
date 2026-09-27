@@ -1351,7 +1351,13 @@ export const handlers = [
   ),
   http.post('http://localhost:8080/auth/seller/magic-link', async ({ request }) => {
     const { email } = (await request.json()) as { email: string }
-    issueMagicLinkToken(email)
+    const token = issueMagicLinkToken(email)
+    // Printed for the same reason the backend's LoggingEmailSender writes the link to
+    // the server log when no mail provider is configured (docs/deploy.md): there is no
+    // inbox here either, and without this there is no way to finish a sign-in against
+    // the mock at all. The token is real and single-use - this is the mock delivering
+    // the email, not a bypass of the flow.
+    console.info(`[MSW] magic link for ${email}: /seller/verify?token=${token}`)
     return new HttpResponse(null, { status: 204 })
   }),
 

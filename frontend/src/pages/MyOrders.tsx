@@ -29,6 +29,7 @@ import {
   periodRange,
 } from '@/features/orders/orderPeriod'
 import { useViewerRole } from '@/features/session/api/useViewerRole'
+import { useRecordDrawer } from '@/lib/recordDrawer'
 import { cn } from '@/lib/utils'
 
 const TABS: { value: BuyerOrderGroup; label: string }[] = [
@@ -107,7 +108,10 @@ export function MyOrders() {
   const viewer = useViewerRole()
   const isSeller = viewer.role === 'seller'
   const [searchParams, setSearchParams] = useSearchParams()
-  const [openId, setOpenId] = useState<string | null>(null)
+  // Which order is expanded lives in the URL, like every other record drawer in the
+  // app (lib/recordDrawer): a refresh, a shared link and Back all reopen the same
+  // card. `mode` is always view here - a buyer's order card has no other mode.
+  const drawer = useRecordDrawer()
 
   const group = (searchParams.get('group') as BuyerOrderGroup | null) ?? 'all'
   const q = searchParams.get('q') ?? ''
@@ -177,11 +181,24 @@ export function MyOrders() {
     patch({ q: value }, Boolean(q))
   }
 
-  /** What the empty state's button does: every filter back to how it opens. */
+  /**
+   * What the empty state's button does: every filter back to how it opens.
+   *
+   * The drawer's own parameters go too, in the SAME write - the reader is asking for a
+   * clean slate, and two setSearchParams calls in one tick would fight over which
+   * version of the query string wins.
+   */
   function showAllOrders() {
     setTerm('')
-    setOpenId(null)
-    patch({ group: undefined, q: undefined, period: undefined, page: undefined, size: undefined })
+    patch({
+      group: undefined,
+      q: undefined,
+      period: undefined,
+      page: undefined,
+      size: undefined,
+      id: undefined,
+      mode: undefined,
+    })
   }
 
   const orders = query.data?.content ?? []
@@ -386,8 +403,10 @@ export function MyOrders() {
             <OrderCard
               key={order.id}
               order={order}
-              isOpen={openId === order.id}
-              onToggle={() => setOpenId((current) => (current === order.id ? null : order.id))}
+              isOpen={drawer.recordId === order.id}
+              onToggle={() =>
+                drawer.recordId === order.id ? drawer.close() : drawer.open(order.id)
+              }
             />
           ))}
         </div>

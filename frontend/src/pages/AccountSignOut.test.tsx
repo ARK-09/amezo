@@ -63,20 +63,16 @@ describe('buyer sign-out', () => {
    */
   it('works for a seller signed in on the buyer account page', async () => {
     signInSellerSession({ sellerId: 'seller-1', email: 'seller@example.com' })
-    localStorage.setItem(
-      'seller:session',
-      JSON.stringify({ sellerId: 'seller-1', email: 'seller@example.com' }),
-    )
     renderAccount()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }))
 
     await waitFor(() => expect(location()).toBe('/'))
+    // The server-side session is the only session. The "refresh brings me back" half
+    // of the original report was a persisted copy outliving it; there is no copy to
+    // outlive it any more.
     expect(currentSessionIdentity()).toBeNull()
-    // The persisted flag has to go with it: left behind, the next page load reads it
-    // and renders as signed in again - which is exactly the "refresh brings me back"
-    // half of the report.
-    await waitFor(() => expect(localStorage.getItem('seller:session')).toBeNull())
+    expect(localStorage.getItem('seller:session')).toBeNull()
   })
 
   it('does not bounce the signed-out user to the sign-in page', async () => {

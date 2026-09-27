@@ -163,48 +163,24 @@ describe('StoreFront', () => {
     expect(screen.queryByRole('button', { name: 'Apparel' })).not.toBeInTheDocument()
   })
 
-  it('follows and unfollows optimistically', async () => {
+  /**
+   * Follow and Message are DEFERRED, not broken. Neither endpoint exists:
+   * PUT/DELETE /api/v1/stores/{handle}/follow has no store_follow table behind it and
+   * POST its /messages has no seller inbox to arrive in. A button that looks like it
+   * works and does not is worse than no button, so this asserts their absence rather
+   * than asserting a mock.
+   */
+  it('does not offer follow or message while those endpoints do not exist', async () => {
     seed()
-    let followed = false
-    server.use(
-      http.put(`${API}/api/v1/stores/:handle/follow`, () => {
-        followed = true
-        return new HttpResponse(null, { status: 204 })
-      }),
-      http.get(`${API}/api/v1/stores/:handle`, () =>
-        HttpResponse.json(store({ following: followed })),
-      ),
-    )
     renderStore()
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Follow store' }))
+    // The header has rendered, so this is absence and not just "not yet".
+    await screen.findByRole('heading', { level: 1, name: 'Aurora Audio' })
 
-    expect(await screen.findByRole('button', { name: 'Following' })).toBeInTheDocument()
-    expect(followed).toBe(true)
-  })
-
-  /** Nobody to follow on behalf of, so the control has to go somewhere useful. */
-  it('sends a signed-out visitor to sign in instead of a dead follow button', async () => {
-    seed(undefined, { following: null })
-    renderStore()
-
-    expect(await screen.findByRole('link', { name: 'Follow store' })).toHaveAttribute(
-      'href',
-      '/sign-in',
-    )
-  })
-
-  /** The seller replies to the account address, so an anonymous composer would
-      only collect a message the server refuses on submit. */
-  it('sends a signed-out visitor to sign in rather than opening a composer', async () => {
-    seed(undefined, { following: null })
-    renderStore()
-
-    expect(await screen.findByRole('link', { name: 'Message' })).toHaveAttribute(
-      'href',
-      '/sign-in',
-    )
+    expect(screen.queryByRole('button', { name: /Follow/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Follow/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Message' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Message' })).not.toBeInTheDocument()
   })
 
   it('says when the store is on holiday', async () => {
@@ -250,29 +226,4 @@ describe('StoreFront', () => {
     )
   })
 
-  it('will not send a message shorter than the contract allows', async () => {
-    seed()
-    renderStore()
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Message' }))
-    const dialog = await screen.findByRole('dialog')
-
-    const send = within(dialog).getByRole('button', { name: 'Send message' })
-    expect(send).toBeDisabled()
-
-    await userEvent.type(within(dialog).getByLabelText('Message'), 'Do you ship to Oman?')
-    expect(send).toBeEnabled()
-
-    let sent: unknown = null
-    server.use(
-      http.post(`${API}/api/v1/stores/:handle/messages`, async ({ request }) => {
-        sent = await request.json()
-        return new HttpResponse(null, { status: 202 })
-      }),
-    )
-    await userEvent.click(send)
-
-    await waitFor(() => expect(sent).toEqual({ body: 'Do you ship to Oman?' }))
-    expect(await within(dialog).findByText(/Sent\./)).toBeInTheDocument()
-  })
 })

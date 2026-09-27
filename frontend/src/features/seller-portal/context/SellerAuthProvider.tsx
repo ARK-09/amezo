@@ -1,125 +1,89 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 
 import { sessionKeys, useSession } from '@/features/session/api/useSession'
 
 import { SellerAuthContext, type SellerSession } from './SellerAuthContext'
 
-const STORAGE_KEY = 'seller:session'
-
-// Same bypass flag SellerSignIn and SellerPortalLayout read. Its whole point is
-// a session with no cookie behind it, so server verification has to sit out -
-// it would ask the API about a session that was never meant to exist and then
-// sign the demo user straight back out.
-const DEMO_AUTH = import.meta.env.VITE_DEMO_SELLER_AUTH === 'true'
-
-function storeSession(session: SellerSession) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
-}
-
 /**
- * Drops the persisted flag, not just the in-memory one. Skipping the persisted
- * half is how a revoked session came back: the 401 listener below cleared state,
- * the next page load read localStorage again, and the portal rendered for a
- * seller whose cookie was long gone.
+ * Who the portal thinks is signed in, derived from the ONE session the server
+ * knows about: GET /sessions/current, behind the mp_session cookie.
+ *
+ * <h2>There is no second copy of this any more</h2>
+ *
+ * This provider used to keep its own flag in localStorage, written by a sign-in
+ * bypass (VITE_DEMO_SELLER_AUTH) that minted a client-side session - a random UUID
+ * and an email, with no cookie behind it - so the Vercel demo could show the portal
+ * without a backend. The whole app read that flag: useViewerRole treated it as a
+ * signed-in seller, which is how the LANDING PAGE came to show an authenticated
+ * experience off a session the server had never heard of.
+ *
+ * The backend implements the real flow now, so the bypass and the flag are both
+ * gone. What is left is one query, one cookie, and a context that reads it - which
+ * is also why signIn and signOut write to the session cache rather than to a store
+ * of their own: they are telling the app something the server has just told them,
+ * not keeping a second opinion.
  */
-function forgetStoredSession() {
-  localStorage.removeItem(STORAGE_KEY)
-}
-
-function loadSession(): SellerSession | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const parsed: unknown = JSON.parse(raw)
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof (parsed as SellerSession).sellerId === 'string' &&
-      typeof (parsed as SellerSession).email === 'string'
-    ) {
-      return parsed as SellerSession
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
 export function SellerAuthProvider({ children }: { children: ReactNode }) {
-  const [seller, setSeller] = useState<SellerSession | null>(loadSession)
-  // Verifies the cookie against the server on boot, without blocking on it. The
-  // local flag renders the portal immediately (no flash of the sign-in page),
-  // and this corrects it once the answer arrives.
   const session = useSession()
   const queryClient = useQueryClient()
-
   const identity = session.data
-  useEffect(() => {
-    if (DEMO_AUTH) return
 
-    // Nothing decided yet - still loading, or retrying a backend that hasn't
-    // woken up. Keep whatever the local flag says rather than bouncing a signed
-    // -in seller to the sign-in page because Render was asleep.
-    if (session.isPending || session.isError) return
-
-    if (identity?.identityType === 'SELLER') {
-      // The cookie is good. Adopt it even if the local flag was missing, so a
-      // cleared localStorage (or a second browser profile) doesn't force a
-      // pointless second sign-in while the session is still valid.
-      const confirmed: SellerSession = { sellerId: identity.identityId, email: identity.email }
-      setSeller((current) => {
-        if (current?.sellerId === confirmed.sellerId && current.email === confirmed.email) return current
-        storeSession(confirmed)
-        return confirmed
-      })
-      return
-    }
-
-    // identity === null: the server answered 401. Definitive - there is no
-    // session, so the stale flag has to go, persisted copy included.
-    forgetStoredSession()
-    setSeller((current) => (current === null ? current : null))
-  }, [session.isPending, session.isError, identity])
+  // A seller, or nobody. A BUYER cookie is not a seller - the portal's own guard
+  // sends them to sign in rather than showing them a shop they do not have.
+  const sellerId = identity?.identityType === 'SELLER' ? identity.identityId : null
+  const email = identity?.identityType === 'SELLER' ? identity.email : null
 
   useEffect(() => {
-    // The server-side cookie session is the real guard - this local flag is
-    // only for UX (showing the email, skipping a flash of protected
-    // content). If any API call 401s, the cookie is gone/expired, so drop
-    // the local flag too and let the route guard redirect to sign-in.
+    /**
+     * Any API call answering 401 means the cookie is gone or expired. The session
+     * query is the thing that would otherwise find that out on its next refetch -
+     * up to five minutes later - so this tells it now. Writing null rather than
+     * invalidating: we know the answer, and an invalidate would leave the old
+     * identity in place until a request came back.
+     */
     function onUnauthorized() {
-      // Except in demo mode, where there is no cookie to lose: the boot check
-      // above already opts out, but this listener did not, so the 401 that
-      // GET /sessions/current returns for a visitor signed the demo seller
-      // straight back out again.
-      if (DEMO_AUTH) return
-      forgetStoredSession()
-      setSeller(null)
+      queryClient.setQueryData(sessionKeys.current, null)
     }
     window.addEventListener('api:unauthorized', onUnauthorized)
     return () => window.removeEventListener('api:unauthorized', onUnauthorized)
-  }, [])
+  }, [queryClient])
 
-  function signIn(session: SellerSession) {
-    storeSession(session)
-    setSeller(session)
-    // The cached answer is from before the cookie existed (usually a null from
-    // boot). Left alone, a later remount would read that stale null and sign
-    // this seller back out; re-asking the server settles it.
-    void queryClient.invalidateQueries({ queryKey: sessionKeys.current })
-  }
+  const value = useMemo(() => {
+    const seller: SellerSession | null = sellerId && email ? { sellerId, email } : null
 
-  function signOut() {
-    forgetStoredSession()
-    setSeller(null)
-    // We know the answer without asking: the cookie has just been revoked.
-    // Writing it beats invalidating, which would leave the old identity cached
-    // until a refetch lands and could re-adopt it in the meantime.
-    queryClient.setQueryData(sessionKeys.current, null)
-  }
+    return {
+      seller,
+      /**
+       * Nobody has answered yet. In flight on a cold load, or errored because the
+       * instance is asleep and every retry came back 502 - which is the server
+       * failing to speak, not the server saying the session is gone. Only a 401 is
+       * that, and useSession turns it into a successful `null`. See
+       * SellerPortalLayout for what waits on this.
+       */
+      isUnknown: session.isPending || session.isError,
 
-  return (
-    <SellerAuthContext.Provider value={{ seller, signIn, signOut }}>{children}</SellerAuthContext.Provider>
-  )
+      /**
+       * Called by the verify screen with what the server just returned. That IS the
+       * session, so it is written straight into the query rather than kept beside
+       * it; the invalidate that follows lets the server confirm it in its own time.
+       */
+      signIn: (next: SellerSession) => {
+        queryClient.setQueryData(sessionKeys.current, {
+          identityType: 'SELLER' as const,
+          identityId: next.sellerId,
+          email: next.email,
+        })
+        void queryClient.invalidateQueries({ queryKey: sessionKeys.current })
+      },
+
+      /** The cookie has just been revoked, so we know the answer without asking. */
+      signOut: () => {
+        queryClient.setQueryData(sessionKeys.current, null)
+      },
+    }
+  }, [sellerId, email, session.isPending, session.isError, queryClient])
+
+  return <SellerAuthContext.Provider value={value}>{children}</SellerAuthContext.Provider>
 }

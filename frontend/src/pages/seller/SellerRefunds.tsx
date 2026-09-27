@@ -18,7 +18,6 @@ import {
 import {
   useSellerRefundRequests,
   type RefundStatus,
-  type RefundRequestSummary,
   type SellerRefundFilters,
 } from '@/features/refunds/api/useRefundRequests'
 import { RefundDecisionPanel } from '@/features/refunds/components/RefundDecisionPanel'
@@ -34,6 +33,7 @@ import { FacetTabs } from '@/features/seller-portal/components/FacetTabs'
 import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
 import { formatMediumDate } from '@/lib/formatDate'
 import { formatPrice } from '@/lib/formatPrice'
+import { useRecordDrawer, useRecordSnapshot } from '@/lib/recordDrawer'
 
 const PAGE_SIZES = [5, 10, 20, 50] as const
 const DEFAULT_PAGE_SIZE = 10
@@ -87,8 +87,8 @@ function sizeParam(raw: string | null) {
 
 export function SellerRefunds() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [openId, setOpenId] = useState<string | null>(null)
-  const [openSnapshot, setOpenSnapshot] = useState<RefundRequestSummary | null>(null)
+  // Which request is open, and in what mode, lives in the URL - see lib/recordDrawer.
+  const drawer = useRecordDrawer()
 
   const status = searchParams.get('status') ?? 'REQUESTED'
   const q = searchParams.get('q') ?? ''
@@ -165,16 +165,10 @@ export function SellerRefunds() {
         ? 'Loading…'
         : `${total} request${total === 1 ? '' : 's'}`
 
-  // Snapshotted when the drawer opens. Acting on a record usually moves it
-  // out of the bucket being viewed - deriving the drawer from the current
-  // page meant it slammed shut the instant the action succeeded, before the
-  // seller saw the result.
-  const openRow = rows.find((row) => row.id === openId) ?? openSnapshot
-
-  function open(row: RefundRequestSummary) {
-    setOpenId(row.id)
-    setOpenSnapshot(row)
-  }
+  // The row the drawer draws from, kept while the URL names it: settling a request
+  // takes it out of the tab being viewed, and a drawer derived only from the current
+  // page slammed shut the instant the decision succeeded.
+  const openRow = useRecordSnapshot(drawer.recordId, rows)
 
   return (
     // h-full, and every child but the table shrink-0: the shell hands this page a
@@ -280,7 +274,7 @@ export function SellerRefunds() {
                     // The whole row opens the record, as the design has it.
                     // Keyboard reaches the same thing through the action button,
                     // so this is a shortcut rather than the only way in.
-                    onClick={() => open(row)}
+                    onClick={() => drawer.open(row.id)}
                     className="cursor-pointer"
                   >
                     <TableCell className="font-mono text-xs text-muted-foreground">
@@ -318,7 +312,7 @@ export function SellerRefunds() {
                         variant={needsAction ? 'default' : 'outline'}
                         onClick={(e) => {
                           e.stopPropagation()
-                          open(row)
+                          drawer.open(row.id)
                         }}
                       >
                         {needsAction ? 'Review' : 'View'}
@@ -337,11 +331,9 @@ export function SellerRefunds() {
           "Full page" is a link to the dedicated route in a new tab - so the queue
           keeps its filter, page and scroll position behind it. */}
       <Drawer
-        open={Boolean(openId)}
+        open={drawer.isOpen}
         onOpenChange={(next) => {
-          if (next) return
-          setOpenId(null)
-          setOpenSnapshot(null)
+          if (!next) drawer.close()
         }}
         ariaLabel="Refund request"
         // 560 is the design's panel width for this screen, wider than the 520 a

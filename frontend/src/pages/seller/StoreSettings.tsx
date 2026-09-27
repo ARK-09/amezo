@@ -370,7 +370,10 @@ export function StoreSettings() {
         </p>
       )}
 
-      <div className="mt-5 flex flex-wrap items-start gap-6">
+      {/* pb-6 restores the gutter the action bar's -mb-6 takes away. Without it the
+          last section ends flush against the bar, because the shell's bottom padding
+          now sits BELOW the bar rather than between the two. */}
+      <div className="mt-5 flex flex-wrap items-start gap-6 pb-6">
         <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-4">
           {/* Branding sits outside the draft: an upload is live the moment it is
               confirmed, so there is nothing for Save changes to carry and nothing
@@ -588,8 +591,20 @@ export function StoreSettings() {
 
       {/* The action bar. -mx-6/-mb-6 cancel the portal shell's gutter so it spans
           the content well and sits flush against its bottom edge, which is what
-          lets it stay legible over the form scrolling underneath. */}
-      <div className="sticky bottom-0 -mx-6 -mb-6 mt-auto flex flex-wrap items-center justify-between gap-3 border-t bg-background px-6 py-3.5">
+          lets it stay legible over the form scrolling underneath.
+
+          -bottom-6, not bottom-0, and that is the fix for the bar covering the end
+          of the form. A sticky element's offset is measured from the SCROLLPORT'S
+          PADDING BOX, and the shell's well has 24px of bottom padding - so bottom-0
+          stuck the bar 24px above the bottom of the well while -mb-6 put its resting
+          place at the very bottom. The two disagreed by exactly that 24px, which the
+          bar spent covering the last 24px of the form: at the end of the scroll the
+          Visibility options were still clipped by it, with a dead 24px strip showing
+          underneath. Offsetting the stuck position by the same 24px makes stuck and
+          resting the same place, so the bar never moves and never covers anything at
+          the end. Measured, not guessed - see the note on pb-6 above for the other
+          half. */}
+      <div className="sticky -bottom-6 -mx-6 -mb-6 mt-auto flex flex-wrap items-center justify-between gap-3 border-t bg-background px-6 py-3.5">
         <p className="text-[13px] text-muted-foreground">
           {missing.length > 0
             ? `Still needs ${missing.join(' and ')}.`

@@ -43,7 +43,7 @@ public class ProductController {
             // bookmarked URL sorts oddly instead of 400ing at the buyer.
             @RequestParam(required = false, defaultValue = "relevance") String sort,
             Pageable pageable) {
-        return productService.search(q, category, priceMin, priceMax, inStockOnly, sort, pageable);
+        return productService.search(q, category, null, priceMin, priceMax, inStockOnly, sort, pageable);
     }
 
     /**

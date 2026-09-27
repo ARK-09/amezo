@@ -1,6 +1,6 @@
 import { ShoppingBag } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router'
+import { Navigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,31 +8,19 @@ import { useRequestMagicLink } from '@/features/seller-portal/api/useSellerAuth'
 import { useSellerAuth } from '@/features/seller-portal/context/SellerAuthContext'
 import { apiErrorMessage } from '@/lib/api/transient'
 
-// The Vercel demo has no real backend to send/verify a magic-link email, so
-// this flag (only set in .env.production) skips straight to a mocked
-// session on submit - no token, no verify step. Real flow (below) is
-// untouched for dev/test. SellerPortalLayout shows a banner off the same flag.
-const DEMO_AUTH = import.meta.env.VITE_DEMO_SELLER_AUTH === 'true'
-
 export function SellerSignIn() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const { mutate, isPending, isError, error } = useRequestMagicLink()
-  const { seller, signIn } = useSellerAuth()
-  const navigate = useNavigate()
+  const { seller } = useSellerAuth()
 
+  // One path, the real one: ask for a link, then say so. The bypass that used to
+  // sit here signed the seller in on the spot with a fabricated session
+  // (crypto.randomUUID and the typed email, no cookie), which the rest of the app -
+  // the landing page included - then read as a signed-in seller.
   function submit(e: FormEvent) {
     e.preventDefault()
-    mutate(email, {
-      onSuccess: () => {
-        if (DEMO_AUTH) {
-          signIn({ sellerId: crypto.randomUUID(), email })
-          navigate('/seller/products', { replace: true })
-          return
-        }
-        setSent(true)
-      },
-    })
+    mutate(email, { onSuccess: () => setSent(true) })
   }
 
   // Already signed in: nobody needs to be asked for an email they've already

@@ -94,6 +94,24 @@ public class Order {
     @Column(name = "shipped_at")
     private Instant shippedAt;
 
+    /**
+     * When the seller marked it packed, and how many parcels they boxed it into
+     * (V24). Both null until they do, and parcels stays null even afterwards if they
+     * did not say - the contract does not require a count, and a 1 invented on their
+     * behalf would be this server asserting something nobody told it.
+     */
+    @Column(name = "packed_at")
+    private Instant packedAt;
+
+    private Integer parcels;
+
+    /**
+     * Set when a seller cancels an order that had not shipped, alongside restoring
+     * the reserved stock. There is no money to reverse: checkout takes no payment.
+     */
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
     @CreationTimestamp
     @Column(name = "placed_at", nullable = false, updatable = false)
     private Instant placedAt;

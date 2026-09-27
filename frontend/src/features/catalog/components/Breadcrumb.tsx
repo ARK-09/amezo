@@ -1,19 +1,8 @@
 import { ChevronRight } from 'lucide-react'
 import { Link } from 'react-router'
 
+import { storeLabel, storePath, type StoreRef } from '@/features/catalog/storeLink'
 import type { Category } from '@/features/reference/api/useCategories'
-import type { components } from '@/lib/api/schema'
-
-type StoreRef = components['schemas']['StoreRef']
-
-/**
- * Where the store crumb points. By handle when the product names its store; without
- * one it falls back to the display name, which /stores resolves and redirects. The
- * handle is the server's to mint, so a slugified guess at it would be a dead link.
- */
-function storePath(brandName: string, store: StoreRef | null | undefined): string {
-  return store ? `/stores/${store.handle}` : `/stores/${encodeURIComponent(brandName)}`
-}
 
 export function Breadcrumb({
   category,
@@ -22,27 +11,34 @@ export function Breadcrumb({
   title,
 }: {
   category: Category
-  /** Null for a product with no brand - the crumb is simply left out. */
+  /** The product's brand. Only the fallback name for the shop crumb - see storeLink. */
   brandName: string | null
-  /** The store that lists the product. Optional in the contract, so the link copes. */
+  /** The store that lists the product. Optional in the contract, so the crumb copes. */
   store?: StoreRef | null
   title: string
 }) {
-  const crumbs = [
+  // The crumb names the shop and navigates to it, which is what the design's crumb
+  // does - it links to the storefront. `to` is null for a store that has no handle
+  // yet, and the crumb then reads as text rather than as a link to nowhere.
+  const shop = storeLabel(store, brandName)
+  const crumbs: { label: string; to: string | null }[] = [
     { label: 'Home', to: '/' },
     // The crumb reads as the category's name and navigates by its slug.
     { label: category.name, to: `/search?category=${encodeURIComponent(category.slug)}` },
-    // Same shape for the store: it reads as the display name and navigates by handle.
-    ...(brandName ? [{ label: brandName, to: storePath(brandName, store) }] : []),
+    ...(shop ? [{ label: shop, to: storePath(store, brandName) }] : []),
   ]
 
   return (
     <nav className="mb-5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
       {crumbs.map((crumb) => (
         <span key={crumb.label} className="flex items-center gap-2">
-          <Link to={crumb.to} className="hover:text-primary">
-            {crumb.label}
-          </Link>
+          {crumb.to ? (
+            <Link to={crumb.to} className="hover:text-primary">
+              {crumb.label}
+            </Link>
+          ) : (
+            <span>{crumb.label}</span>
+          )}
           <ChevronRight className="size-3.5" />
         </span>
       ))}
