@@ -8,8 +8,10 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createAppQueryClient } from '@/lib/api/queryClient'
 import {
   addSellerProduct,
+  findSellerProductDetail,
   resetSellerProductDetails,
   resetSellerProducts,
+  setProductOpenOrders,
 } from '@/test/msw/fixtures/sellerProducts'
 import { server } from '@/test/msw/server'
 
@@ -296,7 +298,7 @@ describe('SellerProducts', () => {
     expect(asked.every((size) => size === '5')).toBe(true)
   })
 
-  it('opens the edit drawer and expands it in place, with a way back', async () => {
+  it('offers Full page from the edit drawer, pointing at the listing own route', async () => {
     seed()
     renderPage()
     await screen.findByText('Trail Backpack')
@@ -304,13 +306,47 @@ describe('SellerProducts', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
 
     const drawer = await screen.findByRole('dialog', { name: 'Product form' })
-    // A button, not a link: expanding keeps the same panel mounted so nothing
-    // typed into the form is lost, where the old link opened a new browser tab.
-    await userEvent.click(within(drawer).getByRole('button', { name: /Full page/ }))
-    expect(within(drawer).getByRole('button', { name: /Back to panel/ })).toBeInTheDocument()
+    // A link in a new tab, not an in-place expand: the list keeps the filter and
+    // the page the seller was on, and the listing gets a URL of its own.
+    expect(within(drawer).getByRole('link', { name: 'Full page' })).toHaveAttribute(
+      'href',
+      '/seller/products/p1',
+    )
+  })
 
-    await userEvent.click(within(drawer).getByRole('button', { name: /Back to panel/ }))
-    expect(within(drawer).getByRole('button', { name: /Full page/ })).toBeInTheDocument()
+  it('offers Full page from the add drawer too, pointing at the new-product route', async () => {
+    seed()
+    renderPage()
+    await screen.findByText('Trail Backpack')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add product' }))
+
+    const drawer = await screen.findByRole('dialog', { name: 'Product form' })
+    expect(within(drawer).getByRole('link', { name: 'Full page' })).toHaveAttribute(
+      'href',
+      '/seller/products/new',
+    )
+  })
+
+  /**
+   * The design draws the table and its pager as one bordered box whose rows
+   * scroll inside it. They were two siblings with the pager floating under the
+   * border, and a long page grew a second scrollbar on the portal shell.
+   */
+  it('renders the table and its pagination inside one container', async () => {
+    seedMany(8)
+    renderPage()
+    await screen.findByText('Item 1')
+
+    const container = document.querySelector('[data-slot="table-container"]')
+    expect(container).not.toBeNull()
+    expect(container).toContainElement(screen.getByRole('table'))
+    expect(container).toContainElement(screen.getByRole('navigation', { name: 'pagination' }))
+    expect(container).toContainElement(screen.getByText('Showing 1–5 of 8'))
+    // The rows scroll, not the page: the scroll boundary is inside the border.
+    expect(container?.querySelector('[data-slot="table-scroll"]')).toContainElement(
+      screen.getByRole('table'),
+    )
   })
 
   it('opens the view drawer when a row is clicked, and swaps to the form from it', async () => {
@@ -325,5 +361,104 @@ describe('SellerProducts', () => {
     await userEvent.click(within(view).getByRole('button', { name: 'Edit product' }))
     // A mode swap between two drawers, not a tab inside one.
     expect(await screen.findByRole('dialog', { name: 'Product form' })).toBeInTheDocument()
+  })
+
+  it('offers Full page from the view drawer as well as the two form modes', async () => {
+    seed()
+    renderPage()
+
+    await userEvent.click(await screen.findByText('Trail Backpack'))
+
+    const view = await screen.findByRole('dialog', { name: 'Product details' })
+    expect(within(view).getByRole('link', { name: 'Full page' })).toHaveAttribute(
+      'href',
+      '/seller/products/p1',
+    )
+  })
+
+  it('carries the status pill in the view drawer header, above the title', async () => {
+    seed()
+    renderPage()
+
+    await userEvent.click(await screen.findByText('Trail Backpack'))
+
+    const view = await screen.findByRole('dialog', { name: 'Product details' })
+    const heading = within(view).getByRole('heading', { name: 'Trail Backpack' })
+    const pill = within(view).getByText('Active')
+    // Before the title in document order, which is where the design puts it.
+    expect(pill.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('links each open order in the view drawer to the order itself', async () => {
+    seed()
+    setProductOpenOrders('p1', {
+      openOrderCount: 1,
+      reservedUnits: 2,
+      orders: [
+        {
+          orderId: 'ord-77',
+          orderLineId: 'line-1',
+          buyerEmail: 'm.okafor@example.com',
+          variantId: 'v1',
+          variantLabel: 'Small',
+          quantity: 2,
+          status: 'PLACED',
+          placedAt: '2026-01-02T00:00:00Z',
+        },
+      ],
+    })
+    renderPage()
+
+    await userEvent.click(await screen.findByText('Trail Backpack'))
+    const view = await screen.findByRole('dialog', { name: 'Product details' })
+
+    expect(
+      await within(view).findByRole('link', { name: /Open order ord-77 from m.okafor@example.com/ }),
+    ).toHaveAttribute('href', '/seller/orders/ord-77')
+  })
+
+  it('puts the edit drawer status control in the header and its only Save in the footer', async () => {
+    seed()
+    renderPage()
+    await screen.findByText('Trail Backpack')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    const drawer = await screen.findByRole('dialog', { name: 'Product form' })
+    await within(drawer).findByDisplayValue('Trail Backpack')
+
+    // The Active/Draft control sits beside Full page, not inside a form section.
+    const status = within(drawer).getByRole('radiogroup', { name: 'Listing status' })
+    const fullPage = within(drawer).getByRole('link', { name: 'Full page' })
+    expect(status.compareDocumentPosition(fullPage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // One save for the whole listing - the sections have none of their own.
+    expect(within(drawer).getAllByRole('button', { name: /^Save/ })).toHaveLength(1)
+    expect(within(drawer).getByRole('button', { name: 'Save changes' })).toBeDisabled()
+    expect(within(drawer).getByText('No changes yet')).toBeInTheDocument()
+  })
+
+  it('saves the whole listing from the drawer footer and says so on the list', async () => {
+    seed()
+    renderPage()
+    await screen.findByText('Trail Backpack')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    const drawer = await screen.findByRole('dialog', { name: 'Product form' })
+    const title = await within(drawer).findByDisplayValue('Trail Backpack')
+
+    await userEvent.clear(title)
+    await userEvent.type(title, 'Trail Backpack 40L')
+    await userEvent.clear(within(drawer).getByLabelText('Variant 1 stock quantity'))
+    await userEvent.type(within(drawer).getByLabelText('Variant 1 stock quantity'), '9')
+
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Save changes' }))
+
+    expect(await screen.findByText('Saved changes to Trail Backpack 40L.')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Product form' })).not.toBeInTheDocument(),
+    )
+    const saved = findSellerProductDetail('p1')!
+    expect(saved.title).toBe('Trail Backpack 40L')
+    expect(saved.variants[0].stockQty).toBe(9)
   })
 })

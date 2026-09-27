@@ -70,6 +70,17 @@ const ACTION_LABEL: Record<string, string> = {
   REPLACEMENT_SENT: 'Mark replacement sent',
 }
 
+/**
+ * Whether the approval can still be walked back. The mirror of the server's
+ * RefundTransitions.isUndo, and the reason the design's "Undo approval" is only
+ * drawn on the "Approved · waiting on the return" panel: once the buyer has posted
+ * the item back (RETURN_RECEIVED) unwinding the approval would strand it, and the
+ * server answers 409.
+ */
+function canUndoApproval(request: RefundRequestDetail): boolean {
+  return request.status === 'APPROVED' || request.status === 'AWAITING_RETURN'
+}
+
 /** The heading and line above whatever is left to do after the decision. */
 function progressCopy(request: RefundRequestDetail): { title: string; note: string } {
   const held = formatPrice(request.approvedAmount ?? request.requestedAmount)
@@ -119,7 +130,21 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
  * Rendered in the refunds list's drawer and at its own route, same as the
  * product and order panels.
  */
-export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: string }) {
+export function RefundDecisionPanel({
+  refundRequestId,
+  showIdentity = true,
+}: {
+  refundRequestId: string
+  /**
+   * Draw the status pill, the reference and the amount at the top.
+   *
+   * True at the dedicated route, where nothing else says which request this is.
+   * False inside the refunds drawer, whose own header already carries the status
+   * and the reference - rendering both put the same pill on screen twice, one
+   * above the other.
+   */
+  showIdentity?: boolean
+}) {
   const query = useRefundRequest(refundRequestId)
   const update = useUpdateRefundRequest(refundRequestId)
 
@@ -135,7 +160,10 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
   const [seededFrom, setSeededFrom] = useState<string | null>(null)
   if (query.data && seededFrom !== query.data.id) {
     setSeededFrom(query.data.id)
-    setMode(query.data.resolution === 'REPLACEMENT' ? 'replacement' : 'approve')
+    // The mode opens on what the BUYER asked for, which is the decision the seller
+    // is being asked to make. `resolution` would be the seller's own last answer.
+    const wanted = query.data.requestedResolution ?? query.data.resolution
+    setMode(wanted === 'REPLACEMENT' ? 'replacement' : 'approve')
     setAmount(String(query.data.requestedAmount))
     setNote('')
   }
@@ -164,6 +192,9 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
   }
 
   const request = query.data
+  // What the buyer asked for. Older records predate the field, so it falls back to
+  // the current resolution - which for an undecided request is the same thing.
+  const asked: RefundResolution = request.requestedResolution ?? request.resolution
   const actions = nextActions(request)
   const progress = progressCopy(request)
   const amountValue = amount === '' ? request.requestedAmount : Number(amount)
@@ -191,7 +222,12 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
     update.mutate({
       status,
       ...extra,
-      ...(status === 'APPROVED' ? { approvedAmount: amountValue } : {}),
+      // Both approvals carry the amount. AWAITING_RETURN is how a refund is
+      // approved and APPROVED is how a replacement is - listing only one of them
+      // here is what would silently drop a partial amount on the other.
+      ...(status === 'APPROVED' || status === 'AWAITING_RETURN'
+        ? { approvedAmount: amountValue }
+        : {}),
       ...(status === 'DECLINED' ? { declineReason: reason } : {}),
       ...(note.trim() ? { note: note.trim() } : {}),
     })
@@ -216,25 +252,32 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <StatusBadge status={request.status} />
-        <span className="font-mono text-xs text-muted-foreground">{request.reference}</span>
-        <span className="ml-auto text-sm font-semibold tabular-nums">
-          {formatPrice(request.approvedAmount ?? request.requestedAmount)}
-        </span>
-      </div>
+      {showIdentity && (
+        <div className="flex flex-wrap items-center gap-3">
+          <StatusBadge status={request.status} />
+          <span className="font-mono text-xs text-muted-foreground">{request.reference}</span>
+          <span className="ml-auto text-sm font-semibold tabular-nums">
+            {formatPrice(request.approvedAmount ?? request.requestedAmount)}
+          </span>
+        </div>
+      )}
 
       <ProgressSteps steps={refundStepsFor(request)} />
 
-      <section>
-        <SectionLabel>Buyer</SectionLabel>
-        <p className="mt-2 text-sm font-medium">{request.buyerName ?? 'Buyer'}</p>
-        <p className="text-[13px] text-muted-foreground">{request.buyerEmail}</p>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          Order {request.orderReference} · placed {formatMediumDate(request.orderPlacedAt)} ·
-          requested {formatMediumDate(request.requestedAt)}
-        </p>
-      </section>
+      {/* Same reason as the identity row above: inside the drawer the header
+          already names the buyer, their email and the order, so this repeated it
+          three lines further down. The dedicated page has no such header. */}
+      {showIdentity && (
+        <section>
+          <SectionLabel>Buyer</SectionLabel>
+          <p className="mt-2 text-sm font-medium">{request.buyerName ?? 'Buyer'}</p>
+          <p className="text-[13px] text-muted-foreground">{request.buyerEmail}</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            Order {request.orderReference} · placed {formatMediumDate(request.orderPlacedAt)} ·
+            requested {formatMediumDate(request.requestedAt)}
+          </p>
+        </section>
+      )}
 
       <section>
         <SectionLabel>What they said</SectionLabel>
@@ -243,14 +286,29 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
             from them and then shown to nobody. */}
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t pt-3 text-[13px] text-muted-foreground">
           <span>
+            {/* The buyer's own ask, not the seller's answer to it. Those can
+                differ - a replacement request can be settled with money - and
+                reading `resolution` here made the panel claim the buyer had asked
+                for whatever the seller last chose. */}
             Wants{' '}
             <span className="font-semibold text-foreground">
-              {request.resolution === 'REPLACEMENT' ? 'Replacement' : 'Refund'}
+              {asked === 'REPLACEMENT' ? 'Replacement' : 'Refund'}
             </span>
           </span>
-          {request.resolution === 'REFUND' && (
+          {request.payout != null && (
             <span>
               Refund to <span className="font-semibold text-foreground">{payoutLabel(request)}</span>
+            </span>
+          )}
+          {/* Only when the seller has answered differently, so the row is absent
+              on the overwhelming majority of requests rather than repeating the
+              line above. */}
+          {asked !== request.resolution && (
+            <span>
+              Being settled as{' '}
+              <span className="font-semibold text-foreground">
+                {request.resolution === 'REPLACEMENT' ? 'a replacement' : 'a refund'}
+              </span>
             </span>
           )}
         </div>
@@ -277,6 +335,15 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
               </span>
             </div>
           ))}
+          {/* The design's bold total under the item table. It is the number the
+              decision is about, and without it the panel showed per-line amounts
+              and left the seller to add them up. */}
+          <div className="flex items-center justify-between gap-3 border-t p-3">
+            <span className="text-[15px] font-bold">Requested</span>
+            <span className="text-[15px] font-bold tabular-nums">
+              {formatPrice(request.requestedAmount)}
+            </span>
+          </div>
         </div>
       </section>
 
@@ -337,12 +404,19 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
+              {/* AWAITING_RETURN, not APPROVED: approving a refund asks for the
+                  item back, so the request lands in the bucket the queue calls
+                  "Awaiting return". APPROVED is where a REPLACEMENT approval
+                  lands, because there is nothing to wait for - which is why the
+                  server accepts both as direct moves from REQUESTED. */}
               <Button
                 className="mt-2.5 self-start"
                 disabled={update.isPending || !amountOk}
-                onClick={() => act('APPROVED', resolutionPatch)}
+                onClick={() => act('AWAITING_RETURN', resolutionPatch)}
               >
-                Approve and request return
+                {amountOk
+                  ? `Approve ${formatPrice(amountValue)} and request return`
+                  : 'Approve and request return'}
               </Button>
             </TabsContent>
 
@@ -420,12 +494,8 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
         </section>
       )}
 
-      {/* The design also offers "Undo approval" here. Nothing legal walks an
-          approved request back to REQUESTED - APPROVED only moves forward, and
-          CANCELLED is the buyer's, from REQUESTED - so it is left out rather
-          than shipped as a button that 409s. */}
       {request.status !== 'REQUESTED' && actions.length > 0 && (
-        <section className="rounded-xl border p-5">
+        <section className="rounded-xl border border-primary/30 bg-primary/[0.03] p-5">
           <h3 className="text-sm font-bold">{progress.title}</h3>
           <p className="mt-1.5 text-sm text-muted-foreground">{progress.note}</p>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -434,6 +504,23 @@ export function RefundDecisionPanel({ refundRequestId }: { refundRequestId: stri
                 {ACTION_LABEL[action]}
               </Button>
             ))}
+
+            {/* "Undo approval", as the design draws it beside the release button.
+                It used to be left out on the grounds that nothing legal walked an
+                approved request back - the refund state machine now has that
+                transition, because an approval is a promise about money and the
+                alternative was a seller releasing one they never meant to make.
+                The server clears the amount, the date and the return reference
+                with it, and refuses it once the return has arrived. */}
+            {canUndoApproval(request) && (
+              <Button
+                variant="outline"
+                disabled={update.isPending}
+                onClick={() => act('REQUESTED')}
+              >
+                Undo approval
+              </Button>
+            )}
           </div>
 
           {update.isError && (

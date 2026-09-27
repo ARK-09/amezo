@@ -1,4 +1,5 @@
 import { ImageOff } from 'lucide-react'
+import { Link } from 'react-router'
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProductOpenOrders } from '@/features/seller-portal/api/useSellerCatalog'
@@ -189,9 +190,15 @@ function ActiveOrders({ productId }: { productId: string }) {
         )}
 
         {orders.map((order) => (
-          <div
+          // A link, not a row of text. The reason a seller reads this list is
+          // to go and do something about one of these orders, and the order has
+          // a page of its own; leaving the id to be copied into the orders
+          // screen by hand was the only way through before.
+          <Link
             key={order.orderLineId}
-            className="flex flex-wrap items-center gap-2.5 border-b px-3 py-2.5 last:border-b-0"
+            to={`/seller/orders/${order.orderId}`}
+            aria-label={`Open order ${order.orderId.slice(0, 8)} from ${order.buyerEmail}`}
+            className="flex flex-wrap items-center gap-2.5 border-b px-3 py-2.5 text-foreground transition-colors last:border-b-0 hover:bg-muted/60 hover:text-foreground"
           >
             {/* The order id's leading block, which is what the seller quotes and
                 searches by - the whole uuid is unreadable at this size. */}
@@ -205,7 +212,7 @@ function ActiveOrders({ productId }: { productId: string }) {
               {order.variantLabel ? `${order.quantity} × ${order.variantLabel}` : `${order.quantity} ×`}
             </span>
             <StatusBadge status={order.status} className="shrink-0" />
-          </div>
+          </Link>
         ))}
       </div>
     </section>

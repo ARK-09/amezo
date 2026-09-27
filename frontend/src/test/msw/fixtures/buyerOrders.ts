@@ -146,6 +146,202 @@ const SEED_ORDERS: Record<string, StoredBuyerOrder> = {
     payment: null,
     refundWindowEndsAt: '2026-10-16T09:00:00Z',
   },
+  // The four below exist so the states the design draws are reachable by opening
+  // the app rather than only by a test stubbing the endpoint: a cancelled order, an
+  // order of more than one line (which is what "+1 more" and "Review these items"
+  // need), one outside the twelve-month window the select opens on, and a second
+  // in-progress order - six in all, so a ?size=5 has a second page.
+  'order-3333': {
+    id: 'order-3333',
+    reference: 'ord_af6218d3',
+    placedAt: '2026-08-11T09:00:00Z',
+    status: 'CANCELLED',
+    seller: SELLER,
+    lines: [
+      {
+        id: 'line-3333-a',
+        productRef: 'trail-running-shoes',
+        productTitle: 'Trail Running Shoes',
+        variantLabel: 'UK 9',
+        thumbnailUrl: null,
+        quantity: 1,
+        unitPrice: 119,
+        lineTotal: 119,
+      },
+    ],
+    subtotal: 119,
+    shipping: 0,
+    tax: 11.9,
+    total: 130.9,
+    currency: 'USD',
+    // A cancelled order never left the seller, and OrderTimelineEntry has no code
+    // for cancellation, so its timeline is the one stage that did happen.
+    timeline: [
+      {
+        code: 'PLACED',
+        label: 'Order placed',
+        at: '2026-08-11T09:00:00Z',
+        estimated: false,
+        completed: true,
+        detail: null,
+      },
+    ],
+    shipment: {
+      carrier: null,
+      trackingNumber: null,
+      trackingUrl: null,
+      estimatedDeliveryAt: null,
+      deliveredAt: null,
+      deliveryNote: 'Cancelled before dispatch',
+    },
+    shippingAddress: ADDRESS,
+    billingAddress: null,
+    payment: null,
+    refundWindowEndsAt: null,
+  },
+  'order-4444': {
+    id: 'order-4444',
+    reference: 'ord_e0417cc6',
+    placedAt: '2026-05-02T09:00:00Z',
+    status: 'DELIVERED',
+    seller: SELLER,
+    lines: [
+      {
+        id: 'line-4444-a',
+        productRef: 'ceramic-non-stick-cookware-set-10-piece',
+        productTitle: 'Ceramic Non-Stick Cookware Set (10-piece)',
+        variantLabel: 'Slate',
+        thumbnailUrl: null,
+        quantity: 1,
+        unitPrice: 189,
+        lineTotal: 189,
+      },
+      {
+        id: 'line-4444-b',
+        productRef: 'stainless-steel-water-bottle-32oz',
+        productTitle: 'Stainless Steel Water Bottle, 32oz',
+        variantLabel: 'Brushed',
+        thumbnailUrl: null,
+        quantity: 2,
+        unitPrice: 32,
+        lineTotal: 64,
+      },
+    ],
+    subtotal: 253,
+    shipping: 6,
+    tax: 25.3,
+    total: 284.3,
+    currency: 'USD',
+    timeline: timeline(4, [
+      '2026-05-02T09:00:00Z',
+      '2026-05-03T09:00:00Z',
+      '2026-05-03T09:00:00Z',
+      '2026-05-06T09:00:00Z',
+    ]),
+    shipment: {
+      carrier: null,
+      trackingNumber: null,
+      trackingUrl: null,
+      estimatedDeliveryAt: null,
+      deliveredAt: '2026-05-06T09:00:00Z',
+      deliveryNote: 'Handed to resident',
+    },
+    shippingAddress: ADDRESS,
+    billingAddress: null,
+    payment: null,
+    refundWindowEndsAt: '2026-06-05T09:00:00Z',
+  },
+  'order-5555': {
+    id: 'order-5555',
+    reference: 'ord_66de1a09',
+    placedAt: '2025-06-14T09:00:00Z',
+    status: 'DELIVERED',
+    seller: SELLER,
+    lines: [
+      {
+        // The same product order-2222 carries, but a year earlier: the two never
+        // appear in the same date window, so neither title is ever ambiguous.
+        id: 'line-5555-a',
+        productRef: '14-ultrabook-laptop-16gb-ram',
+        productTitle: '14" Ultrabook Laptop, 16GB RAM',
+        variantLabel: 'Graphite',
+        thumbnailUrl: null,
+        quantity: 1,
+        unitPrice: 799,
+        lineTotal: 799,
+      },
+    ],
+    subtotal: 799,
+    shipping: 6,
+    tax: 79.9,
+    total: 884.9,
+    currency: 'USD',
+    timeline: timeline(4, [
+      '2025-06-14T09:00:00Z',
+      '2025-06-15T09:00:00Z',
+      '2025-06-16T09:00:00Z',
+      '2025-06-19T09:00:00Z',
+    ]),
+    shipment: {
+      carrier: null,
+      trackingNumber: null,
+      trackingUrl: null,
+      estimatedDeliveryAt: null,
+      deliveredAt: '2025-06-19T09:00:00Z',
+      deliveryNote: 'Left in the parcel locker',
+    },
+    shippingAddress: ADDRESS,
+    billingAddress: null,
+    payment: null,
+    refundWindowEndsAt: '2025-07-19T09:00:00Z',
+  },
+  'order-6666': {
+    id: 'order-6666',
+    reference: 'ord_2c9a6f40',
+    placedAt: '2026-09-20T09:00:00Z',
+    status: 'SHIPPED',
+    seller: SELLER,
+    lines: [
+      {
+        // Deliberately not one of the products the orders above carry: a title
+        // that appears on two cards at once makes every test that reaches for a
+        // card by what is in it ambiguous.
+        id: 'line-6666-a',
+        productRef: 'mechanical-keyboard-hot-swappable',
+        productTitle: 'Mechanical Keyboard, Hot-Swappable',
+        variantLabel: 'Black',
+        thumbnailUrl: null,
+        quantity: 1,
+        unitPrice: 149,
+        lineTotal: 149,
+      },
+    ],
+    subtotal: 149,
+    shipping: 0,
+    tax: 14.9,
+    total: 163.9,
+    currency: 'USD',
+    timeline: timeline(3, [
+      '2026-09-20T09:00:00Z',
+      '2026-09-21T09:00:00Z',
+      '2026-09-22T09:00:00Z',
+      '2026-09-29T09:00:00Z',
+    ]),
+    shipment: {
+      carrier: 'Amezo Express',
+      trackingNumber: '1Z-5518-2043',
+      // Null like every other shipment here: nothing in the fixtures knows a
+      // real carrier URL, and inventing one would be a link to nowhere.
+      trackingUrl: null,
+      estimatedDeliveryAt: '2026-09-29T09:00:00Z',
+      deliveredAt: null,
+      deliveryNote: null,
+    },
+    shippingAddress: ADDRESS,
+    billingAddress: null,
+    payment: null,
+    refundWindowEndsAt: null,
+  },
 }
 
 let orders: Record<string, StoredBuyerOrder> = structuredClone(SEED_ORDERS)
@@ -233,8 +429,16 @@ function summaryOf(order: StoredBuyerOrder): BuyerOrderSummary {
   }
 }
 
+/** "newest first", as the contract says - not the order the seed happens to be in. */
 export function listBuyerOrders(): BuyerOrderSummary[] {
-  return Object.values(orders).map(summaryOf)
+  return Object.values(orders)
+    .map(summaryOf)
+    .sort((a, b) => b.placedAt.localeCompare(a.placedAt))
+}
+
+/** Whether this order is the signed-in buyer's, which is every order in here. */
+export function isBuyerOrderId(orderId: string): boolean {
+  return orderId in orders
 }
 
 /**
@@ -248,3 +452,33 @@ export function inBuyerGroup(order: BuyerOrderSummary, group: string): boolean {
   if (group === 'refunds') return Boolean(order.openRefundRequestId)
   return true
 }
+
+/**
+ * What ?q= searches, shared by the list and its facets. They used to disagree -
+ * the list matched product titles and the facets matched the seller's name - so a
+ * term could show two orders under a tab that counted none of them. "Order number
+ * or product name", as the box says, so the seller's name is in neither now.
+ */
+export function matchesBuyerQuery(order: BuyerOrderSummary, q: string | null | undefined): boolean {
+  if (!q) return true
+  const haystack = [
+    order.reference,
+    ...(order.previewLines ?? []).flatMap((line) => [line.productTitle, line.variantLabel]),
+  ]
+    .join(' ')
+    .toLowerCase()
+  return haystack.includes(q.toLowerCase())
+}
+
+/** `from`/`to` are plain dates in the contract, and placedAt is a timestamp. */
+export function inBuyerDateRange(
+  order: BuyerOrderSummary,
+  from: string | null,
+  to: string | null,
+): boolean {
+  const day = order.placedAt.slice(0, 10)
+  if (from && day < from) return false
+  if (to && day > to) return false
+  return true
+}
+

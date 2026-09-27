@@ -95,7 +95,12 @@ class ReviewWriteApiTest {
                         .content("{\"orderLineId\":\"11111111-1111-1111-1111-111111111111\",\"rating\":5}"))
                 .andExpect(status().isUnauthorized());
 
-        assertThat(reviewRepository.count()).isZero();
+        // Scoped to the line this call named, not the whole table: siblings in
+        // this class write reviews legitimately and the database is shared with
+        // no rollback, so a global count asserts their behaviour, not this one's.
+        assertThat(reviewRepository.findAll())
+                .noneMatch(review -> review.getOrderLineId()
+                        .equals(UUID.fromString("11111111-1111-1111-1111-111111111111")));
     }
 
     /**
@@ -143,7 +148,9 @@ class ReviewWriteApiTest {
                         .content("{\"orderLineId\":\"" + otherLine + "\",\"rating\":1,\"body\":\"Never bought it\"}"))
                 .andExpect(status().isForbidden());
 
-        assertThat(reviewRepository.count()).isZero();
+        // Scoped to the line the imposter named - see the note above.
+        assertThat(reviewRepository.findAll())
+                .noneMatch(review -> review.getOrderLineId().equals(otherLine));
     }
 
     @Test

@@ -122,10 +122,13 @@ describe('SellerRefunds', () => {
     expect(within(tab('Refunded')).getByText('0')).toBeInTheDocument()
     expect(within(tab('All')).getByText('5')).toBeInTheDocument()
 
-    expect(screen.getByText('3 waiting on you · 5 requests total')).toBeInTheDocument()
+    // The design's own header line, which can be written in full now that the
+    // endpoint totals each bucket's money rather than sending null.
+    expect(screen.getByText(/3 waiting on you · \$[\d,.]+ at stake/)).toBeInTheDocument()
 
-    // Refund buckets have no money to total, so no tab claims one.
-    expect(tab('Needs a decision')).not.toHaveTextContent('$')
+    // And each tab carries its bucket's money beside the count, as the design
+    // draws it.
+    expect(tab('Needs a decision')).toHaveTextContent('$')
   })
 
   it('keeps the counts on every bucket while one of them is being viewed', async () => {
@@ -241,17 +244,21 @@ describe('SellerRefunds', () => {
 
     const drawer = await screen.findByRole('dialog')
     expect(await within(drawer).findByText('Jonas Lindqvist')).toBeInTheDocument()
-    await userEvent.click(
-      within(drawer).getByRole('button', { name: 'Approve and request return' }),
-    )
+    // The button names the amount, as the design does.
+    await userEvent.click(within(drawer).getByRole('button', { name: /Approve \$259\.98/ }))
 
     // The drawer stays open on the request that was just acted on. It used to
     // be derived from the current page, so it closed on the seller the instant
     // their decision succeeded.
     const settled = await screen.findByRole('dialog')
-    // Once as the status badge, once as the completed step in the stepper, and
-    // once more in the History log the panel now keeps.
-    expect(await within(settled).findAllByText('Approved')).toHaveLength(3)
+    // Approving a refund lands on AWAITING_RETURN, not APPROVED: the approval asks
+    // for the item back, so there is a return to wait for. The panel then offers
+    // the two moves the design draws there.
+    expect(
+      await within(settled).findByText('Approved · waiting on the return'),
+    ).toBeInTheDocument()
+    expect(within(settled).getByRole('button', { name: 'Mark return received' })).toBeInTheDocument()
+    expect(within(settled).getByRole('button', { name: 'Undo approval' })).toBeInTheDocument()
 
     // Close it, and the approved request has left the "needs a decision" queue.
     // Asserted after closing because the drawer is modal - Radix marks the rest

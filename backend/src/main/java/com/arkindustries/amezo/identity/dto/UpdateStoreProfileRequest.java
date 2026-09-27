@@ -1,7 +1,9 @@
 package com.arkindustries.amezo.identity.dto;
 
+import com.arkindustries.amezo.common.json.PatchField;
 import com.arkindustries.amezo.identity.StoreHandles;
 import com.arkindustries.amezo.identity.StoreStatus;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -24,13 +26,21 @@ import jakarta.validation.constraints.Size;
  * tagline is a save of "" (see frontend/src/pages/seller/StoreSettings.tsx),
  * and rejecting it would make "remove my tagline" impossible.
  *
- * The two fields this shape cannot express: name and handle cannot be cleared
- * (they are required on StoreProfile and there is nothing to fall back to), and
- * foundedYear cannot be cleared either, because an Integer has no blank. That
- * last one is the cost of null-means-unchanged, the same cost
- * UpdateProductRequest documents for brandName; clearing it needs a wrapper
- * that distinguishes absent from explicit null, which nothing in the contract
- * or the portal asks for yet.
+ * name and handle still cannot be cleared, and that is intended: both are
+ * required on StoreProfile and there is nothing to fall back to.
+ *
+ * Three fields have no blank to spend and so carry a PatchField instead, which
+ * distinguishes "absent" from an explicit null (see that class):
+ *
+ *   - foundedYear, because an Integer has no empty string. The design's
+ *     "Selling since" box can be emptied and the storefront preview then reads
+ *     "New seller", so a seller who typed 2109 has to be able to take it back
+ *     out. Sending null clears it.
+ *   - coverUrl and logoUrl, which the contract itself marks `nullable: true`.
+ *     "Remove cover" sends null, and under plain null-means-unchanged that was a
+ *     silent no-op against the real API - it only looked like it worked because
+ *     the MSW mock merges the patch object literally. Blank still clears them
+ *     too, so both spellings work.
  */
 public record UpdateStoreProfileRequest(
         @Pattern(regexp = ".*\\S.*", message = "must not be blank") String name,
@@ -51,7 +61,14 @@ public record UpdateStoreProfileRequest(
 
         String tagline,
         String location,
-        Integer foundedYear,
+
+        /**
+         * Absent leaves the year as it is, null removes it, a number sets it.
+         * @Schema keeps /v3/api-docs printing the contract's `integer, nullable`
+         * rather than springdoc's introspection of the wrapper class.
+         */
+        @Schema(type = "integer", nullable = true)
+        PatchField<Integer> foundedYear,
 
         /**
          * Validated rather than stored as typed: this is printed on the
@@ -62,8 +79,15 @@ public record UpdateStoreProfileRequest(
         @Email(message = "must be a valid email address") String supportEmail,
 
         String about,
-        String coverUrl,
-        String logoUrl,
+
+        /** Written by the store-image confirm step; cleared by "Remove cover". */
+        @Schema(type = "string", nullable = true)
+        PatchField<String> coverUrl,
+
+        /** Written by the store-image confirm step; cleared by "Remove logo". */
+        @Schema(type = "string", nullable = true)
+        PatchField<String> logoUrl,
+
         StoreStatus status,
         String vacationNote
 ) {

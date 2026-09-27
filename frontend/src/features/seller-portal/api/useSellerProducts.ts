@@ -60,7 +60,16 @@ export interface StagedImageUpload {
   position: number
 }
 
-export async function uploadProductImage(productId: string, staged: StagedImageUpload) {
+/**
+ * Presign, PUT straight to storage, confirm. Returns the id the API minted for
+ * the image, which is what a caller that also has to state the gallery's final
+ * ordering needs - the reorder endpoint takes ids, and a freshly uploaded image
+ * has no other way to be named.
+ */
+export async function uploadProductImage(
+  productId: string,
+  staged: StagedImageUpload,
+): Promise<{ id: string }> {
   const { data: uploadUrlData, error: uploadUrlError } = await apiClient.POST(
     '/products/{productId}/images/upload-url',
     {
@@ -88,11 +97,47 @@ export async function uploadProductImage(productId: string, staged: StagedImageU
     body: { imageId: uploadUrlData.id },
   })
   if (confirmError) throw confirmError
+
+  return { id: uploadUrlData.id }
+}
+
+/**
+ * Reordering is the whole list in one write, which is what the endpoint takes:
+ * a per-image position would need two of them to express a swap, and the
+ * gallery would be wrong in between. The first id is the cover. The response is
+ * the renumbered list, so the cached product takes it as it stands instead of
+ * refetching for it.
+ */
+export function useReorderImages(productId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<SellerProductDetail['images'], ProblemDetail, string[]>({
+    mutationFn: async (imageIds) => {
+      const { data, error } = await apiClient.PUT('/api/v1/products/{productId}/images/order', {
+        params: { path: { productId } },
+        body: { imageIds },
+      })
+      if (error) throw error
+      return data
+    },
+    onSuccess: (images) => {
+      queryClient.setQueryData<SellerProductDetail>(
+        sellerProductKeys.detail(productId),
+        (current) => (current ? { ...current, images } : current),
+      )
+      // The list's thumbnail is the product's first image, so a new cover
+      // changes the row too.
+      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
+    },
+  })
 }
 
 export function useSellerProduct(productId: string) {
   return useQuery<SellerProductDetail, ProblemDetail>({
     queryKey: sellerProductKeys.detail(productId),
+    // The add form mounts the same controller with no product behind it; an
+    // empty id would otherwise GET /sellers/me/products/ and read as a 404 the
+    // seller never caused.
+    enabled: Boolean(productId),
     queryFn: async ({ signal }) => {
       const { data, error } = await apiClient.GET('/sellers/me/products/{productId}', {
         signal,
@@ -205,67 +250,6 @@ export function useDeleteImage(productId: string) {
       )
       // The list's thumbnail is the product's first image, so removing one can
       // change the row too.
-      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
-    },
-  })
-}
-
-export interface ImageUploadFailure {
-  fileName: string
-  error: ProblemDetail | Error
-}
-
-export interface ImageBatchUploadResult {
-  uploaded: number
-  failed: ImageUploadFailure[]
-}
-
-/**
- * Upload a batch of images to an existing product. Each file is the create page's
- * same three steps - presign, PUT straight to storage, confirm - and the detail
- * query is refetched afterwards because only the server knows the rows the
- * confirms created.
- *
- * Sequential on purpose. Every presign both reserves a row against the product's
- * 7-image cap and charges the deployment's storage budget, and the server checks
- * those per request; firing six presigns at once would race both checks. It also
- * keeps one slow file from stalling the others' progress reporting.
- *
- * Resolves even when some files fail, rather than throwing on the first one: five
- * pictures where the third is a 40 MB raw file should upload four, not zero, and
- * the caller needs to know which one to fix. A rejection here means the batch
- * itself could not be attempted.
- */
-export function useUploadImages(productId: string) {
-  const queryClient = useQueryClient()
-  return useMutation<
-    ImageBatchUploadResult,
-    ProblemDetail | Error,
-    { files: File[]; startPosition: number; onProgress?: (done: number, total: number) => void }
-  >({
-    mutationFn: async ({ files, startPosition, onProgress }) => {
-      const failed: ImageUploadFailure[] = []
-      let uploaded = 0
-
-      for (const file of files) {
-        try {
-          // Positions stay contiguous by counting successes, not attempts, so a
-          // file that fails doesn't leave a gap in the gallery ordering.
-          await uploadProductImage(productId, { file, position: startPosition + uploaded })
-          uploaded++
-        } catch (error) {
-          failed.push({ fileName: file.name, error: error as ProblemDetail | Error })
-        }
-        onProgress?.(uploaded + failed.length, files.length)
-      }
-
-      return { uploaded, failed }
-    },
-    onSuccess: ({ uploaded }) => {
-      // Nothing landed, so nothing to refetch - and refetching would only make
-      // the failure message flicker behind a reload of unchanged data.
-      if (uploaded === 0) return
-      void queryClient.invalidateQueries({ queryKey: sellerProductKeys.detail(productId) })
       void queryClient.invalidateQueries({ queryKey: sellerProductKeys.all })
     },
   })

@@ -13,9 +13,13 @@ export type DrawerMode = 'view' | 'edit' | 'add'
 
 export interface DrawerContextValue {
   mode: DrawerMode
-  expanded: boolean
-  /** Undefined when the caller did not opt into expanding. */
-  onExpandedChange?: (expanded: boolean) => void
+  /**
+   * The route of the dedicated page for whatever the drawer is showing, or
+   * undefined when there is no such page. The header turns it into the "Full
+   * page" control, which opens it in a new tab - so it is a route, not a
+   * callback: there is no state to hand over.
+   */
+  fullPageTo?: string
   close: () => void
 }
 

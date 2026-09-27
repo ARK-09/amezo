@@ -1,0 +1,25 @@
+-- Every query behind the buyer's My Orders page reads orders the same way: one
+-- buyer, newest first, optionally inside a window of placed_at. That is the
+-- list, its facet counts, and both of them again on every keystroke in the
+-- search box (OrderRepository.findForBuyerInWindow).
+--
+-- V9 indexed buyer_identity_id on its own, which finds the buyer's rows and then
+-- leaves Postgres sorting every one of them to answer "newest first" and
+-- filtering them row by row to find the twelve months asked for. A buyer's order
+-- history only grows; the window and the page size stay the same size.
+--
+-- Column order matters and is not arbitrary, the same reasoning V19 used for
+-- order_line: buyer_identity_id is always an equality test and placed_at is
+-- always a range AND the sort key, so the equality column has to come first for
+-- the range to be an index scan and the ordering to come free with it.
+--
+-- DESC to match the ORDER BY exactly. Postgres can scan a btree backwards, so an
+-- ASC index would also serve - but placed_at DESC, id DESC is the tie-broken
+-- order the query actually asks for, and matching it means the planner never has
+-- to choose.
+--
+-- idx_orders_buyer_identity_id (V9) is left in place. This index has that column
+-- as its prefix and could replace it, but dropping an index changes how every
+-- existing query plans, which is not what this migration is for.
+CREATE INDEX idx_orders_buyer_identity_placed_at
+    ON orders (buyer_identity_id, placed_at DESC, id DESC);

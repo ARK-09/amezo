@@ -88,18 +88,34 @@ class SellerStoreApiTest {
         assertThat(sellerStoreRepository.findBySellerId(seller.getId())).isPresent();
     }
 
-    /** A seller with a name on the account is named after it, not after their inbox. */
+    /**
+     * A seller with a name on the account is named after it, not after their inbox.
+     *
+     * The full name has to be one NO OTHER test in this class uses, and
+     * "Northwind Supply" - which this test used to use - was not: every method
+     * here shares one database with no rollback between them, and
+     * takenHandleIs409NamingTheField PATCHes a store's handle to
+     * northwind-supply. Whenever JUnit happened to run that method first,
+     * provisioning here found the handle taken, correctly de-duplicated to
+     * northwind-supply-2, and this assertion failed on behaviour that was right.
+     *
+     * Isolating the fixture rather than relaxing the assertion to a startsWith:
+     * the subject of THIS test is the derivation (full name in, slug out), and it
+     * has to be exact to mean anything. De-duplication firing is the subject of
+     * provisioningDeduplicatesACollidingHandle, which brings its own pair of
+     * colliding sellers and is the only place that behaviour should be visible.
+     */
     @Test
     void provisioningPrefersTheSellersFullName() throws Exception {
         Seller seller = sellerRepository.save(Seller.builder()
                 .email("named@example.com")
-                .fullName("Northwind Supply")
+                .fullName("Harbour Lane Ceramics")
                 .build());
 
         mockMvc.perform(get(STORE).cookie(cookieFor(seller)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("Northwind Supply"))
-                .andExpect(jsonPath("$.handle").value("northwind-supply"));
+                .andExpect(jsonPath("$.name").value("Harbour Lane Ceramics"))
+                .andExpect(jsonPath("$.handle").value("harbour-lane-ceramics"));
     }
 
     /** Provisioning happens once: the second read is the same store, not a new one. */

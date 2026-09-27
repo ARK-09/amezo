@@ -78,15 +78,17 @@ export function BrandingSection({
         : 'No cover yet — shoppers see a plain band above your logo.'
 
   return (
-    <section className="rounded-xl border p-6">
+    <section className="rounded-xl border p-5">
       <h2 className="text-[15px] font-bold">Branding</h2>
       <p className="mt-1 text-[13px] text-muted-foreground text-pretty">
         Cover and logo appear at the top of your store page and next to every product listing.
       </p>
 
       <div className="mt-4 flex flex-col gap-1.5">
-        <Label htmlFor="st-cover">Cover image</Label>
-        <div className="relative flex h-[150px] items-center justify-center overflow-hidden rounded-lg border border-dashed bg-muted/40">
+        <Label htmlFor="st-cover" className="text-[13px] font-semibold">
+          Cover image
+        </Label>
+        <div className="relative flex h-[150px] items-center justify-center overflow-hidden rounded-[10px] border border-dashed bg-muted/40">
           {profile.coverUrl ? (
             <img
               src={profile.coverUrl}
@@ -112,10 +114,16 @@ export function BrandingSection({
             className="absolute inset-0 size-full cursor-pointer rounded-none border-0 p-0 opacity-0"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="mt-1 flex flex-wrap items-center gap-2">
           <p className="flex-1 text-xs text-muted-foreground">{coverMeta}</p>
           {profile.coverUrl && (
-            <Button variant="outline" size="sm" disabled={busy} onClick={() => drop('COVER')}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="font-semibold hover:border-destructive hover:text-destructive"
+              disabled={busy}
+              onClick={() => drop('COVER')}
+            >
               Remove cover
             </Button>
           )}
@@ -146,7 +154,9 @@ export function BrandingSection({
           />
         </div>
         <div className="min-w-0 flex-1 basis-[220px]">
-          <Label htmlFor="st-logo">Brand logo</Label>
+          <Label htmlFor="st-logo" className="text-[13px] font-semibold">
+            Brand logo
+          </Label>
           <p className="mt-1 text-xs text-muted-foreground text-pretty">
             {uploadingSlot === 'LOGO'
               ? 'Uploading…'
@@ -156,7 +166,7 @@ export function BrandingSection({
             <Button
               variant="outline"
               size="sm"
-              className="mt-2.5"
+              className="mt-2.5 font-semibold hover:border-destructive hover:text-destructive"
               disabled={busy}
               onClick={() => drop('LOGO')}
             >

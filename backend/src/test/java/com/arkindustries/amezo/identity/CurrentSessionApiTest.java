@@ -119,17 +119,32 @@ class CurrentSessionApiTest {
     }
 
     /**
-     * DELETE /sessions/current used to have a security rule and no controller.
-     * The rule is gone, so it is now plainly not a route - 403 from
-     * anyRequest().denyAll(), the same as any other path the API doesn't serve,
-     * instead of a 404 that looked like a broken endpoint.
+     * DELETE /sessions/current is a live route now - SessionController.signOut -
+     * and this asserts what it does rather than that it is absent. It was written
+     * when the path had a security rule and no controller behind it, and kept
+     * asserting the 403 from denyAll() after the controller landed.
+     *
+     * Signing out is role-agnostic on purpose: it deletes the row the cookie
+     * names, and /account is reachable by either identity type.
      */
     @Test
-    void deleteSessionsCurrentIsNotARoute() throws Exception {
+    void deleteSessionsCurrentSignsTheCallerOut() throws Exception {
         Cookie session = signIn("current4@example.com");
 
         mockMvc.perform(delete("/sessions/current").cookie(session))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNoContent());
+
+        // Revoked server-side, not just forgotten by the client: the same cookie
+        // no longer names anyone, which is what makes a reload stay signed out.
+        mockMvc.perform(get("/sessions/current").cookie(session))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /** No cookie is a 401, not a 403: the route exists, the caller is nobody. */
+    @Test
+    void deleteSessionsCurrentWithoutACookieIsUnauthorized() throws Exception {
+        mockMvc.perform(delete("/sessions/current"))
+                .andExpect(status().isUnauthorized());
     }
 
     private Cookie signIn(String email) throws Exception {

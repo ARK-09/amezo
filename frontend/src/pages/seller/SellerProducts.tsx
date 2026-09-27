@@ -1,4 +1,4 @@
-import { ImageOff, Plus, Search } from 'lucide-react'
+import { ImageOff, Plus, Search, Trash2 } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 
@@ -14,8 +14,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
+  TableAction,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableHeader,
   TableRow,
@@ -30,18 +32,20 @@ import { useDeleteProduct } from '@/features/seller-portal/api/useSellerProducts
 import {
   Drawer,
   DrawerBody,
-  DrawerEyebrow,
   DrawerFooter,
   DrawerHeader,
   DrawerSubline,
   DrawerTitle,
 } from '@/features/seller-portal/components/Drawer'
 import {
-  ProductCreateFields,
+  ProductFormFields,
   StatusSegmented,
-} from '@/features/seller-portal/components/ProductCreateForm'
-import { useProductCreateForm } from '@/features/seller-portal/components/useProductCreateForm'
-import { ProductFormPanel } from '@/features/seller-portal/components/ProductFormPanel'
+} from '@/features/seller-portal/components/ProductFormFields'
+import {
+  ProductFormActions,
+  SaveFailures,
+} from '@/features/seller-portal/components/ProductFormPage'
+import { useProductForm } from '@/features/seller-portal/components/useProductForm'
 import { ProductViewPanel } from '@/features/seller-portal/components/ProductViewPanel'
 import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
 import { formatPrice } from '@/lib/formatPrice'
@@ -98,14 +102,20 @@ type DrawerState =
   | { mode: 'add' }
   | null
 
+/**
+ * The route the drawer's "Full page" opens, for whatever it is showing. Null
+ * while the drawer is closed, which is also when there is nothing to link to.
+ */
+function fullPageTo(drawer: DrawerState) {
+  if (!drawer) return undefined
+  return drawer.mode === 'add' ? '/seller/products/new' : `/seller/products/${drawer.id}`
+}
+
 export function SellerProducts() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [drawer, setDrawer] = useState<DrawerState>(null)
   // The design confirms a row delete inline in the cell rather than in a modal.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
-  // Expanding is a property of the drawer session, not of the mode: swapping
-  // view -> edit while expanded should stay expanded.
-  const [expanded, setExpanded] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const categories = useCategories()
@@ -174,7 +184,6 @@ export function SellerProducts() {
 
   function closeDrawer() {
     setDrawer(null)
-    setExpanded(false)
   }
 
   const rows = query.data?.content ?? []
@@ -186,8 +195,11 @@ export function SellerProducts() {
   const hasFilters = Boolean(q) || status !== 'all' || categorySlug !== 'all' || sort !== 'newest'
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    // h-full, and every child but the table shrink-0: the shell hands this page a
+    // definite height and owns the only scrollbar, so the table is the one thing
+    // that gives way rather than the page growing past the window.
+    <div className="flex h-full flex-col gap-5">
+      <div className="flex shrink-0 flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold">Products</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -201,12 +213,14 @@ export function SellerProducts() {
       </div>
 
       {flash && (
-        <div className="rounded-lg border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-sm font-medium text-[#b8560a]">
+        <div className="shrink-0 rounded-lg border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-sm font-medium text-[#b8560a]">
           {flash}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2.5">
+      {/* The design splits this row: search and the two filters share the left,
+          and the sort sits on its own at the right edge. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative max-w-[360px] min-w-[220px] flex-1">
           <Search
             className="absolute top-1/2 left-3 size-[15px] -translate-y-1/2 text-muted-foreground"
@@ -251,8 +265,14 @@ export function SellerProducts() {
           </SelectContent>
         </Select>
 
+        {hasFilters && (
+          <Button variant="ghost" size="sm" onClick={() => setSearchParams(new URLSearchParams())}>
+            Clear filters
+          </Button>
+        )}
+
         <Select value={sort} onValueChange={(value) => patch({ sort: value })}>
-          <SelectTrigger aria-label="Sort products" className="h-9 w-[180px] text-[13px]">
+          <SelectTrigger aria-label="Sort products" className="ml-auto h-9 w-[180px] text-[13px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -263,24 +283,18 @@ export function SellerProducts() {
             ))}
           </SelectContent>
         </Select>
-
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={() => setSearchParams(new URLSearchParams())}>
-            Clear filters
-          </Button>
-        )}
       </div>
 
       {/* The confirm popover closes as soon as the request settles, so a delete
           that failed used to leave the row sitting there looking untouched. */}
       {deleteProduct.isError && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="shrink-0 text-sm text-destructive">
           {deleteProduct.error.detail ?? deleteProduct.error.title}
         </p>
       )}
 
       {query.isError && (
-        <div className="flex flex-col items-start gap-3 rounded-lg border p-6">
+        <div className="flex shrink-0 flex-col items-start gap-3 rounded-lg border p-6">
           <p className="font-medium">Couldn't load your products</p>
           <p className="text-sm text-muted-foreground">
             {query.error?.detail ?? 'Something went wrong. Try again.'}
@@ -292,7 +306,7 @@ export function SellerProducts() {
       )}
 
       {query.isLoading && (
-        <div className="flex flex-col gap-2">
+        <div className="flex shrink-0 flex-col gap-2">
           {Array.from({ length: 5 }, (_, i) => (
             <Skeleton key={i} className="h-14 w-full" />
           ))}
@@ -300,7 +314,7 @@ export function SellerProducts() {
       )}
 
       {query.isSuccess && rows.length === 0 && (
-        <div className="flex flex-col items-center gap-3 rounded-lg border py-16 text-center">
+        <div className="flex shrink-0 flex-col items-center gap-3 rounded-lg border py-16 text-center">
           <p className="font-medium">
             {hasFilters ? 'No products match those filters' : 'No products here'}
           </p>
@@ -319,8 +333,31 @@ export function SellerProducts() {
         </div>
       )}
 
+      {/* The table and its pager are one container, as the design draws them:
+          the rows scroll inside the border and the bar stays pinned to its
+          bottom edge, so paging never means scrolling the page to find it.
+          Shown whenever there are rows, not only past page one: Per page is how
+          you get back from 50 to 5, and at 50 there is often only one page. */}
       {rows.length > 0 && (
-        <div className="overflow-hidden rounded-lg border">
+        <TableContainer
+          fill
+          footer={
+            <PaginationBar
+              page={shownPage}
+              totalPages={totalPages}
+              onPageChange={(next) => patch({ page: String(next) })}
+              range={{
+                totalElements: total,
+                pageSize: size,
+                sizes: PAGE_SIZES,
+                // A new page size makes the old offset meaningless, so patch
+                // drops ?page= with it - as it does for any other filter change.
+                onSizeChange: (next) =>
+                  patch({ size: next === DEFAULT_SIZE ? undefined : String(next) }),
+              }}
+            />
+          }
+        >
           <Table>
             <TableHeader>
               <TableRow>
@@ -411,27 +448,28 @@ export function SellerProducts() {
                       </div>
                     ) : (
                       <div className="flex justify-end gap-1.5">
-                        <Button
+                        <TableAction
                           variant="outline"
-                          size="sm"
                           onClick={(e) => {
                             e.stopPropagation()
                             setDrawer({ mode: 'edit', id: row.id, row })
                           }}
                         >
                           Edit
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
+                        </TableAction>
+                        {/* An icon, as the design has it: the row already says
+                            what it is, and a second word competes with Edit. */}
+                        <button
+                          type="button"
                           aria-label={`Delete ${row.title}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             setConfirmingId(row.id)
                           }}
+                          className="rounded-md border px-2 py-1.5 text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
                         >
-                          Delete
-                        </Button>
+                          <Trash2 className="size-3.5" aria-hidden />
+                        </button>
                       </div>
                     )}
                   </TableCell>
@@ -439,26 +477,7 @@ export function SellerProducts() {
               ))}
             </TableBody>
           </Table>
-        </div>
-      )}
-
-      {/* Shown whenever there are rows, not only past page one: Per page is how
-          you get back from 50 to 5, and at 50 there is often only one page. */}
-      {rows.length > 0 && (
-        <PaginationBar
-          page={shownPage}
-          totalPages={totalPages}
-          onPageChange={(next) => patch({ page: String(next) })}
-          range={{
-            totalElements: total,
-            pageSize: size,
-            sizes: PAGE_SIZES,
-            // A new page size makes the old offset meaningless, so patch drops
-            // ?page= with it - as it does for any other filter change.
-            onSizeChange: (next) =>
-              patch({ size: next === DEFAULT_SIZE ? undefined : String(next) }),
-          }}
-        />
+        </TableContainer>
       )}
 
       <Drawer
@@ -470,8 +489,10 @@ export function SellerProducts() {
         ariaLabel={drawer?.mode === 'view' ? 'Product details' : 'Product form'}
         // The design's two widths: 520 to read a record, 620 to edit one.
         width={drawer?.mode === 'view' ? 520 : 620}
-        expanded={expanded}
-        onExpandedChange={setExpanded}
+        // The dedicated route behind "Full page", per mode. All three exist:
+        // /seller/products/new for a new listing, /seller/products/:id for one
+        // that is already there.
+        fullPageTo={fullPageTo(drawer)}
       >
         {drawer?.mode === 'view' && (
           <ViewDrawerContent
@@ -485,13 +506,34 @@ export function SellerProducts() {
           />
         )}
 
-        {drawer?.mode === 'edit' && <EditDrawerContent row={drawer.row} id={drawer.id} onDone={closeDrawer} />}
+        {drawer?.mode === 'edit' && (
+          <EditDrawerContent
+            row={drawer.row}
+            id={drawer.id}
+            onCancel={closeDrawer}
+            onSaved={(title) => {
+              closeDrawer()
+              showFlash(`Saved changes to ${title}.`)
+            }}
+          />
+        )}
 
         {drawer?.mode === 'add' && (
           <AddDrawerContent
-            onCreated={(title) => {
+            onCreated={(product, imageFailures) => {
+              // The listing itself is saved by now; only its pictures can fail
+              // after that. Rather than close on a half-finished product, the
+              // drawer becomes that product's edit drawer so the missing images
+              // can be added where they are missing from.
+              if (imageFailures.length > 0) {
+                setDrawer({ mode: 'edit', id: product.id, row: null })
+                showFlash(
+                  `Added ${product.title}, but ${imageFailures.length} ${imageFailures.length === 1 ? 'image' : 'images'} didn't upload.`,
+                )
+                return
+              }
               closeDrawer()
-              showFlash(`Added ${title}.`)
+              showFlash(`Added ${product.title}.`)
             }}
             onCancel={closeDrawer}
           />
@@ -553,11 +595,10 @@ function ViewDrawerContent({
 
   return (
     <>
-      <DrawerHeader>
-        <DrawerEyebrow>
-          {row && <StatusBadge status={row.status} />}
-          <span className="text-xs text-muted-foreground">{row?.category.name}</span>
-        </DrawerEyebrow>
+      <DrawerHeader
+        status={row && <StatusBadge status={row.status} />}
+        meta={row?.category.name}
+      >
         <DrawerTitle>{row?.title ?? 'Product'}</DrawerTitle>
         <DrawerSubline>{row?.brandName || 'No brand set'}</DrawerSubline>
       </DrawerHeader>
@@ -566,7 +607,11 @@ function ViewDrawerContent({
         <ProductViewPanel productId={id} />
       </DrawerBody>
 
-      <DrawerFooter className="justify-start">
+      {/* The design's action bar: Edit product takes the width, Delete sits
+          beside it. The footer's own actions group is content-sized, so it is
+          told to grow - the same arbitrary-variant idiom the drawer itself uses
+          to hide the sheet's built-in close button. */}
+      <DrawerFooter className="justify-start [&>div:last-child]:grow">
         <Button className="flex-1" onClick={onEdit}>
           Edit product
         </Button>
@@ -601,33 +646,67 @@ function ViewDrawerContent({
 function EditDrawerContent({
   id,
   row,
-  onDone,
+  onSaved,
+  onCancel,
 }: {
   id: string
   row: SellerProductRow | null
-  onDone: () => void
+  onSaved: (title: string) => void
+  onCancel: () => void
 }) {
+  const controller = useProductForm({ mode: 'edit', productId: id, onSaved })
+
+  // The SAVED name and category. The row already has them, so the header reads
+  // right before the detail request comes back, and it does not follow the
+  // title as it is being edited - this line says which listing is open.
+  const meta = controller.product
+    ? `${controller.product.title} · ${controller.product.category.name}`
+    : row
+      ? `${row.title} · ${row.category.name}`
+      : 'Editing this listing'
+
   return (
     <>
-      <DrawerHeader>
+      <DrawerHeader
+        actions={<StatusSegmented value={controller.status} onChange={controller.setStatus} />}
+      >
         <DrawerTitle>Edit product</DrawerTitle>
-        <DrawerSubline>
-          {row ? `${row.title} · ${row.category.name}` : 'Editing this listing'}
-        </DrawerSubline>
+        <DrawerSubline>{meta}</DrawerSubline>
       </DrawerHeader>
 
       <DrawerBody>
-        <ProductFormPanel productId={id} />
+        {controller.isLoading && (
+          <div className="flex flex-col gap-4">
+            <Skeleton className="h-52 w-full rounded-xl" />
+            <Skeleton className="h-40 w-full rounded-xl" />
+            <Skeleton className="h-48 w-full rounded-xl" />
+          </div>
+        )}
+
+        {controller.loadError && (
+          <div className="flex flex-col items-start gap-3 rounded-xl border p-6">
+            <p className="font-medium">Couldn&apos;t load this product</p>
+            <p className="text-sm text-muted-foreground">
+              {controller.loadError.detail ?? controller.loadError.title}
+            </p>
+            <Button variant="outline" onClick={controller.reloadProduct}>
+              Try again
+            </Button>
+          </div>
+        )}
+
+        {!controller.isLoading && !controller.loadError && (
+          <ProductFormFields controller={controller} />
+        )}
+
+        <SaveFailures failures={controller.failures} />
       </DrawerBody>
 
-      {/* ProductFormPanel still owns its own saves - see the note in the report:
-          its variants and images are separate endpoints, so unifying them behind
-          one footer button is a rewrite of that panel, not a wiring change. The
-          note says so rather than leaving a dead Save here. */}
-      <DrawerFooter note="Each section above saves on its own.">
-        <Button variant="outline" onClick={onDone}>
-          Done
-        </Button>
+      {/* One save for the whole listing, as the design has it. The product, its
+          variants and its images are three endpoints behind this button, not
+          three buttons. */}
+      <DrawerFooter note={controller.footerNote}>
+        <ProductFormActions controller={controller} onCancel={onCancel} />
       </DrawerFooter>
     </>
   )
@@ -637,35 +716,29 @@ function AddDrawerContent({
   onCreated,
   onCancel,
 }: {
-  onCreated: (title: string) => void
+  onCreated: (product: { id: string; title: string }, imageFailures: string[]) => void
   onCancel: () => void
 }) {
-  // Lives here, above both the body and the footer, so the footer can read
-  // whether the form is complete - and so expanding to full page, which only
-  // changes the panel's classes, never unmounts it and never loses a keystroke.
-  const form = useProductCreateForm({ onCreated: ({ title }) => onCreated(title) })
+  // Lives here, above both the body and the footer, so the footer's Save can
+  // read whether the form is complete without the fields having to pass it up.
+  const controller = useProductForm({ mode: 'add', onCreated })
 
   return (
     <>
-      <DrawerHeader>
+      <DrawerHeader
+        actions={<StatusSegmented value={controller.status} onChange={controller.setStatus} />}
+      >
         <DrawerTitle>Add product</DrawerTitle>
         <DrawerSubline>Publishes to your store.</DrawerSubline>
-        <div className="mt-2">
-          <StatusSegmented value={form.status} onChange={form.setStatus} />
-        </div>
       </DrawerHeader>
 
       <DrawerBody>
-        <ProductCreateFields form={form} />
+        <ProductFormFields controller={controller} />
+        <SaveFailures failures={controller.failures} />
       </DrawerBody>
 
-      <DrawerFooter note={form.footerNote}>
-        <Button variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button disabled={!form.canSave} onClick={() => void form.submit()}>
-          {form.isPending ? 'Saving…' : form.saveLabel}
-        </Button>
+      <DrawerFooter note={controller.footerNote}>
+        <ProductFormActions controller={controller} onCancel={onCancel} />
       </DrawerFooter>
     </>
   )

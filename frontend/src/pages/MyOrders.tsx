@@ -19,8 +19,15 @@ import {
   type BuyerOrderFilters,
   type BuyerOrderGroup,
 } from '@/features/orders/api/useBuyerOrders'
+import { useOpenRefundCount } from '@/features/orders/api/useOpenRefundCount'
 import { OrderCard } from '@/features/orders/components/OrderCard'
-import { useSession } from '@/features/session/api/useSession'
+import {
+  DEFAULT_PERIOD,
+  normalisePeriod,
+  periodOptions,
+  periodPhrase,
+  periodRange,
+} from '@/features/orders/orderPeriod'
 import { useViewerRole } from '@/features/session/api/useViewerRole'
 import { cn } from '@/lib/utils'
 
@@ -31,27 +38,13 @@ const TABS: { value: BuyerOrderGroup; label: string }[] = [
   { value: 'refunds', label: 'Refunds & returns' },
 ]
 
-const PERIODS = [
-  { value: 'all', label: 'All time' },
-  { value: '12m', label: 'Past 12 months' },
-  { value: '6m', label: 'Past 6 months' },
-  { value: '30d', label: 'Past 30 days' },
-] as const
-
-type Period = (typeof PERIODS)[number]['value']
-
-/** The sizes the design's Per page select offers, and the one it opens on. */
+/**
+ * The page sizes a ?size= may ask for, and the one the list opens on. The design
+ * offers no Per page control on this screen - unlike the seller lists - so these
+ * only ever come from the URL.
+ */
 const PAGE_SIZES = [5, 10, 20, 50] as const
 const DEFAULT_SIZE = 10
-
-/** The period select narrows the window; the server takes plain dates. */
-function periodStart(period: Period): string | undefined {
-  if (period === 'all') return undefined
-  const now = new Date()
-  const days = period === '30d' ? 30 : period === '6m' ? 183 : 365
-  now.setDate(now.getDate() - days)
-  return now.toISOString().slice(0, 10)
-}
 
 /**
  * ?page=abc, ?page=-5 and ?page=1.7 used to go straight into the request and
@@ -91,8 +84,23 @@ function OrdersBreadcrumb() {
   )
 }
 
+/**
+ * "6 orders on file · 2 refunds in progress" - the whole history, not this view.
+ *
+ * `openRefunds` is null where the refund count could not be had at all: the refund
+ * endpoint is not served yet, and half a sentence about the buyer's refunds is
+ * better than either a number nothing answered for or a line that never arrives.
+ */
+function summaryLine(orders: number, openRefunds: number | null) {
+  const left = `${orders} order${orders === 1 ? '' : 's'} on file`
+  if (openRefunds === null) return left
+  const right = openRefunds
+    ? `${openRefunds} refund${openRefunds === 1 ? '' : 's'} in progress`
+    : 'no open refunds'
+  return `${left} · ${right}`
+}
+
 export function MyOrders() {
-  const session = useSession()
   // A seller has no buyer order history. Firing the request anyway returned a
   // 401 that this page printed as "Session is missing, expired, or invalid" -
   // about a session that was valid, just not a buyer's.
@@ -103,7 +111,10 @@ export function MyOrders() {
 
   const group = (searchParams.get('group') as BuyerOrderGroup | null) ?? 'all'
   const q = searchParams.get('q') ?? ''
-  const period = (searchParams.get('period') as Period | null) ?? '12m'
+  // The four windows are derived from today, so the select cannot offer a year
+  // that has not happened; anything else in ?period= is not a window at all.
+  const periods = useMemo(() => periodOptions(), [])
+  const period = normalisePeriod(searchParams.get('period'))
   const page = pageParam(searchParams.get('page'))
   const size = sizeParam(searchParams.get('size'))
 
@@ -122,7 +133,7 @@ export function MyOrders() {
     () => ({
       group,
       q: q || undefined,
-      from: periodStart(period),
+      ...periodRange(period),
       page,
       size,
     }),
@@ -134,10 +145,17 @@ export function MyOrders() {
   const ordersEnabled = !viewer.isPending && !isSeller
   const query = useBuyerOrders(filters, { enabled: ordersEnabled })
   // The same window the list is showing, spelled the way each endpoint takes
-  // it: a `from` date for the list, the period token for the counts. No
+  // it: the same `from`/`to` dates for both. The counts used to take their own
+  // `period` token, which meant the client and the server each decided what
+  // "past 3 months" was - a tab could count a window the list it opened did
+  // not use. No
   // `group` - the strip describes every bucket, so narrowing the counts by the
   // tab being viewed would zero the other three.
-  const facets = useBuyerOrderFacets({ q: q || undefined, period }, { enabled: ordersEnabled })
+  const facets = useBuyerOrderFacets({ q: q || undefined, ...periodRange(period) }, { enabled: ordersEnabled })
+  // The header line counts the buyer's whole history, which no filtered request
+  // answers: same endpoint, no window and no search term.
+  const onFile = useBuyerOrderFacets({}, { enabled: ordersEnabled })
+  const openRefunds = useOpenRefundCount({ enabled: ordersEnabled })
 
   function patch(next: Record<string, string | undefined>, replace = false) {
     const params = new URLSearchParams(searchParams)
@@ -159,6 +177,13 @@ export function MyOrders() {
     patch({ q: value }, Boolean(q))
   }
 
+  /** What the empty state's button does: every filter back to how it opens. */
+  function showAllOrders() {
+    setTerm('')
+    setOpenId(null)
+    patch({ group: undefined, q: undefined, period: undefined, page: undefined, size: undefined })
+  }
+
   const orders = query.data?.content ?? []
   const total = query.data?.totalElements ?? 0
   const totalPages = query.data?.totalPages ?? 1
@@ -168,6 +193,21 @@ export function MyOrders() {
   // Disabled queries never report isLoading, so the wait for the session is
   // part of the page's own loading state rather than a blank body.
   const isLoading = viewer.isPending || query.isLoading
+  // The tab counts are scoped to the window and the search term, which is also
+  // what the result line counts when nothing has been typed.
+  const inWindow = facets.data?.get('all')
+  const ordersOnFile = onFile.data?.get('all')
+  // null, not undefined, once the refund count has failed: undefined still means
+  // "waiting", and the header would wait for it forever.
+  const refundCount = openRefunds.isError ? null : openRefunds.count
+
+  const resultLine = isLoading
+    ? 'Loading…'
+    : q
+      ? `${total} order${total === 1 ? '' : 's'} match${total === 1 ? 'es' : ''} “${q}”`
+      : inWindow === undefined
+        ? null
+        : `${inWindow} order${inWindow === 1 ? '' : 's'} in ${periodPhrase(period)}`
 
   if (isSeller) {
     return (
@@ -198,11 +238,18 @@ export function MyOrders() {
       <div className="mb-[18px] flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[28px] leading-[1.2] font-bold tracking-[-0.01em]">Your orders</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {session.data?.email
-              ? `Signed in as ${session.data.email}`
-              : 'Everything you have bought on Amezo'}
-          </p>
+          {/* Two counts from two requests. A skeleton rather than a guess while
+              they land: the line is about the buyer's whole history, so half of
+              it would be a number that then changed. If the order count itself
+              cannot be had there is no line to write; if only the refund count
+              fails, the line is written without it. */}
+          {ordersOnFile !== undefined && refundCount !== undefined ? (
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              {summaryLine(ordersOnFile, refundCount)}
+            </p>
+          ) : (
+            !onFile.isError && <Skeleton className="mt-1.5 h-[21px] w-[230px]" />
+          )}
         </div>
         <Link
           to="/search"
@@ -228,7 +275,12 @@ export function MyOrders() {
             className="h-10 w-full rounded-full border bg-background pr-4 pl-[38px] text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
-        <Select value={period} onValueChange={(value) => patch({ period: value })}>
+        <Select
+          value={period}
+          onValueChange={(value) =>
+            patch({ period: value === DEFAULT_PERIOD ? undefined : value })
+          }
+        >
           <SelectTrigger
             aria-label="Filter by date"
             className="h-10 rounded-full px-3.5 text-[13px] font-semibold"
@@ -236,16 +288,14 @@ export function MyOrders() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {PERIODS.map((option) => (
+            {periods.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <p className="ml-auto text-[13px] text-muted-foreground">
-          {isLoading ? 'Loading…' : `${total} order${total === 1 ? '' : 's'}`}
-        </p>
+        {resultLine && <p className="ml-auto text-[13px] text-muted-foreground">{resultLine}</p>}
       </div>
 
       <div className="mb-5 flex flex-wrap gap-2 border-b pb-4">
@@ -311,15 +361,21 @@ export function MyOrders() {
       )}
 
       {query.isSuccess && orders.length === 0 && (
-        <div className="flex flex-col items-center gap-3 py-16 text-center">
-          <p className="font-medium">No orders here</p>
-          <p className="text-sm text-muted-foreground">
-            {q || group !== 'all'
-              ? 'Try a different search or filter.'
-              : 'Once you buy something it shows up here.'}
+        <div className="rounded-xl border border-dashed px-5 py-16 text-center">
+          <p className="font-bold">No orders here</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {q
+              ? `Nothing matches “${q}” in this date range.`
+              : 'Try a different filter or date range.'}
           </p>
-          <Button variant="outline" asChild>
-            <Link to="/search">Start shopping</Link>
+          {/* Not "Start shopping": what is empty here is a filtered view, and
+              the way out of one is to drop the filters, not to leave the page. */}
+          <Button
+            variant="outline"
+            onClick={showAllOrders}
+            className="mt-3.5 h-auto rounded-full px-[18px] py-[9px] text-[13px] hover:border-primary hover:bg-background hover:text-primary"
+          >
+            Show all orders
           </Button>
         </div>
       )}
@@ -337,24 +393,15 @@ export function MyOrders() {
         </div>
       )}
 
-      {/* Shown whenever there are orders, not only past page one: Per page is
-          how you get back from 50 to 5, and at 50 there is often one page. */}
-      {orders.length > 0 && (
+      {/* Only where there is a second page to reach. With no Per page control on
+          this screen, a one-page list has nothing for a pager to do. */}
+      {orders.length > 0 && totalPages > 1 && (
         <PaginationBar
           className="pt-6"
           page={shownPage}
           totalPages={totalPages}
           onPageChange={(next) => patch({ page: String(next) })}
-          range={{
-            totalElements: total,
-            pageSize: size,
-            sizes: PAGE_SIZES,
-            unit: 'orders',
-            // A new page size makes the old offset meaningless, so patch drops
-            // ?page= with it - as it does for any other filter change.
-            onSizeChange: (next) =>
-              patch({ size: next === DEFAULT_SIZE ? undefined : String(next) }),
-          }}
+          range={{ totalElements: total, pageSize: size, unit: 'orders' }}
         />
       )}
     </div>
