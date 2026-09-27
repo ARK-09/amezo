@@ -37,7 +37,12 @@ export function Account() {
   }
 
   const identity = session.data
-  const isSeller = identity.identityType === 'SELLER'
+  // Both, possibly. One email address is one account and can hold a buyer half and a
+  // seller half, so these are two questions rather than a choice between two answers
+  // - reading identityType offered a seller who also buys the portal and hid the
+  // order history they actually had.
+  const isSeller = identity.sellerId != null
+  const isBuyer = identity.buyerIdentityId != null
 
   return (
     <div className="mx-auto w-full max-w-[640px] flex-1 px-7 py-10">
@@ -54,11 +59,12 @@ export function Account() {
         </Button>
       </div>
 
-      {/* A seller has no buyer order history, and /orders calls a buyer-only
-          endpoint: offering it here sent them to a page that reported their
-          perfectly good session as expired. The portal is the destination that
-          actually exists for them - the same one the header now offers. */}
-      {isSeller ? (
+      {/* One card per half of the account, and someone who buys and sells gets both.
+          /orders calls a buyer-only endpoint, so offering it to a seller who had no
+          buyer half sent them to a page that reported their perfectly good session as
+          expired - which is why this is gated on isBuyer rather than shown to
+          everyone, and why the two are no longer an either/or. */}
+      {isSeller && (
         <Link
           to="/seller/dashboard"
           className="mt-4 flex items-center gap-4 rounded-xl border p-5 transition-colors hover:border-primary/50 hover:bg-accent"
@@ -74,7 +80,8 @@ export function Account() {
           </span>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         </Link>
-      ) : (
+      )}
+      {isBuyer && (
         <Link
           to="/orders"
           className="mt-4 flex items-center gap-4 rounded-xl border p-5 transition-colors hover:border-primary/50 hover:bg-accent"
@@ -103,7 +110,11 @@ export function Account() {
       )}
 
       {isSeller && (
-        <p className="mt-4 text-sm text-muted-foreground">You're signed in as a seller.</p>
+        <p className="mt-4 text-sm text-muted-foreground">
+          {isBuyer
+            ? 'One account, for buying and selling.'
+            : "You're signed in as a seller."}
+        </p>
       )}
     </div>
   )

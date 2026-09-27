@@ -264,7 +264,11 @@ class SellerRefundQueueApiTest {
         mockMvc.perform(get(QUEUE)).andExpect(status().isUnauthorized());
         mockMvc.perform(get(FACETS)).andExpect(status().isUnauthorized());
 
-        Cookie buyerCookie = Fixtures.sessionCookie(sessions, IdentityType.BUYER, UUID.randomUUID());
+        // A REAL buyer_identity, not a session over a random uuid. The filter reads the
+        // row now (one address, both roles - identity/AccountIdentities), so a session
+        // naming nobody authenticates as nobody and answers 401 - which would have made
+        // the two assertions below pass for the wrong reason.
+        Cookie buyerCookie = fixture.buyerCookie(fixture.buyer());
         mockMvc.perform(get(QUEUE).cookie(buyerCookie)).andExpect(status().isForbidden());
         mockMvc.perform(get(FACETS).cookie(buyerCookie)).andExpect(status().isForbidden());
     }

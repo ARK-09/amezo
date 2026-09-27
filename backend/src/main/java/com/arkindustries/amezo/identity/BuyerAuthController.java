@@ -1,6 +1,7 @@
 package com.arkindustries.amezo.identity;
 
 import com.arkindustries.amezo.identity.dto.BuyerMagicLinkRequest;
+import com.arkindustries.amezo.identity.dto.MagicLinkResponse;
 import com.arkindustries.amezo.identity.dto.BuyerSessionResponse;
 import com.arkindustries.amezo.identity.dto.BuyerVerifyRequest;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,10 +36,10 @@ public class BuyerAuthController {
         this.sessionCookies = sessionCookies;
     }
 
+    /** See SellerAuthController.requestMagicLink on why this answers 200 with a body. */
     @PostMapping("/magic-link")
-    public ResponseEntity<Void> requestMagicLink(@Valid @RequestBody BuyerMagicLinkRequest request) {
-        buyerAuthService.requestMagicLink(request.email());
-        return ResponseEntity.noContent().build();
+    public MagicLinkResponse requestMagicLink(@Valid @RequestBody BuyerMagicLinkRequest request) {
+        return new MagicLinkResponse(buyerAuthService.requestMagicLink(request.email()));
     }
 
     @PostMapping("/verify")

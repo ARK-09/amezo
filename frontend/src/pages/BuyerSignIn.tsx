@@ -1,6 +1,6 @@
 import { ShoppingBag } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
-import { Navigate } from 'react-router'
+import { Navigate, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,6 +17,7 @@ export function BuyerSignIn() {
   const [sent, setSent] = useState(false)
   const { mutate, isPending, isError, error } = useRequestBuyerMagicLink()
   const viewer = useViewerRole()
+  const navigate = useNavigate()
 
   // Already able to buy: nobody needs to be asked for an address they have just
   // used. This tests isBuyer and not `role`, which prefers seller - a seller IS a
@@ -26,9 +27,19 @@ export function BuyerSignIn() {
     return <Navigate to="/account" replace />
   }
 
+  /**
+   * The demo address is answered with a real magic-link token rather than an email,
+   * and it is redeemed through the same /verify route an emailed link opens - see
+   * SellerSignIn.submit for why that is not the fabricated-session bypass returning.
+   */
   function submit(event: FormEvent) {
     event.preventDefault()
-    mutate(email, { onSuccess: () => setSent(true) })
+    mutate(email, {
+      onSuccess: (token) => {
+        if (token) void navigate(`/verify?token=${encodeURIComponent(token)}`, { replace: true })
+        else setSent(true)
+      },
+    })
   }
 
   return (

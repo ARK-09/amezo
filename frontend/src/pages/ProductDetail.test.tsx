@@ -34,6 +34,33 @@ const COOKWARE_SLUG = 'ceramic-non-stick-cookware-set-10-piece'
 const HEADPHONES_ID = '11111111-1111-1111-1111-111111111111'
 
 describe('ProductDetail', () => {
+  /**
+   * The wait, not the product. This page is often the first thing a cold-started
+   * instance is asked for, and the line of grey text that used to sit here ("Loading
+   * product…") reads as a hung page through three seconds of that - which is exactly
+   * what the shared loader exists to avoid.
+   */
+  it('waits with the shared loader rather than a line of text', async () => {
+    server.use(
+      http.get('http://localhost:8080/products/:productRef', async () => {
+        // Long enough that the loading branch is what the assertions below see.
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        return HttpResponse.json(productDetails[HEADPHONES_SLUG])
+      }),
+    )
+    renderPage(HEADPHONES_SLUG)
+
+    const loader = await screen.findByRole('status', { name: 'Loading this product' })
+    expect(loader.querySelector('[data-slot="sprinter"]')).toBeInTheDocument()
+    expect(screen.queryByText('Loading product…')).not.toBeInTheDocument()
+
+    // And it goes away once the product is there.
+    expect(
+      await screen.findByRole('heading', { name: /Wireless Noise-Cancelling Headphones/ }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: 'Loading this product' })).not.toBeInTheDocument()
+  })
+
   it('renders product info and defaults to the Details tab', async () => {
     renderPage(HEADPHONES_SLUG)
 

@@ -40,8 +40,9 @@ public class SellerAuthService {
         this.magicLinks = magicLinks;
     }
 
-    public void requestMagicLink(String email) {
-        magicLinks.requestMagicLink(
+    /** @return the raw token for the demo address, else null - see DemoAccount. */
+    public String requestMagicLink(String email) {
+        return magicLinks.requestMagicLink(
                 IdentityType.SELLER, email, "/seller/verify", "Sign in to Amezo Seller Portal");
     }
 

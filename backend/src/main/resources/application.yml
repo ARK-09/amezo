@@ -81,6 +81,20 @@ app:
     cookie-secure: ${APP_SESSION_COOKIE_SECURE:false}
   magic-link:
     ttl-minutes: ${APP_MAGIC_LINK_TTL_MINUTES:15}
+  demo:
+    # One address whose sign-in link is RETURNED IN THE RESPONSE instead of emailed,
+    # so the app can be walked with no inbox and no email provider - which is what
+    # makes a demo independent of Resend's free tier (a sandbox until a domain is
+    # verified, and rate limited besides).
+    #
+    # It is a public shared account by design: anyone who knows the address can sign
+    # in as it, so point it at an account holding demo data and nothing else. Empty
+    # by default, so there is no demo address at all unless one is set, and the match
+    # is on the WHOLE address - never a domain or a pattern, which could admit an
+    # address nobody chose. Everything else about auth is unchanged: the token is an
+    # ordinary single-use magic-link token with the same expiry, redeemed through the
+    # same /verify endpoint. See identity/DemoAccount.
+    email: ${DEMO_EMAIL:}
   email:
     # Sender address on the magic-link email. Resend's onboarding@resend.dev works
     # without any DNS setup, but only delivers to the address the Resend account
@@ -94,24 +108,6 @@ app:
       # the verified domain, so it lives in the environment only - never in this
       # file, and never in git.
       api-key: ${RESEND_API_KEY:}
-    dev-mailbox:
-      # Keeps the last 50 outgoing emails in memory and serves them back from
-      # GET /dev/emails, so sign-in works on an instance where Resend cannot
-      # deliver - an unverified sending domain, a spent free-tier allowance, or no
-      # key at all. For development and demo instances; NOT for anywhere real
-      # accounts live, because a magic-link email IS a way in and this hands the
-      # text of one to whoever holds the token below.
-      #
-      # Off unless deliberately turned on, and the controller that reads the
-      # mailbox does not exist while it is off - so the path 404s rather than
-      # being a guarded route somebody could find a way past.
-      enabled: ${DEV_MAILBOX_ENABLED:false}
-      # The operator's token, required on every read. No default on purpose: a
-      # hardcoded one would be a published password, and enabling the mailbox
-      # without setting this FAILS THE BOOT rather than opening it (see
-      # identity/EmailSenderConfig). It is not any account's credential - it
-      # authorises reading this buffer and nothing else.
-      token: ${DEV_MAILBOX_TOKEN:}
   s3:
     bucket: ${AWS_S3_BUCKET:amezo-dev}
     region: ${AWS_REGION:us-east-1}

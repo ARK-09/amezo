@@ -151,7 +151,7 @@ class CurrentSessionApiTest {
         mockMvc.perform(post("/auth/seller/magic-link")
                         .contentType("application/json")
                         .content("{\"email\":\"" + email + "\"}"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk());
 
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(emailSender).send(eq(email), anyString(), bodyCaptor.capture());

@@ -80,22 +80,43 @@ class BuyerOrderFiltersTest {
     @Test
     void everyBucketMeansWhatItsTabSays() {
         // ALL is everything, including the terminal states.
-        assertThat(BuyerOrderGroup.ALL.contains(OrderStatus.PLACED, false)).isTrue();
-        assertThat(BuyerOrderGroup.ALL.contains(OrderStatus.DELIVERED, false)).isTrue();
+        assertThat(BuyerOrderGroup.ALL.contains(name(OrderStatus.PLACED), false)).isTrue();
+        assertThat(BuyerOrderGroup.ALL.contains(name(OrderStatus.DELIVERED), false)).isTrue();
 
         // IN_PROGRESS is the complement of the terminal statuses.
-        assertThat(BuyerOrderGroup.IN_PROGRESS.contains(OrderStatus.PLACED, false)).isTrue();
-        assertThat(BuyerOrderGroup.IN_PROGRESS.contains(OrderStatus.SHIPPED, false)).isTrue();
-        assertThat(BuyerOrderGroup.IN_PROGRESS.contains(OrderStatus.DELIVERED, false)).isFalse();
+        assertThat(BuyerOrderGroup.IN_PROGRESS.contains(name(OrderStatus.PLACED), false)).isTrue();
+        assertThat(BuyerOrderGroup.IN_PROGRESS.contains(name(OrderStatus.SHIPPED), false)).isTrue();
+        assertThat(BuyerOrderGroup.IN_PROGRESS.contains(name(OrderStatus.DELIVERED), false)).isFalse();
 
-        assertThat(BuyerOrderGroup.DELIVERED.contains(OrderStatus.DELIVERED, false)).isTrue();
-        assertThat(BuyerOrderGroup.DELIVERED.contains(OrderStatus.SHIPPED, false)).isFalse();
+        assertThat(BuyerOrderGroup.DELIVERED.contains(name(OrderStatus.DELIVERED), false)).isTrue();
+        assertThat(BuyerOrderGroup.DELIVERED.contains(name(OrderStatus.SHIPPED), false)).isFalse();
 
-        // REFUNDS is not a fulfilment state at all: it asks the refund domain,
-        // and until one exists every order answers false.
-        assertThat(BuyerOrderGroup.REFUNDS.contains(OrderStatus.DELIVERED, false)).isFalse();
-        assertThat(BuyerOrderGroup.REFUNDS.contains(OrderStatus.DELIVERED, true)).isTrue();
-        assertThat(BuyerOrderGroup.REFUNDS.contains(OrderStatus.PLACED, true)).isTrue();
+        // REFUNDS is not a fulfilment state at all: it asks whether the order has any
+        // refund request against it, whatever became of that request.
+        assertThat(BuyerOrderGroup.REFUNDS.contains(name(OrderStatus.DELIVERED), false)).isFalse();
+        assertThat(BuyerOrderGroup.REFUNDS.contains(name(OrderStatus.DELIVERED), true)).isTrue();
+        assertThat(BuyerOrderGroup.REFUNDS.contains(name(OrderStatus.PLACED), true)).isTrue();
+    }
+
+    /**
+     * The derived status the predicate actually receives, which OrderStatus cannot
+     * hold: REFUNDED is derived from a settled refund request and never stored, so a
+     * refunded order reaches these buckets as a String the enum has no constant for.
+     */
+    @Test
+    void aRefundedOrderIsTerminalAndStaysInTheRefundsTab() {
+        String refunded = OrderStatus.DERIVED_REFUNDED;
+
+        assertThat(BuyerOrderGroup.ALL.contains(refunded, true)).isTrue();
+        // Not "in progress": the money has gone back, nothing is pending.
+        assertThat(BuyerOrderGroup.IN_PROGRESS.contains(refunded, true)).isFalse();
+        // Not "delivered" either - REFUNDED is what that order is now, which is the
+        // same answer the seller's own list gives for it.
+        assertThat(BuyerOrderGroup.DELIVERED.contains(refunded, true)).isFalse();
+        // And it is still findable where a buyer would look for it. A settled refund
+        // leaving this tab at the moment it was paid out would hide it exactly when
+        // they came to check what happened.
+        assertThat(BuyerOrderGroup.REFUNDS.contains(refunded, true)).isTrue();
     }
 
     @Test
@@ -118,9 +139,14 @@ class BuyerOrderFiltersTest {
             boolean terminal = status.name().equals("DELIVERED")
                     || status.name().equals("CANCELLED")
                     || status.name().equals("REFUNDED");
-            assertThat(BuyerOrderGroup.IN_PROGRESS.contains(status, false))
+            assertThat(BuyerOrderGroup.IN_PROGRESS.contains(name(status), false))
                     .as("IN_PROGRESS should %s %s", terminal ? "exclude" : "include", status)
                     .isEqualTo(!terminal);
         }
+    }
+
+    /** The buckets take the DERIVED status, as a String - see BuyerOrderGroup.contains. */
+    private static String name(OrderStatus status) {
+        return status.name();
     }
 }

@@ -33,6 +33,7 @@ public class MagicLinkAuthService {
     private final MagicLinkTokenRepository magicLinkTokenRepository;
     private final SessionRepository sessionRepository;
     private final EmailSender emailSender;
+    private final DemoAccount demoAccount;
     private final String frontendUrl;
     private final long magicLinkTtlMinutes;
     private final long sessionTtlDays;
@@ -41,12 +42,14 @@ public class MagicLinkAuthService {
             MagicLinkTokenRepository magicLinkTokenRepository,
             SessionRepository sessionRepository,
             EmailSender emailSender,
+            DemoAccount demoAccount,
             @Value("${app.frontend-url}") String frontendUrl,
             @Value("${app.magic-link.ttl-minutes}") long magicLinkTtlMinutes,
             @Value("${app.session.ttl-days}") long sessionTtlDays) {
         this.magicLinkTokenRepository = magicLinkTokenRepository;
         this.sessionRepository = sessionRepository;
         this.emailSender = emailSender;
+        this.demoAccount = demoAccount;
         this.frontendUrl = frontendUrl;
         this.magicLinkTtlMinutes = magicLinkTtlMinutes;
         this.sessionTtlDays = sessionTtlDays;
@@ -57,8 +60,14 @@ public class MagicLinkAuthService {
      * reveals account existence. No identity row is created here; that happens
      * lazily at consume time (see MagicLinkToken on why it stores an email rather
      * than an identity id).
+     *
+     * @return the raw token, for the configured demo address ONLY, so the caller can
+     *         hand it straight back to the browser; null for every other address,
+     *         which gets the link by email as before. See {@link DemoAccount} - the
+     *         token is an ordinary one either way, and /verify is still what redeems
+     *         it.
      */
-    public void requestMagicLink(IdentityType identityType, String email, String verifyPath, String subject) {
+    public String requestMagicLink(IdentityType identityType, String email, String verifyPath, String subject) {
         String rawToken = randomToken();
         magicLinkTokenRepository.save(MagicLinkToken.builder()
                 .identityType(identityType)
@@ -67,9 +76,17 @@ public class MagicLinkAuthService {
                 .expiresAt(Instant.now().plus(Duration.ofMinutes(magicLinkTtlMinutes)))
                 .build());
 
+        // The demo address skips the provider entirely rather than mailing itself a
+        // copy: sending is the part that fails on a spent free tier, and a demo that
+        // depended on a send succeeding would be no more reliable than the send.
+        if (demoAccount.matches(email)) {
+            return rawToken;
+        }
+
         String link = frontendUrl + verifyPath + "?token=" + rawToken;
         emailSender.send(email, subject,
                 "Click to sign in (expires in " + magicLinkTtlMinutes + " minutes): " + link);
+        return null;
     }
 
     /**

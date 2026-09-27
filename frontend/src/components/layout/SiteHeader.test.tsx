@@ -236,11 +236,24 @@ describe('SiteHeader seller entry point', () => {
     expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument()
   })
 
-  it('does not offer a seller the buyer account page', async () => {
+  it('offers a seller who also buys both their shop and their account', async () => {
     signInSellerSession({ sellerId: 'seller-1', email: 'shop@example.com' })
     renderHeader()
 
     await screen.findByRole('link', { name: /Seller dashboard/ })
+    // One address is one account, so these are not alternatives. Showing only the
+    // dashboard sent a seller who wanted their own orders to their shop's.
+    expect(screen.getByRole('link', { name: 'Your account' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument()
+  })
+
+  it('does not offer the buyer account page to a seller-only session', async () => {
+    signInSellerSession({ sellerId: 'seller-1', email: 'shop@example.com', withBuyerIdentity: false })
+    renderHeader()
+
+    await screen.findByRole('link', { name: /Seller dashboard/ })
     expect(screen.queryByRole('link', { name: 'Your account' })).not.toBeInTheDocument()
+    // Nor the visitor's way in - they are signed in, just not as a buyer.
+    expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument()
   })
 })

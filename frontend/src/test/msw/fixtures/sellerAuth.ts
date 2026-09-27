@@ -39,12 +39,24 @@ export function currentSessionIdentity(): SessionIdentityFixture | null {
   return currentSession
 }
 
-export function signInSellerSession(identity: { sellerId: string; email: string }): SessionIdentityFixture {
+export function signInSellerSession(identity: {
+  sellerId: string
+  email: string
+  /**
+   * Set false for a SELLER-ONLY session: one whose address has no buyer_identity row.
+   * A sign-in cannot produce that any more - verify ensures the row - so it stands for
+   * a session minted before it did, which is the only state in which a signed-in
+   * person is not a buyer. The screens still have to answer for it.
+   */
+  withBuyerIdentity?: boolean
+}): SessionIdentityFixture {
   sellerIdsByEmail.set(identity.email, identity.sellerId)
   // Verifying as a seller ensures the buyer half too, exactly as
   // SellerAuthService.verify does: a seller is a person and people buy things, and
   // without the row their own My Orders would answer 403 rather than "nothing yet".
-  if (!buyerIdsByEmail.has(identity.email)) {
+  if (identity.withBuyerIdentity === false) {
+    buyerIdsByEmail.delete(identity.email)
+  } else if (!buyerIdsByEmail.has(identity.email)) {
     buyerIdsByEmail.set(identity.email, crypto.randomUUID())
   }
   currentSession = {
@@ -92,6 +104,28 @@ export function clearSellerSession() {
   currentSession = null
   sellerIdsByEmail.clear()
   buyerIdsByEmail.clear()
+  demoEmail = null
+}
+
+/**
+ * The address the mock treats as the demo account, mirroring the backend's
+ * DEMO_EMAIL / identity.DemoAccount. Mutable so a test can turn the behaviour on for
+ * itself and off again, which is also how the mock stays faithful to "unset by
+ * default, so there is no demo address at all".
+ */
+let demoEmail: string | null = null
+
+export function setDemoEmail(email: string | null) {
+  demoEmail = email == null ? null : email.trim().toLowerCase()
+}
+
+/**
+ * The token to put in a magic-link response: the real one for the demo address, null
+ * for everybody else - the exact shape the backend answers with, and an EXACT address
+ * match, never a domain or a pattern.
+ */
+export function demoTokenFor(email: string, token: string): string | null {
+  return demoEmail !== null && demoEmail === email.trim().toLowerCase() ? token : null
 }
 
 export function issueMagicLinkToken(email: string): string {

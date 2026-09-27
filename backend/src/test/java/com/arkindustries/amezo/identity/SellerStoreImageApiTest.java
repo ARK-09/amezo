@@ -82,6 +82,7 @@ class SellerStoreImageApiTest {
 
     @Autowired
     private SessionRepository sessionRepository;
+    @Autowired private BuyerIdentityRepository buyerIdentityRepository;
 
     @Autowired
     private SellerStoreRepository storeRepository;
@@ -487,7 +488,7 @@ class SellerStoreImageApiTest {
                         .content("{\"id\":\"" + UUID.randomUUID() + "\",\"slot\":\"COVER\"}"))
                 .andExpect(status().isUnauthorized());
 
-        Cookie buyer = Fixtures.sessionCookie(sessionRepository, IdentityType.BUYER, UUID.randomUUID());
+        Cookie buyer = Fixtures.buyerSessionCookie(sessionRepository, buyerIdentityRepository);
         mockMvc.perform(post(IMAGES).cookie(buyer).contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"slot":"COVER","contentType":"image/png","fileSizeBytes":1024}"""))

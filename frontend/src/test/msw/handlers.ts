@@ -4,6 +4,7 @@ import {
   clearSellerSession,
   consumeMagicLinkToken,
   currentSessionIdentity,
+  demoTokenFor,
   issueMagicLinkToken,
   signInBuyerSession,
 } from './fixtures/sellerAuth'
@@ -832,8 +833,8 @@ export const handlers = [
 
   http.post('http://localhost:8080/auth/buyer/magic-link', async ({ request }) => {
     const { email } = (await request.json()) as { email: string }
-    issueMagicLinkToken(email)
-    return new HttpResponse(null, { status: 204 })
+    const token = issueMagicLinkToken(email)
+    return HttpResponse.json({ token: demoTokenFor(email, token) })
   }),
 
   http.post('http://localhost:8080/auth/buyer/verify', async ({ request }) => {
@@ -1373,7 +1374,7 @@ export const handlers = [
     // the mock at all. The token is real and single-use - this is the mock delivering
     // the email, not a bypass of the flow.
     console.info(`[MSW] magic link for ${email}: /seller/verify?token=${token}`)
-    return new HttpResponse(null, { status: 204 })
+    return HttpResponse.json({ token: demoTokenFor(email, token) })
   }),
 
   http.post('http://localhost:8080/auth/seller/verify', async ({ request }) => {

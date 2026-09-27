@@ -235,8 +235,8 @@ describe('SellerRefunds', () => {
     expect(await screen.findByText('ref_4d90b12c')).toBeInTheDocument()
   })
 
-  it('approves a request from the drawer and moves it off the queue', async () => {
-    renderPage()
+  it('approves a request from the drawer and follows it into its new tab', async () => {
+    const router = renderWithHistory(['/seller/refunds'])
     await screen.findByText('ref_4d90b12c')
 
     const [firstRow] = screen.getAllByRole('row').slice(1)
@@ -260,13 +260,24 @@ describe('SellerRefunds', () => {
     expect(within(settled).getByRole('button', { name: 'Mark return received' })).toBeInTheDocument()
     expect(within(settled).getByRole('button', { name: 'Undo approval' })).toBeInTheDocument()
 
-    // Close it, and the approved request has left the "needs a decision" queue.
-    // Asserted after closing because the drawer is modal - Radix marks the rest
-    // of the page aria-hidden, so the table is not in the accessibility tree
-    // while it is open.
+    // The queue has followed the request to where it now is. "Needs a decision" is
+    // the tab this screen opens on and, by definition, the one tab a decided request
+    // cannot be in - so approving something used to make it vanish, which reads as
+    // having lost the refund rather than as having progressed it.
+    await waitFor(() =>
+      expect(new URLSearchParams(router.state.location.search).get('status')).toBe(
+        'AWAITING_RETURN',
+      ),
+    )
+    // The drawer is still naming it, so ?id= survived the tab change.
+    expect(new URLSearchParams(router.state.location.search).get('id')).toBe('ref-1')
+
+    // Close it and the row is still on screen, in the tab it moved to. Asserted after
+    // closing because the drawer is modal - Radix marks the rest of the page
+    // aria-hidden, so the table is not in the accessibility tree while it is open.
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    await waitFor(() => expect(screen.queryByText('ref_4d90b12c')).not.toBeInTheDocument())
+    expect(await screen.findByText('ref_4d90b12c')).toBeInTheDocument()
   })
 
   it('refuses an approval for more than was requested', async () => {

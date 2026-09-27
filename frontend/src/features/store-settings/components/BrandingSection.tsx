@@ -88,7 +88,11 @@ export function BrandingSection({
         <Label htmlFor="st-cover" className="text-[13px] font-semibold">
           Cover image
         </Label>
-        <div className="relative flex h-[150px] items-center justify-center overflow-hidden rounded-[10px] border border-dashed bg-muted/40">
+        {/* aspect-[4/1], matching the storefront band exactly - so this preview is
+            what shoppers will actually see. At a fixed 150px it cropped the cover the
+            same way the storefront did, which meant a seller could not tell from here
+            that the top and bottom of their image were being thrown away. */}
+        <div className="relative flex aspect-[4/1] items-center justify-center overflow-hidden rounded-[10px] border border-dashed bg-muted/40">
           {profile.coverUrl ? (
             <img
               src={profile.coverUrl}

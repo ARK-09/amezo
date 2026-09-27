@@ -183,8 +183,16 @@ paths:
               properties:
                 email: { type: string, format: email }
       responses:
-        '204':
-          description: No Content
+        '200':
+          description: >-
+            Accepted. The link has been emailed - except for the configured demo
+            address, whose token comes back in the body so the app can be walked
+            without an inbox. Succeeds whether or not the address has an account,
+            so it never reveals who exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MagicLinkResult'
         default:
           description: Error
           content:
@@ -366,8 +374,14 @@ paths:
               properties:
                 email: { type: string }
       responses:
-        '204':
-          description: No Content
+        '200':
+          description: >-
+            Accepted. See POST /auth/seller/magic-link - the demo address gets its
+            token back in the body, every other address gets an email.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MagicLinkResult'
         default:
           description: Error
           content:
@@ -1809,6 +1823,15 @@ components:
       properties:
         sellerId: { type: string, format: uuid }
         email: { type: string }
+    MagicLinkResult:
+      type: object
+      properties:
+        # Normally null: the link was emailed, and a token here for an arbitrary
+        # address would be an open door to every account. Set ONLY for the address
+        # configured as the demo account (DEMO_EMAIL), which is a public shared
+        # login by design - see backend identity/DemoAccount. The token itself is
+        # ordinary: single-use, same expiry, redeemed by the /verify below.
+        token: { type: string, nullable: true }
     SessionIdentity:
       type: object
       required: [identityType, identityId, email, expiresAt]

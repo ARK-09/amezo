@@ -133,6 +133,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export function RefundDecisionPanel({
   refundRequestId,
   showIdentity = true,
+  onStatusChange,
 }: {
   refundRequestId: string
   /**
@@ -144,6 +145,17 @@ export function RefundDecisionPanel({
    * above the other.
    */
   showIdentity?: boolean
+  /**
+   * The request has just moved, and this is where it moved to.
+   *
+   * The queue uses it to follow the row: a decision takes a request out of the tab
+   * it was decided in, and "Needs a decision" is the tab the screen opens on - so
+   * approving something made it vanish, which reads as having lost the refund rather
+   * than as having progressed it. An event rather than state derived from the query,
+   * so the list is told once, when it happens, and the URL stays the only record of
+   * which tab is open.
+   */
+  onStatusChange?: (status: RefundStatus) => void
 }) {
   const query = useRefundRequest(refundRequestId)
   const update = useUpdateRefundRequest(refundRequestId)
@@ -219,18 +231,24 @@ export function RefundDecisionPanel({
     chosen === request.resolution ? {} : { resolution: chosen }
 
   function act(status: RefundStatus, extra: Partial<UpdateRefundRequest> = {}) {
-    update.mutate({
-      status,
-      ...extra,
-      // Both approvals carry the amount. AWAITING_RETURN is how a refund is
-      // approved and APPROVED is how a replacement is - listing only one of them
-      // here is what would silently drop a partial amount on the other.
-      ...(status === 'APPROVED' || status === 'AWAITING_RETURN'
-        ? { approvedAmount: amountValue }
-        : {}),
-      ...(status === 'DECLINED' ? { declineReason: reason } : {}),
-      ...(note.trim() ? { note: note.trim() } : {}),
-    })
+    update.mutate(
+      {
+        status,
+        ...extra,
+        // Both approvals carry the amount. AWAITING_RETURN is how a refund is
+        // approved and APPROVED is how a replacement is - listing only one of them
+        // here is what would silently drop a partial amount on the other.
+        ...(status === 'APPROVED' || status === 'AWAITING_RETURN'
+          ? { approvedAmount: amountValue }
+          : {}),
+        ...(status === 'DECLINED' ? { declineReason: reason } : {}),
+        ...(note.trim() ? { note: note.trim() } : {}),
+      },
+      // The server's answer, not the status that was asked for: approving a refund
+      // is sent as AWAITING_RETURN and a seller who already had the item in hand can
+      // be moved straight on, so what it became is the only reliable thing to report.
+      { onSuccess: (moved) => onStatusChange?.(moved.status) },
+    )
   }
 
   // REQUESTED -> REPLACEMENT_SENT is not a legal transition: a replacement is
@@ -239,12 +257,17 @@ export function RefundDecisionPanel({
   // at APPROVED, where "Mark replacement sent" offers it again.
   async function sendReplacement() {
     try {
-      await update.mutateAsync({
+      const approved = await update.mutateAsync({
         status: 'APPROVED',
         ...resolutionPatch,
         ...(note.trim() ? { note: note.trim() } : {}),
       })
-      await update.mutateAsync({ status: 'REPLACEMENT_SENT' })
+      // Told after each step, so a second call that fails still leaves the queue
+      // looking at the tab the request is really in (APPROVED), where the panel
+      // offers "Mark replacement sent" again.
+      onStatusChange?.(approved.status)
+      const sent = await update.mutateAsync({ status: 'REPLACEMENT_SENT' })
+      onStatusChange?.(sent.status)
     } catch {
       // Surfaced by update.isError below.
     }

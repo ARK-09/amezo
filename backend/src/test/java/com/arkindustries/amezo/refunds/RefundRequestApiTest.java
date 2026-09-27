@@ -236,6 +236,76 @@ class RefundRequestApiTest {
     }
 
     /**
+     * The already-refunded case: the units a settled refund paid for cannot be asked
+     * about again.
+     *
+     * Distinct from the duplicate-request 409 above, which refuses a second request while
+     * one is OPEN. This is the refusal once the money has actually moved, and it is a 422
+     * rather than a 409 because nothing is in the way any more - there is simply nothing
+     * left of that line to return. DECLINED and CANCELLED release their units, and the
+     * test below that one asserts they do.
+     */
+    @Test
+    void anAlreadyRefundedLineCannotBeAskedAboutAgain() throws Exception {
+        Seller seller = fixture.seller();
+        BuyerIdentity buyer = fixture.buyer();
+        SeededOrder order = fixture.order(seller, buyer, LineSpec.of("Aurora One Headphones", "149.00", 1));
+        Cookie buyerCookie = fixture.buyerCookie(buyer);
+        Cookie sellerCookie = fixture.sellerCookie(seller);
+
+        UUID request = created(buyerCookie, order, 0, 1, "REFUND");
+        patchOk(sellerCookie, request, """
+                {"status":"AWAITING_RETURN"}""");
+        patchOk(sellerCookie, request, """
+                {"status":"RETURN_RECEIVED"}""");
+        patchOk(sellerCookie, request, """
+                {"status":"REFUNDED"}""");
+
+        mockMvc.perform(post(REFUNDS).cookie(buyerCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody(order.id(), order.lineId(0), 1, "REFUND", "ORIGINAL_PAYMENT")))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.title").value("Quantity unavailable"));
+    }
+
+    /**
+     * The same rule counting rather than flag-checking: one of two units refunded leaves
+     * exactly one askable, and not two.
+     *
+     * This is the case a boolean "has this line been refunded" would get wrong in both
+     * directions - refusing the second unit, or allowing a third.
+     */
+    @Test
+    void aPartlyRefundedLineLeavesOnlyWhatIsLeft() throws Exception {
+        Seller seller = fixture.seller();
+        BuyerIdentity buyer = fixture.buyer();
+        SeededOrder order = fixture.order(seller, buyer, LineSpec.of("Aurora Buds", "99.00", 2));
+        Cookie buyerCookie = fixture.buyerCookie(buyer);
+        Cookie sellerCookie = fixture.sellerCookie(seller);
+
+        UUID first = created(buyerCookie, order, 0, 1, "REFUND");
+        patchOk(sellerCookie, first, """
+                {"status":"AWAITING_RETURN"}""");
+        patchOk(sellerCookie, first, """
+                {"status":"RETURN_RECEIVED"}""");
+        patchOk(sellerCookie, first, """
+                {"status":"REFUNDED"}""");
+
+        // Two is more than remains.
+        mockMvc.perform(post(REFUNDS).cookie(buyerCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody(order.id(), order.lineId(0), 2, "REFUND", "ORIGINAL_PAYMENT")))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.title").value("Quantity unavailable"));
+
+        // One is exactly what remains.
+        mockMvc.perform(post(REFUNDS).cookie(buyerCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody(order.id(), order.lineId(0), 1, "REFUND", "ORIGINAL_PAYMENT")))
+                .andExpect(status().isCreated());
+    }
+
+    /**
      * Past the return window, a request is a 422. Flagged in RefundWindowPolicy: the
      * window runs from placed_at because nothing in this schema records a delivery
      * date.

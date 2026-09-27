@@ -30,9 +30,7 @@ import java.util.List;
  *                    GET /countries, POST /magic-links, POST /sessions,
  *                    POST /orders (guest checkout), the OpenAPI spec path
  *                    (springdoc.api-docs.path, wherever that points),
- *                    POST /auth/{seller,buyer}/magic-link and /verify,
- *                    GET /dev/emails (which only has a handler when the dev
- *                    mailbox is enabled, and checks its own operator token)
+ *                    POST /auth/{seller,buyer}/magic-link and /verify
  *   either role   - GET /sessions/current, DELETE /sessions/current
  *                    (SessionController - the role-agnostic sign-out)
  *   buyer only    - POST /reviews, the per-product review eligibility read
@@ -102,13 +100,6 @@ public class SecurityConfig {
                         "/auth/seller/magic-link", "/auth/seller/verify",
                         "/auth/buyer/magic-link", "/auth/buyer/verify").permitAll()
                 .requestMatchers(apiDocsPath + "/**").permitAll()
-                // The dev mailbox (identity/DevMailboxController), which exists ONLY
-                // when app.email.dev-mailbox.enabled is true - so on an ordinary
-                // deployment this permits a path that has no handler and 404s. Not
-                // guarded by a role because the token it checks is the operator's and
-                // not any account's; see that class for why the default is off and why
-                // enabling it without a token refuses to boot.
-                .requestMatchers(HttpMethod.GET, "/dev/emails").permitAll()
                 // Spring's internal error dispatch, not a real route - without this,
                 // anyRequest().denyAll() masks every unhandled exception behind a 403
                 // instead of the real ProblemDetail from ApiExceptionHandler.
