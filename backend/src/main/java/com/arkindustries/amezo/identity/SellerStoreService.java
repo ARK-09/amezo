@@ -119,7 +119,11 @@ public class SellerStoreService {
      * This seller's store, creating the default one if this is the first thing
      * that ever asked for it.
      */
-    private SellerStore requireStore(UUID sellerId) {
+    // Package-private rather than private: SellerStoreRefQueryService needs the
+    // same provision-on-first-read behaviour for a seller it is printing on
+    // somebody else's screen, and a second copy of this loop is how the two
+    // would end up disagreeing about what a default store looks like.
+    SellerStore requireStore(UUID sellerId) {
         Optional<SellerStore> existing = stores.findBySellerId(sellerId);
         if (existing.isPresent()) {
             return existing.get();

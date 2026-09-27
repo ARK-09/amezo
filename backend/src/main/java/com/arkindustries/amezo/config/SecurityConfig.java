@@ -35,7 +35,9 @@ import java.util.List;
  *                    (SessionController - the role-agnostic sign-out)
  *   buyer only    - POST /reviews, the per-product review eligibility read
  *                    (GET under a product's reviews), the last-checkout-details
- *                    read, DELETE /auth/buyer/session
+ *                    read, every GET under /api/v1/orders/** (the buyer's own
+ *                    order history, its facet counts and one order's detail),
+ *                    DELETE /auth/buyer/session
  *   seller only   - every method under /sellers/me/** (own product list,
  *                    product create, orders, ship), plus product/variant/image
  *                    writes under /products/**, /variants/** and /images/**,
@@ -109,16 +111,33 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/sessions/current").authenticated()
                 .requestMatchers(HttpMethod.DELETE, "/sessions/current").authenticated()
 
-                // GET /orders/** had a rule here and no controller behind it, the
-                // same dead-rule shape that made /sessions/current answer 404. A
-                // buyer order history isn't built, so the path is now plainly not a
-                // route (403 from denyAll) rather than looking like a broken one.
+                // Unprefixed GET /orders/** had a rule here and no controller
+                // behind it, the same dead-rule shape that made /sessions/current
+                // answer 404. It stays absent: the buyer order history that got
+                // built lives under /api/v1/orders (see the rule below it), so the
+                // unversioned path is plainly not a route (403 from denyAll)
+                // rather than looking like a broken one.
                 //
                 // Writing a review requires being a signed-in buyer; ReviewService
                 // then checks that the order line is actually theirs. The role is
                 // the door, the ownership check is the lock - a buyer session alone
                 // does not entitle anyone to review a stranger's purchase.
                 .requestMatchers(HttpMethod.POST, "/reviews").hasRole("BUYER")
+
+                // The buyer's own order history (BuyerOrderController): the list,
+                // its facet counts and one order's detail. NOT covered by the
+                // /api/v1/sellers/me/** rule above - the prefix is part of the
+                // path - so without this the endpoints exist and
+                // anyRequest().denyAll() answers 403, the same dead-route trap
+                // POST /sellers/me/products fell into.
+                //
+                // GET only, and both patterns: POST /api/v1/orders is not a route
+                // (guest checkout is the unprefixed POST /orders, permitted
+                // above), and "/api/v1/orders/**" alone would not match the bare
+                // "/api/v1/orders" under every matcher implementation. Naming the
+                // namespace once covers /facets and /{orderId} without a rule per
+                // endpoint. Ownership within the role is BuyerOrderService's job.
+                .requestMatchers(HttpMethod.GET, "/api/v1/orders", "/api/v1/orders/**").hasRole("BUYER")
 
                 // Reading back a buyer's own last delivery details to prefill
                 // checkout. Buyer-scoped even though POST /orders beside it is
