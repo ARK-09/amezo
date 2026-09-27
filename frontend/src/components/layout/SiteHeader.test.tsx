@@ -164,14 +164,15 @@ describe('SiteHeader', () => {
     expect(screen.queryByText(/Ada Lovelace/)).not.toBeInTheDocument()
   })
 
-  it('links the wordmark home and offers the seller entry point', () => {
+  it('links the wordmark home and offers a signed-out visitor the way in', () => {
     renderHeader('/checkout')
 
     expect(screen.getByRole('link', { name: 'Amezo home' })).toHaveAttribute('href', '/')
-    expect(screen.getByRole('link', { name: 'Sell on Amezo' })).toHaveAttribute(
-      'href',
-      '/seller/sign-in',
-    )
+    // The BUYER's sign-in. The header used to carry "Sell on Amezo" in this slot -
+    // a link the footer already has - which left /sign-in reachable only from a
+    // reviews panel, from /account redirecting, or by typing it.
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in')
+    expect(screen.queryByRole('link', { name: 'Sell on Amezo' })).not.toBeInTheDocument()
   })
 })
 
@@ -203,10 +204,12 @@ describe('SiteHeader seller entry point', () => {
     )
     renderHeader()
 
-    expect(await screen.findByRole('link', { name: 'Sell on Amezo' })).toHaveAttribute(
+    // Still a visitor, so the header offers a sign-in rather than a dashboard.
+    expect(await screen.findByRole('link', { name: 'Sign in' })).toHaveAttribute(
       'href',
-      '/seller/sign-in',
+      '/sign-in',
     )
+    expect(screen.queryByRole('link', { name: /Seller dashboard/ })).not.toBeInTheDocument()
   })
 
   // The cookie decides, and a leftover flag beside it changes nothing.
@@ -223,6 +226,14 @@ describe('SiteHeader seller entry point', () => {
       '/account',
     )
     expect(screen.queryByRole('link', { name: /Seller dashboard/ })).not.toBeInTheDocument()
+  })
+
+  it('drops the sign-in once somebody is actually signed in', async () => {
+    signInBuyerSession({ buyerIdentityId: 'buyer-1', email: 'ada@example.com' })
+    renderHeader()
+
+    await screen.findByRole('link', { name: 'Your account' })
+    expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument()
   })
 
   it('does not offer a seller the buyer account page', async () => {
