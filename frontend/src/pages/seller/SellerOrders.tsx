@@ -300,7 +300,14 @@ export function SellerOrders() {
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  // The whole row opens the order, as Products and Refunds already
+                  // do. The Open button stays: it is what the keyboard reaches, and
+                  // a row click is a shortcut rather than the only way in.
+                  onClick={() => drawer.open(row.id)}
+                  className="cursor-pointer"
+                >
                   <TableCell className="font-mono text-xs">{row.reference}</TableCell>
                   <TableCell>
                     <p className="font-medium">{row.recipientName}</p>
@@ -320,7 +327,15 @@ export function SellerOrders() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => drawer.open(row.id)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      // Stops the row's own click firing after this one.
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        drawer.open(row.id)
+                      }}
+                    >
                       Open
                     </Button>
                   </TableCell>

@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
@@ -87,7 +87,7 @@ describe('buyer sign-out', () => {
 
   // The page used to print "Loading…" at the top of an empty screen. The spinner
   // sits in the middle of the space the account will fill, so nothing jumps.
-  it('shows a centred spinner while the session is still resolving', async () => {
+  it('runs the Sprinter, centred, while the session is still resolving', async () => {
     let release = () => {}
     const held = new Promise<void>((resolve) => {
       release = resolve
@@ -101,15 +101,19 @@ describe('buyer sign-out', () => {
     signInBuyerSession({ buyerIdentityId: 'buyer-1', email: 'ada@example.com' })
     renderAccount()
 
-    const spinner = await screen.findByRole('status', { name: 'Loading' })
+    // Named for what is being waited on, not for the act of waiting.
+    const loader = await screen.findByRole('status', { name: 'Your account' })
+    expect(within(loader).getByText('Your account')).toBeInTheDocument()
     // Centred both ways, in a box that fills the height the layout gives it.
-    const box = spinner.parentElement!
+    const box = loader.parentElement!
     expect(box.className).toContain('items-center')
     expect(box.className).toContain('justify-center')
     expect(box.className).toContain('flex-1')
     expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
 
     release()
-    await waitFor(() => expect(screen.queryByRole('status', { name: 'Loading' })).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByRole('status', { name: 'Your account' })).not.toBeInTheDocument(),
+    )
   })
 })

@@ -90,7 +90,14 @@ export function OrderCard({
 
   return (
     <article className="overflow-hidden rounded-xl border">
-      <div className="flex flex-wrap items-center gap-x-7 gap-y-3 border-b bg-[#fafafa] px-5 py-3.5">
+      {/* The whole header opens the order, matching the seller tables: a reader
+          should not have to find the small button to see what they bought. The
+          button stays as the keyboard route and as the thing that says which way
+          it will go. */}
+      <div
+        onClick={onToggle}
+        className="flex flex-wrap items-center gap-x-7 gap-y-3 border-b bg-[#fafafa] px-5 py-3.5 cursor-pointer"
+      >
         {[
           { label: 'Order placed', value: formatMediumDate(order.placedAt), width: 'min-w-[110px]' },
           { label: 'Total', value: formatPrice(order.total), width: 'min-w-[80px]' },
@@ -111,7 +118,12 @@ export function OrderCard({
         <div className="flex flex-1 justify-end gap-2">
           <button
             type="button"
-            onClick={onToggle}
+            // Stops the header's own click firing after this one, which would
+            // toggle twice and leave the card exactly as it was.
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggle()
+            }}
             aria-expanded={isOpen}
             className="inline-flex items-center gap-1.5 rounded-full border bg-background px-3.5 py-[7px] text-[13px] font-semibold transition-colors hover:border-primary hover:text-primary"
           >

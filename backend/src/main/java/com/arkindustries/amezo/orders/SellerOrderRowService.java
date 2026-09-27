@@ -244,6 +244,12 @@ public class SellerOrderRowService {
                     order.setParcels(request.parcels());
                 }
             }
+            case DELIVERED -> {
+                order.setStatus(OrderStatus.DELIVERED);
+                // The date comes from somebody saying so at a particular moment. Every
+                // other field on the shipment stays as the handover left it.
+                order.setDeliveredAt(occurredAt);
+            }
             case CANCELLED -> cancel(candidate, occurredAt);
         }
 
@@ -598,11 +604,11 @@ public class SellerOrderRowService {
      * Null when nothing is known, so a screen reading {@code shipment?.trackingNumber}
      * prints nothing rather than a tracking panel with seven blank rows in it.
      *
-     * carrier, trackingUrl, estimatedDeliveryAt and deliveredAt have no column
-     * anywhere in this schema and stay null: an ETA the server guessed is a promise
-     * nobody made, and there is no carrier to name. deliveryNote carries the note the
-     * seller left when they handed the parcel over - the one field of the seven this
-     * system does have something honest to put in.
+     * carrier, trackingUrl and estimatedDeliveryAt have no column anywhere in this
+     * schema and stay null: an ETA the server guessed is a promise nobody made, and
+     * there is no carrier to name. deliveredAt is real since V26 - null until somebody
+     * marks it, never inferred from the status. deliveryNote carries the note the
+     * seller left when they handed the parcel over.
      */
     private ShipmentInfoResponse shipmentFor(Order order) {
         if (order.getTrackingNumber() == null && order.getShippedAt() == null) {
@@ -614,7 +620,7 @@ public class SellerOrderRowService {
                 null,
                 order.getShippedAt(),
                 null,
-                null,
+                order.getDeliveredAt(),
                 handoverNoteOf(order.getId()));
     }
 

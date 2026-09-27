@@ -14,6 +14,8 @@ export type StoredSellerOrder = SellerOrderDetail & {
   /** Format: date-time */
   packedAt?: string | null
   parcels?: number | null
+  /** When the seller said it arrived - orders.delivered_at, added by V26. */
+  deliveredAt?: string | null
 }
 
 // Demo-account starting orders (browser/dev only - every test resets this to
@@ -265,7 +267,10 @@ export function sellerOrderRowDetailOf(order: StoredSellerOrder): SellerOrderRow
       // so a shipped order read "Not yet" against a step already ticked.
       shippedAt: order.shippedAt ?? null,
       estimatedDeliveryAt: null,
-      deliveredAt: order.status === 'DELIVERED' ? order.shippedAt ?? null : null,
+      // The date somebody recorded, not one borrowed from the handover: an order
+      // that reached DELIVERED before anything stored a date has none, which is
+      // what the backend returns too.
+      deliveredAt: order.deliveredAt ?? null,
       deliveryNote: null,
     },
     packedAt: order.packedAt ?? null,

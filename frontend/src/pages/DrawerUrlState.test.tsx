@@ -240,6 +240,18 @@ describe('drawer state in the URL', () => {
       expect(query(router).get('q')).toBe('maya')
     })
 
+    it('opens the order from the row, not only from the Open button', async () => {
+      seedOrders()
+      const router = renderAt('/seller/orders', SellerOrders, ['/seller/orders'])
+
+      // The buyer's email, which is a plain cell and not the action button.
+      await userEvent.click(await screen.findByText('maya@example.com'))
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
+      expect(query(router).get('id')).toBe(ORDER_ID)
+      expect(query(router).get('mode')).toBe('view')
+    })
+
     it('reopens the order on Back', async () => {
       seedOrders()
       const router = renderAt('/seller/orders', SellerOrders, ['/seller/orders'])
@@ -287,6 +299,17 @@ describe('drawer state in the URL', () => {
 
       // The card's own detail arrives on expansion, so this is the expanded card and
       // not just the summary row.
+      expect(await screen.findByRole('button', { name: /Hide details/ })).toBeInTheDocument()
+    })
+
+    it('expands the card from its header, not only from the details button', async () => {
+      signInBuyerSession({ buyerIdentityId: 'buyer-1111', email: 'rhea@example.com' })
+      const router = renderAt('/orders', MyOrders, ['/orders'])
+
+      // The "Order placed" label in the card's header bar - not a button.
+      await userEvent.click((await screen.findAllByText('Order placed'))[0])
+
+      await waitFor(() => expect(query(router).has('id')).toBe(true))
       expect(await screen.findByRole('button', { name: /Hide details/ })).toBeInTheDocument()
     })
 

@@ -132,3 +132,115 @@
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The Sprinter: Amezo's loading mark (components/ui/sprinter.tsx).
+
+   Keyframes live here because keyframes cannot live in a utility class, and the
+   pieces are addressed by class rather than by arbitrary-value utilities so the
+   timings stay legible next to each other - four limbs on one gait are easier to
+   get right when they are written as one block.
+
+   The gait is 600ms. Slower reads as jogging and stops selling "fast"; much
+   faster turns the limbs into a blur at 20px. Front and back of each pair run the
+   same keyframes half a cycle apart (a negative delay starts them mid-animation
+   rather than making the first half-cycle stand still).
+--------------------------------------------------------------------------- */
+
+@keyframes sprinter-swing-leg {
+  0%,
+  100% {
+    transform: rotate(26deg);
+  }
+  50% {
+    transform: rotate(-24deg);
+  }
+}
+
+@keyframes sprinter-swing-arm {
+  0%,
+  100% {
+    transform: rotate(-22deg);
+  }
+  50% {
+    transform: rotate(20deg);
+  }
+}
+
+/* The bob. Tiny on purpose - 1px at this viewBox - because a runner that rises
+   and falls by much at speed reads as a hop. */
+@keyframes sprinter-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1px);
+  }
+}
+
+/* The ground streaking past, which is what makes the figure look like it is
+   covering distance rather than running in place. Fades at both ends so the
+   streaks appear and leave rather than popping. */
+@keyframes sprinter-ground {
+  0% {
+    transform: translateX(6px);
+    opacity: 0;
+  }
+  20%,
+  80% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateX(-14px);
+    opacity: 0;
+  }
+}
+
+.sprinter .sprinter-body {
+  animation: sprinter-bob 600ms ease-in-out infinite;
+}
+
+/* transform-box: fill-box makes the origin resolve against the group's own
+   bounding box, so percentages land on the joint. Without it the origin is the
+   nearest viewport and every limb orbits the corner of the icon. */
+.sprinter .sprinter-arm-front,
+.sprinter .sprinter-arm-back,
+.sprinter .sprinter-leg-front,
+.sprinter .sprinter-leg-back {
+  transform-box: fill-box;
+  transform-origin: 0 0;
+}
+
+.sprinter .sprinter-arm-front {
+  animation: sprinter-swing-arm 600ms ease-in-out infinite;
+}
+.sprinter .sprinter-arm-back {
+  animation: sprinter-swing-arm 600ms ease-in-out infinite -300ms;
+}
+.sprinter .sprinter-leg-front {
+  animation: sprinter-swing-leg 600ms ease-in-out infinite;
+}
+.sprinter .sprinter-leg-back {
+  animation: sprinter-swing-leg 600ms ease-in-out infinite -300ms;
+}
+
+.sprinter .sprinter-ground line {
+  animation: sprinter-ground 600ms linear infinite;
+}
+.sprinter .sprinter-ground line:nth-child(2) {
+  animation-delay: -200ms;
+}
+.sprinter .sprinter-ground line:nth-child(3) {
+  animation-delay: -400ms;
+}
+
+/* Somebody who has asked for less movement gets the figure mid-stride and no
+   motion at all. The loader's copy still changes as the wait goes on, so the
+   screen is never silent about what is happening - it just stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  .sprinter *,
+  .sprinter {
+    animation: none !important;
+  }
+}

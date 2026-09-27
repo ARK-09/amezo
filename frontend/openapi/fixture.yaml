@@ -2177,9 +2177,17 @@ components:
       type: string
       description: >-
         The statuses a seller may write, which is deliberately narrower than
-        OrderStatus. The three carrier states are system-driven, and REFUNDED is
-        derived from the refund request rather than declared here.
-      enum: [PACKED, SHIPPED, CANCELLED]
+        OrderStatus. IN_TRANSIT and OUT_FOR_DELIVERY are carrier states nothing in
+        this system can report, and REFUNDED is derived from the refund request
+        rather than declared here.
+
+
+        DELIVERED is a STAND-IN. It belongs to the carrier, and there is no carrier
+        integration - so until there is one, the seller marks it by hand and
+        orders.delivered_at records when they said so. Legal from PACKED as well as
+        SHIPPED: a seller who never recorded the handover has still delivered the
+        parcel.
+      enum: [PACKED, SHIPPED, DELIVERED, CANCELLED]
     ProductStatus:
       type: string
       enum: [ACTIVE, DRAFT, ARCHIVED]

@@ -422,30 +422,43 @@ public class BuyerOrderService {
     /**
      * The delivery progress bar.
      *
-     * Three stages, not the contract's six. PACKED, IN_TRANSIT and OUT_FOR_DELIVERY
-     * are codes its vocabulary has and this schema cannot express: OrderStatus has
-     * no such values and no column records when any of them happened. Emitting them
-     * anyway would draw three steps that are permanently incomplete on a delivered
-     * order - a progress bar asserting the order was never packed.
+     * Four stages, not the contract's six. PACKED joined them with V24, which gave it
+     * a status and a packed_at to print; DELIVERED got its own timestamp with V26.
+     * IN_TRANSIT and OUT_FOR_DELIVERY are still left out: they are carrier codes
+     * nothing in this system can report, and drawing two steps that are permanently
+     * incomplete on a delivered order is a progress bar telling the buyer their parcel
+     * never travelled.
      *
-     * DELIVERED carries a null `at` even when complete: orders has placed_at and
-     * shipped_at and no delivered_at. A date inferred from the status alone would be
-     * a timestamp this system does not have, printed as though it did.
+     * Completeness is read from the timestamps where there is one, not from the
+     * status alone: an order marked delivered by a seller who never recorded the
+     * handover is still packed and still shipped, and a bar that unticked those would
+     * be arguing with itself.
+     *
+     * A stage with no timestamp keeps a null `at` rather than borrowing a neighbour's:
+     * an order that reached DELIVERED before V26 existed has no date, and printing one
+     * would be a fabrication with a timestamp on it.
      *
      * `estimated` is false throughout - nothing here projects a future date, and
      * ShipmentInfo.estimatedDeliveryAt is null for the same reason.
      */
     private static List<OrderTimelineEntryResponse> timelineFor(Order order) {
         OrderStatus status = statusOf(order);
+        boolean packed = order.getPackedAt() != null
+                || status == OrderStatus.PACKED
+                || status == OrderStatus.SHIPPED
+                || status == OrderStatus.DELIVERED;
         boolean shipped = status == OrderStatus.SHIPPED || status == OrderStatus.DELIVERED;
 
         return List.of(
                 new OrderTimelineEntryResponse(
                         OrderStatus.PLACED.name(), "Order placed", order.getPlacedAt(), false, true, null),
                 new OrderTimelineEntryResponse(
+                        OrderStatus.PACKED.name(), "Packed", order.getPackedAt(), false, packed, null),
+                new OrderTimelineEntryResponse(
                         OrderStatus.SHIPPED.name(), "Shipped", order.getShippedAt(), false, shipped, null),
                 new OrderTimelineEntryResponse(
-                        OrderStatus.DELIVERED.name(), "Delivered", null, false, status == OrderStatus.DELIVERED, null));
+                        OrderStatus.DELIVERED.name(), "Delivered", order.getDeliveredAt(), false,
+                        status == OrderStatus.DELIVERED, null));
     }
 
     /**
@@ -457,7 +470,8 @@ public class BuyerOrderService {
             return null;
         }
         return new ShipmentInfoResponse(
-                null, order.getTrackingNumber(), null, order.getShippedAt(), null, null, null);
+                null, order.getTrackingNumber(), null, order.getShippedAt(), null,
+                order.getDeliveredAt(), null);
     }
 
     private static AddressResponse toAddressResponse(Address address) {

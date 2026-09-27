@@ -23,9 +23,28 @@ import { formatMediumDate } from '@/lib/formatDate'
 import { formatPrice } from '@/lib/formatPrice'
 import { cn } from '@/lib/utils'
 
+import { Sprinter } from '@/components/ui/sprinter'
+
 import { StatusBadge } from './StatusBadge'
 
-type Stage = 'PACKED' | 'SHIPPED'
+/**
+ * The moves the composer offers. DELIVERED is a STAND-IN: it belongs to the carrier,
+ * and there is no carrier integration - so until one exists the seller says the parcel
+ * arrived and the server records when they said it.
+ */
+type Stage = 'PACKED' | 'SHIPPED' | 'DELIVERED'
+
+const STAGE_LABELS: Record<Stage, string> = {
+  PACKED: 'Packed',
+  SHIPPED: 'Handed over',
+  DELIVERED: 'Delivered',
+}
+
+const STAGE_ACTIONS: Record<Stage, string> = {
+  PACKED: 'Mark as packed',
+  SHIPPED: 'Mark as handed over',
+  DELIVERED: 'Mark as delivered',
+}
 
 const HANDOVER_METHODS = [
   { value: 'AMEZO_PICKUP', label: 'Amezo pickup from your address' },
@@ -45,6 +64,18 @@ function availability(status: string): Record<Stage, { allowed: boolean; reason?
     SHIPPED: {
       allowed: status === 'PLACED' || status === 'PACKED',
       reason: status === 'PLACED' || status === 'PACKED' ? undefined : 'Already handed over',
+    },
+    // From PACKED as well as SHIPPED, matching the server: a seller who never got
+    // round to recording the handover has still delivered the parcel. Not from
+    // PLACED - an order nobody has packed has not arrived.
+    DELIVERED: {
+      allowed: status === 'PACKED' || status === 'SHIPPED',
+      reason:
+        status === 'DELIVERED'
+          ? 'Already delivered'
+          : status === 'PLACED'
+            ? 'Pack it first'
+            : undefined,
     },
   }
 }
@@ -107,10 +138,10 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
   // Follows the order rather than sticking where it was first rendered: after
   // packing, PACKED is no longer on offer, and leaving the picker there left a
   // disabled stage with a dead post button and no way forward.
-  const defaultStage: Stage = can.PACKED.allowed ? 'PACKED' : 'SHIPPED'
+  const defaultStage: Stage = can.PACKED.allowed ? 'PACKED' : can.SHIPPED.allowed ? 'SHIPPED' : 'DELIVERED'
   const activeStage = stage && can[stage].allowed ? stage : defaultStage
   const stageAllowed = can[activeStage].allowed
-  const isFinal = !can.PACKED.allowed && !can.SHIPPED.allowed
+  const isFinal = !can.PACKED.allowed && !can.SHIPPED.allowed && !can.DELIVERED.allowed
 
   // Number('') is 0 and Number('abc') is NaN, so clamping to 1 used to post a
   // parcel count the seller never typed. The contract's minimum is 1, so an
@@ -127,12 +158,15 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
             packedBy: packedBy.trim() || undefined,
             note: note.trim() || undefined,
           }
-        : {
-            status: 'SHIPPED',
-            handoverMethod,
-            hub,
-            note: note.trim() || undefined,
-          }
+        : activeStage === 'SHIPPED'
+          ? {
+              status: 'SHIPPED',
+              handoverMethod,
+              hub,
+              note: note.trim() || undefined,
+            }
+          : // Delivery carries no handover fields - the parcel has already left.
+            { status: 'DELIVERED', note: note.trim() || undefined }
     update.mutate(body, {
       onSuccess: () => {
         setNote('')
@@ -219,12 +253,13 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
         <section className="rounded-xl border p-5">
           <SectionLabel>Add an update</SectionLabel>
           <p className="mt-1 text-[13px] leading-[1.5] text-muted-foreground text-pretty">
-            You own packing and handover. Transit and delivery are reported by Amezo Logistics once
-            the parcel is scanned in.
+            You own packing and handover. Transit is reported by Amezo Logistics once the parcel is
+            scanned in; until that reporting reaches delivery, mark it delivered here when you know
+            it has arrived.
           </p>
 
           <div className="mt-3.5 flex flex-wrap gap-2">
-            {(['PACKED', 'SHIPPED'] as Stage[]).map((option) => {
+            {(['PACKED', 'SHIPPED', 'DELIVERED'] as Stage[]).map((option) => {
               const state = can[option]
               return (
                 <Button
@@ -236,7 +271,7 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
                   title={state.reason}
                   onClick={() => setStage(option)}
                 >
-                  {option === 'PACKED' ? 'Packed' : 'Handed over'}
+                  {STAGE_LABELS[option]}
                 </Button>
               )
             })}
@@ -328,11 +363,8 @@ export function SellerOrderPanel({ orderId }: { orderId: string }) {
 
           <div className="mt-3.5 flex flex-wrap items-center gap-3">
             <Button disabled={!stageAllowed || !parcelsOk || update.isPending} onClick={post}>
-              {update.isPending
-                ? 'Posting…'
-                : activeStage === 'PACKED'
-                  ? 'Mark as packed'
-                  : 'Mark as handed over'}
+              {update.isPending && <Sprinter size="sm" className="-ml-0.5" />}
+              {update.isPending ? 'Posting…' : STAGE_ACTIONS[activeStage]}
             </Button>
             <p className="text-xs text-muted-foreground">
               {!stageAllowed

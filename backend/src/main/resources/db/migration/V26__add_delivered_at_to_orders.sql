@@ -1,0 +1,20 @@
+-- When the order arrived.
+--
+-- DELIVERED has been a legal value of orders.status since V9, but nothing could
+-- write it: the fulfilment steps a seller performs stop at handover, and the
+-- carrier reporting that would move it on does not exist - there is no
+-- integration and no webhook. So every order sat at SHIPPED for good, the
+-- "Delivered" tab was permanently empty, and the buyer's timeline drew a
+-- Delivered step that could never complete.
+--
+-- Until a carrier can report it, the seller marks it by hand
+-- (SellerOrderTransition.DELIVERED). That is a stand-in, and this column is what
+-- keeps it honest: the date comes from somebody saying so at a particular moment,
+-- not from a status with no timestamp beside it. BuyerOrderService's timeline and
+-- ShipmentInfo.deliveredAt both read it, and both returned null before rather than
+-- infer a date the system did not have.
+--
+-- Nullable with no backfill, for the same reason: an order already sitting at
+-- DELIVERED got there before anything recorded when, and inventing a date for it
+-- now would be a fabrication with a timestamp on it.
+ALTER TABLE orders ADD COLUMN delivered_at TIMESTAMPTZ;
