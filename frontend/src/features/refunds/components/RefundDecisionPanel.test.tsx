@@ -133,12 +133,17 @@ describe('RefundDecisionPanel', () => {
       await screen.findByLabelText(/Note to the buyer/),
       'The label is attached, post it back any time this week.',
     )
-    await userEvent.click(screen.getByRole('button', { name: 'Approve and request return' }))
+    // The button names the amount it is about to approve, as the design does
+    // ("Approve $259.98 and send return label"), so a half-typed partial cannot be
+    // committed without the seller reading it back.
+    await userEvent.click(screen.getByRole('button', { name: /Approve \$259\.98/ }))
 
     // The note used to be accepted by the API and dropped, so the seller wrote
     // it for a buyer who was never going to see it.
     const entry = (await screen.findByText(/The label is attached/)).closest('li')!
-    expect(within(entry).getByText('Approved')).toBeInTheDocument()
+    // Against AWAITING_RETURN, not APPROVED: approving a refund asks for the item
+    // back, so that is the step the note was written on.
+    expect(within(entry).getByText('Awaiting return')).toBeInTheDocument()
   })
 
   it('records a replacement request settled with money as a refund', async () => {
@@ -146,7 +151,7 @@ describe('RefundDecisionPanel', () => {
     await screen.findByRole('tab', { name: 'Send replacement' })
 
     await userEvent.click(screen.getByRole('tab', { name: 'Approve refund' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Approve and request return' }))
+    await userEvent.click(await screen.findByRole('button', { name: /Approve \$298\.00/ }))
 
     // Paying out a request the buyer raised for a replacement used to leave it
     // on the replacement path, where the money could never be released.
@@ -155,13 +160,44 @@ describe('RefundDecisionPanel', () => {
     expect(screen.queryByRole('button', { name: 'Mark replacement sent' })).not.toBeInTheDocument()
   })
 
-  it('offers only the legal move once a request is approved', async () => {
+  it('offers the legal move and the undo once a request is approved', async () => {
     renderPanel('ref-3')
 
     expect(await screen.findByText('Approved · waiting on the return')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mark return received' })).toBeInTheDocument()
-    // The design offers "Undo approval" here. No transition walks an approved
-    // request back, so the button is absent rather than broken.
-    expect(screen.queryByRole('button', { name: /Undo/ })).not.toBeInTheDocument()
+    // The design puts "Undo approval" here, and the refund state machine now has
+    // that transition: an approval is a promise about money, occasionally made
+    // against the wrong request, and the alternative was a seller releasing one
+    // they never meant to approve.
+    expect(screen.getByRole('button', { name: 'Undo approval' })).toBeInTheDocument()
+  })
+
+  it('walks an approval back to the decision it came from', async () => {
+    renderPanel('ref-3')
+    await screen.findByText('Approved · waiting on the return')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Undo approval' }))
+
+    // Back to a request waiting on a decision, with the three-way choice offered
+    // again - and the amount the approval set is gone rather than surviving a
+    // decision that was withdrawn.
+    expect(await screen.findByRole('tab', { name: 'Approve refund' })).toBeInTheDocument()
+    expect(screen.queryByText('Approved · waiting on the return')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Undo approval' })).not.toBeInTheDocument()
+  })
+
+  it('will not offer the undo once the return has arrived', async () => {
+    const request = findRefundRequest('ref-3')!
+    server.use(
+      http.get('http://localhost:8080/api/v1/refund-requests/ref-3', () =>
+        HttpResponse.json({ ...request, status: 'RETURN_RECEIVED' }),
+      ),
+    )
+    renderPanel('ref-3')
+
+    // Once the buyer has posted the item back, unwinding the approval would
+    // strand it - so the server refuses it and the button is not drawn.
+    expect(await screen.findByRole('button', { name: 'Release the refund' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Undo approval' })).not.toBeInTheDocument()
   })
 })

@@ -1002,9 +1002,26 @@ paths:
       operationId: updateRefundRequest
       description: >-
         The state machine lives on the resource rather than on action URLs.
-        Seller moves REQUESTED to APPROVED/AWAITING_RETURN/DECLINED, then to
-        RETURN_RECEIVED, REFUNDED or REPLACEMENT_SENT. Buyer may only CANCEL,
-        and only while REQUESTED. An illegal transition is 409.
+
+        Seller moves REQUESTED to AWAITING_RETURN (approving a REFUND, which asks
+        for the item back), to APPROVED (approving a REPLACEMENT, where there is
+        nothing to wait for) or to DECLINED, then on to RETURN_RECEIVED, REFUNDED
+        or REPLACEMENT_SENT.
+
+        Seller may also move APPROVED or AWAITING_RETURN back to REQUESTED - the
+        "Undo approval" the Seller Refunds design puts beside the release button.
+        It clears approvedAmount, approvedAt and returnTrackingNumber, and restores
+        requestedResolution, because the approval's own facts must not outlive the
+        decision that set them. It is NOT available from RETURN_RECEIVED: once the
+        buyer has posted the item back, unwinding the approval would strand it.
+
+        Buyer may only CANCEL, and only while REQUESTED. An illegal transition is
+        409, as is a transition the caller's own side of the refund cannot make.
+
+        Note what a REFUNDED transition does and does not do. It records that the
+        seller released an amount and when. It moves no money: there is no payment
+        table, gateway or ledger in this system, and nothing here pretends
+        otherwise. It is also what an order's derived REFUNDED status reads.
       parameters:
         - name: refundRequestId
           in: path
@@ -2344,6 +2361,16 @@ components:
         orderId: { type: string, format: uuid }
         orderReference: { type: string }
         returnTrackingNumber: { type: string, nullable: true }
+        # The Seller Refunds table prints a Buyer column and an Items column, so a
+        # row carries both rather than being a line of reference codes. Nullable
+        # because a guest checkout supplies only an email, and buyer_identity's
+        # full_name is nullable.
+        buyerName: { type: string, nullable: true }
+        buyerEmail: { type: string, nullable: true }
+        # "2 x Aurora One Wireless Headphones, 1 x Travel Case" - the Items column,
+        # assembled by the server because the product titles live in the catalogue
+        # and a summary row carries no lines to build it from.
+        items: { type: string, nullable: true }
     RefundRequestDetail:
       type: object
       required:
@@ -2353,6 +2380,11 @@ components:
         reference: { type: string }
         status: { $ref: '#/components/schemas/RefundStatus' }
         resolution: { $ref: '#/components/schemas/RefundResolution' }
+        # What the BUYER originally asked for, which `resolution` may no longer be:
+        # the seller can settle a replacement request with money or the reverse, and
+        # overwriting the ask would lose the fact that they did. The decision
+        # panel's "Wants ..." line reads this.
+        requestedResolution: { $ref: '#/components/schemas/RefundResolution' }
         payout: { $ref: '#/components/schemas/RefundPayout' }
         detail: { type: string }
         requestedAt: { type: string, format: date-time }

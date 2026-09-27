@@ -87,6 +87,6 @@ class SellerStoreRefQueryService implements SellerStoreRefQuery {
     }
 
     private static StoreRef toRef(SellerStore store) {
-        return new StoreRef(store.getId(), store.getName(), store.getHandle());
+        return new StoreRef(store.getSellerId(), store.getName(), store.getHandle());
     }
 }

@@ -41,6 +41,7 @@ import {
   addRefundRequest,
   canTransition,
   findRefundRequest,
+  isUndoTransition,
   listRefundRequests,
   summaryOfRefund,
   updateRefundRequest,
@@ -352,9 +353,10 @@ export const handlers = [
     const rows = listRefundRequests().filter(
       (row) => !q || `${row.reference} ${row.buyerName ?? ''}`.toLowerCase().includes(q),
     )
-    // Every RefundStatus, which is what the list's own status filter takes. A
-    // short list here would leave a real bucket with no count while the tab for
-    // it still rendered.
+    // The backend's own bucket list and its order (SellerRefundQueryService's
+    // BUCKET_KEYS): every non-terminal status plus the settled ones, with "all"
+    // LAST. CANCELLED is the one omission - the buyer withdrew it and there is
+    // nothing for the seller to do - and it is still counted in "all".
     const statuses: string[] = [
       'REQUESTED',
       'APPROVED',
@@ -363,17 +365,20 @@ export const handlers = [
       'REFUNDED',
       'REPLACEMENT_SENT',
       'DECLINED',
-      'CANCELLED',
     ]
+    // The design prints money under every count, and the server sends it: each
+    // bucket totals its requests' EFFECTIVE amounts - what was approved if
+    // anything was, else what was asked - so Refunded totals what was actually
+    // released rather than what was originally claimed.
+    const effective = (row: (typeof rows)[number]) => row.approvedAmount ?? row.requestedAmount
+    const total = (bucket: typeof rows) => bucket.reduce((sum, row) => sum + effective(row), 0)
     return HttpResponse.json({
       facets: [
-        { key: 'all', count: rows.length, value: null, currency: null },
-        ...statuses.map((key) => ({
-          key,
-          count: rows.filter((row) => row.status === key).length,
-          value: null,
-          currency: null,
-        })),
+        ...statuses.map((key) => {
+          const inBucket = rows.filter((row) => row.status === key)
+          return { key, count: inBucket.length, value: total(inBucket), currency: 'USD' }
+        }),
+        { key: 'all', count: rows.length, value: total(rows), currency: 'USD' },
       ],
     })
   }),
@@ -710,7 +715,23 @@ export const handlers = [
       )
     }
 
+    if (body.status === 'DECLINED' && !body.declineReason?.trim()) {
+      return HttpResponse.json(
+        {
+          type: 'https://api/errors/decline-reason-required',
+          title: 'Reason required',
+          status: 422,
+          errors: [{ field: 'declineReason', reason: 'required when declining' }],
+        },
+        { status: 422 },
+      )
+    }
+
     const now = new Date().toISOString()
+    const undo = isUndoTransition(found.status, body.status)
+    // One timestamp per step, as the server writes them. AWAITING_RETURN keeps an
+    // approvedAt it already had, so APPROVED then AWAITING_RETURN records one
+    // approval rather than two.
     const stamps: Record<string, Record<string, string>> = {
       APPROVED: { approvedAt: now },
       AWAITING_RETURN: { approvedAt: found.approvedAt ?? now },
@@ -720,23 +741,42 @@ export const handlers = [
       DECLINED: { declinedAt: now },
     }
 
+    // "Undo approval" walks the approval back, and the approval's own facts go
+    // with it: an amount or a return label left behind would outlive the decision
+    // that set them, and the next approval would look like it had already
+    // happened. The buyer's original ask stands again too.
+    const changes = undo
+      ? {
+          approvedAmount: null,
+          approvedAt: null,
+          returnTrackingNumber: null,
+          resolution: found.requestedResolution ?? found.resolution,
+        }
+      : {
+          // The seller may settle a replacement request with money, or the
+          // reverse. Absent means they did not change the buyer's ask.
+          resolution: body.resolution ?? found.resolution,
+          approvedAmount:
+            body.status === 'APPROVED' || body.status === 'AWAITING_RETURN'
+              ? (body.approvedAmount ?? found.approvedAmount ?? found.requestedAmount)
+              : (body.approvedAmount ?? found.approvedAmount),
+          declineReason: body.declineReason ?? found.declineReason,
+          returnTrackingNumber: body.returnTrackingNumber ?? found.returnTrackingNumber,
+          ...(stamps[body.status] ?? {}),
+        }
+
     return HttpResponse.json(
       updateRefundRequest(found.id, {
         status: body.status,
-        // The seller may settle a replacement request with money, or the
-        // reverse. Absent means they did not change the buyer's ask.
-        resolution: body.resolution ?? found.resolution,
-        approvedAmount: body.approvedAmount ?? found.approvedAmount,
-        declineReason: body.declineReason ?? found.declineReason,
-        returnTrackingNumber: body.returnTrackingNumber ?? found.returnTrackingNumber,
+        ...changes,
         // The note is recorded against the transition it accompanied. It used
         // to be accepted and dropped, so a seller wrote it believing the buyer
-        // would see it and nobody ever did.
+        // would see it and nobody ever did. An undo is a step of the history in
+        // its own right - nothing is erased.
         events: [
           ...(found.events ?? []),
           { status: body.status, at: now, note: body.note?.trim() || null },
         ],
-        ...(stamps[body.status] ?? {}),
       }),
     )
   }),

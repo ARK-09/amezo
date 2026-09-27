@@ -41,6 +41,10 @@ function make(
     // empty and never has to be reconstructed from the timestamps around it.
     events: [{ status: 'REQUESTED', at: requestedAt, note: null }],
     resolution,
+    // What the buyer asked for, which `resolution` may later differ from - the
+    // seller can settle a replacement request with money or the reverse. It is also
+    // what "Undo approval" restores.
+    requestedResolution: resolution,
     payout: 'ORIGINAL_PAYMENT',
     detail,
     requestedAt,
@@ -160,19 +164,54 @@ export function summaryOfRefund(request: RefundRequestDetail): RefundRequestSumm
     orderId: request.orderId,
     orderReference: request.orderReference,
     returnTrackingNumber: request.returnTrackingNumber,
+    // The Seller Refunds table prints a Buyer column and an Items column. The
+    // server assembles both - the buyer's name lives in identity and the product
+    // titles in the catalogue, neither of which a summary row carries - so the
+    // mock has to as well, or the queue renders a table of reference codes with
+    // "Buyer" and an em dash in every row.
+    buyerName: request.buyerName,
+    buyerEmail: request.buyerEmail,
+    items: request.lines
+      .map((line) => `${line.quantity} × ${line.productTitle}`)
+      .join(', '),
   }
 }
 
-/** Exactly the transitions the handoff document specifies. */
+/**
+ * Exactly the transitions the backend's RefundTransitions allows, so a screen
+ * cannot be written against a state machine the server would refuse.
+ *
+ * Two of these are worth naming, because they were not here before the refund
+ * domain existed:
+ *
+ * - `REQUESTED → AWAITING_RETURN` is how a REFUND is approved: the approval asks
+ *   for the item back, so there is a return to wait for. `REQUESTED → APPROVED`
+ *   is how a REPLACEMENT is approved, where there is nothing to wait for. The
+ *   contract lists both as direct targets and the two genuinely differ.
+ * - `APPROVED | AWAITING_RETURN → REQUESTED` is "Undo approval", which the Seller
+ *   Refunds design puts beside the release button. It stops at RETURN_RECEIVED:
+ *   once the buyer has posted the item back, unwinding the approval would strand
+ *   it.
+ */
 const LEGAL: Record<RefundStatus, RefundStatus[]> = {
-  REQUESTED: ['APPROVED', 'DECLINED', 'CANCELLED'],
-  APPROVED: ['AWAITING_RETURN', 'RETURN_RECEIVED', 'REPLACEMENT_SENT'],
-  AWAITING_RETURN: ['RETURN_RECEIVED'],
+  REQUESTED: ['APPROVED', 'AWAITING_RETURN', 'DECLINED', 'CANCELLED'],
+  APPROVED: ['AWAITING_RETURN', 'RETURN_RECEIVED', 'REPLACEMENT_SENT', 'REQUESTED'],
+  AWAITING_RETURN: ['RETURN_RECEIVED', 'REQUESTED'],
   RETURN_RECEIVED: ['REFUNDED', 'REPLACEMENT_SENT'],
   REFUNDED: [],
   REPLACEMENT_SENT: [],
   DECLINED: [],
   CANCELLED: [],
+}
+
+/**
+ * Whether a move walks an approval back rather than moving the request on. The
+ * mirror of the backend's RefundTransitions.isUndo, and the handler uses it to
+ * clear what the approval set - an amount or a return label left behind would
+ * outlive the decision that set them.
+ */
+export function isUndoTransition(from: RefundStatus, to: RefundStatus): boolean {
+  return to === 'REQUESTED' && (from === 'APPROVED' || from === 'AWAITING_RETURN')
 }
 
 export function canTransition(from: RefundStatus, to: RefundStatus): boolean {

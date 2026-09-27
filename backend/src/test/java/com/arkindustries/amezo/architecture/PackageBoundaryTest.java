@@ -40,7 +40,13 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 class PackageBoundaryTest {
 
     private static final String BASE = "com.arkindustries.amezo";
-    private static final String[] FEATURES = {"catalog", "orders", "reviews", "identity"};
+    // refunds is the fifth feature, added with the refund domain. Registering it
+    // here is not optional: a feature absent from this list is checked against
+    // nobody, so refunds could have reached into orders' repositories and nothing
+    // would have failed. It talks to orders, catalog and identity through their
+    // api packages only, and exposes its own refunds.api for the traffic coming
+    // back the other way (an order's derived REFUNDED status).
+    private static final String[] FEATURES = {"catalog", "orders", "reviews", "identity", "refunds"};
 
     @Test
     void featuresDoNotDependOnEachOthersInternals() {

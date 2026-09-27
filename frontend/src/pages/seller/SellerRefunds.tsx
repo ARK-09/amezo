@@ -7,8 +7,10 @@ import { PaginationBar } from '@/components/ui/pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
+  TableAction,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableHeader,
   TableRow,
@@ -21,7 +23,13 @@ import {
 } from '@/features/refunds/api/useRefundRequests'
 import { RefundDecisionPanel } from '@/features/refunds/components/RefundDecisionPanel'
 import { useSellerRefundFacets } from '@/features/seller-portal/api/useSellerFacets'
-import { DetailDrawer } from '@/features/seller-portal/components/DetailDrawer'
+import {
+  Drawer,
+  DrawerBody,
+  DrawerHeader,
+  DrawerSubline,
+  DrawerTitle,
+} from '@/features/seller-portal/components/Drawer'
 import { FacetTabs } from '@/features/seller-portal/components/FacetTabs'
 import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
 import { formatMediumDate } from '@/lib/formatDate'
@@ -32,21 +40,39 @@ const DEFAULT_PAGE_SIZE = 10
 
 /**
  * The design opens on what needs a decision, not on everything. Each value is a
- * RefundStatus, which is both what ?status= takes and what the facets endpoint
- * keys its counts by - so a tab needs no translation to become either.
+ * RefundStatus, which is both what ?status= takes and what the facets endpoint keys
+ * its counts by - so a tab needs no translation to become either.
+ *
+ * APPROVED and REPLACEMENT_SENT are here and were not before. A replacement is
+ * approved into APPROVED rather than into AWAITING_RETURN - there is nothing to wait
+ * for - and without tabs for those two a replacement request was reachable only
+ * through "All", which is not where a seller looks for work.
+ *
+ * CANCELLED has no tab, matching the endpoint's own buckets: the buyer withdrew it
+ * and there is nothing for the seller to do. It is still counted under All.
  */
 const TABS: { value: string; label: string }[] = [
   { value: 'REQUESTED', label: 'Needs a decision' },
+  { value: 'APPROVED', label: 'Approved' },
   { value: 'AWAITING_RETURN', label: 'Awaiting return' },
   { value: 'RETURN_RECEIVED', label: 'Return received' },
   { value: 'REFUNDED', label: 'Refunded' },
+  { value: 'REPLACEMENT_SENT', label: 'Replacement sent' },
   { value: 'DECLINED', label: 'Declined' },
   { value: 'all', label: 'All' },
 ]
 
+/** The statuses that still want something from the seller - the design's "Review". */
+const NEEDS_ACTION: readonly RefundStatus[] = [
+  'REQUESTED',
+  'APPROVED',
+  'AWAITING_RETURN',
+  'RETURN_RECEIVED',
+]
+
 /**
- * ?page=abc, ?page=-5 and ?page=1.7 used to go straight into the request and
- * into "Page NaN of 1". A page number is a whole one, zero or above, or it is 0.
+ * ?page=abc, ?page=-5 and ?page=1.7 used to go straight into the request and into
+ * "Page NaN of 1". A page number is a whole one, zero or above, or it is 0.
  */
 function pageParam(raw: string | null) {
   const parsed = Number(raw ?? 0)
@@ -92,7 +118,7 @@ export function SellerRefunds() {
 
   const query = useSellerRefundRequests(filters)
   // A second request, on the search alone: the strip shows every bucket at
-  // once, so narrowing it by the tab being viewed would zero the other five.
+  // once, so narrowing it by the tab being viewed would zero the other seven.
   // Its failure costs the numbers and nothing else.
   const facetsQuery = useSellerRefundFacets(q || undefined)
 
@@ -125,42 +151,53 @@ export function SellerRefunds() {
   // doesn't exist, and let Previous walk back into the range that does.
   const shownPage = Math.min(page, totalPages - 1)
 
-  // The design's header line. Drawn from the facets, which count every bucket,
-  // where the line it replaces counted only the tab being viewed. Without them
-  // it says what it always said. Refund buckets carry no money - the endpoint
-  // returns a null value for each - so there is no total to add.
-  const countOf = (key: string) => facetsQuery.data?.find((facet) => facet.key === key)?.count
-  const waiting = countOf('REQUESTED')
-  const allRequests = countOf('all')
+  // The design's header line, verbatim: "3 waiting on you · $327 at stake". Drawn
+  // from the facets, which count every bucket, where the line it replaces counted
+  // only the tab being viewed. The money is real now - the endpoint sends a total
+  // per bucket - so the sentence no longer has to stop at a count.
+  const waitingFacet = facetsQuery.data?.find((facet) => facet.key === 'REQUESTED')
   const summary =
-    waiting !== undefined && allRequests !== undefined
-      ? `${waiting} waiting on you · ${allRequests} request${allRequests === 1 ? '' : 's'} total`
+    waitingFacet !== undefined
+      ? `${waitingFacet.count} waiting on you${
+          waitingFacet.value != null ? ` · ${formatPrice(waitingFacet.value)} at stake` : ''
+        }`
       : query.isLoading
         ? 'Loading…'
         : `${total} request${total === 1 ? '' : 's'}`
+
   // Snapshotted when the drawer opens. Acting on a record usually moves it
   // out of the bucket being viewed - deriving the drawer from the current
   // page meant it slammed shut the instant the action succeeded, before the
   // seller saw the result.
   const openRow = rows.find((row) => row.id === openId) ?? openSnapshot
 
+  function open(row: RefundRequestSummary) {
+    setOpenId(row.id)
+    setOpenSnapshot(row)
+  }
+
   return (
-    <div className="flex flex-col gap-5">
-      <div>
+    // h-full, and every child but the table shrink-0: the shell hands this page a
+    // definite height and owns the only scrollbar, so the table is the one thing
+    // that gives way rather than the page growing past the window.
+    <div className="flex h-full flex-col gap-5">
+      <div className="shrink-0">
         <h1 className="text-xl font-bold">Refunds</h1>
         <p className="mt-1 text-sm text-muted-foreground">{summary}</p>
       </div>
 
-      <FacetTabs
-        label="Filter refund requests by status"
-        tabs={TABS}
-        value={status}
-        facets={facetsQuery.data}
-        isPending={facetsQuery.isPending}
-        onValueChange={(value) => patch({ status: value })}
-      />
+      <div className="shrink-0">
+        <FacetTabs
+          label="Filter refund requests by status"
+          tabs={TABS}
+          value={status}
+          facets={facetsQuery.data}
+          isPending={facetsQuery.isPending}
+          onValueChange={(value) => patch({ status: value })}
+        />
+      </div>
 
-      <div className="relative max-w-[360px]">
+      <div className="relative max-w-[360px] shrink-0">
         <Search
           className="absolute top-1/2 left-3 size-[15px] -translate-y-1/2 text-muted-foreground"
           aria-hidden
@@ -176,7 +213,7 @@ export function SellerRefunds() {
       </div>
 
       {query.isError && (
-        <div className="flex flex-col items-start gap-3 rounded-lg border p-6">
+        <div className="flex shrink-0 flex-col items-start gap-3 rounded-lg border p-6">
           <p className="font-medium">Couldn't load refund requests</p>
           <p className="text-sm text-muted-foreground">
             {query.error?.detail ?? 'Something went wrong. Try again.'}
@@ -188,7 +225,7 @@ export function SellerRefunds() {
       )}
 
       {query.isLoading && (
-        <div className="flex flex-col gap-2">
+        <div className="flex shrink-0 flex-col gap-2">
           {Array.from({ length: 4 }, (_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
           ))}
@@ -196,88 +233,143 @@ export function SellerRefunds() {
       )}
 
       {query.isSuccess && rows.length === 0 && (
-        <div className="flex flex-col items-center gap-2 rounded-lg border py-16 text-center">
-          <p className="font-medium">Nothing waiting on a decision.</p>
-          <p className="text-sm text-muted-foreground">
-            Requests appear here as buyers raise them.
-          </p>
+        <div className="flex shrink-0 flex-col items-center gap-2 rounded-lg border py-16 text-center">
+          <p className="font-medium">Nothing here</p>
+          <p className="text-sm text-muted-foreground">No requests in this state right now.</p>
         </div>
       )}
 
+      {/* The table and its pager are one container, as the design draws them: the
+          rows scroll inside the border and the bar stays pinned to its bottom edge,
+          so paging never means scrolling the page to find it. */}
       {rows.length > 0 && (
-        <div className="overflow-hidden rounded-lg border">
+        <TableContainer
+          fill
+          footer={
+            <PaginationBar
+              page={shownPage}
+              totalPages={totalPages}
+              onPageChange={(next) => patch({ page: next === 0 ? undefined : String(next) })}
+              range={{
+                totalElements: total,
+                pageSize: size,
+                sizes: PAGE_SIZES,
+                onSizeChange: (next) => patch({ size: String(next) }),
+              }}
+            />
+          }
+        >
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Request</TableHead>
-                <TableHead>Order</TableHead>
-                <TableHead>Requested</TableHead>
-                <TableHead>Wants</TableHead>
+                <TableHead>Buyer</TableHead>
+                <TableHead>Items</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Wants</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="font-mono text-xs">{row.reference}</TableCell>
-                  <TableCell className="font-mono text-xs">{row.orderReference}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatMediumDate(row.requestedAt)}
-                  </TableCell>
-                  <TableCell>{row.resolution === 'REPLACEMENT' ? 'Replacement' : 'Refund'}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatPrice(row.approvedAmount ?? row.requestedAmount)}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={row.status} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => {
-                        setOpenId(row.id)
-                        setOpenSnapshot(row)
-                      }}>
-                      Review
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {rows.map((row) => {
+                const needsAction = NEEDS_ACTION.includes(row.status)
+                return (
+                  <TableRow
+                    key={row.id}
+                    // The whole row opens the record, as the design has it.
+                    // Keyboard reaches the same thing through the action button,
+                    // so this is a shortcut rather than the only way in.
+                    onClick={() => open(row)}
+                    className="cursor-pointer"
+                  >
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {row.reference}
+                    </TableCell>
+                    <TableCell>
+                      {/* The design's two-line Buyer cell: who, then which order
+                          and when. Both come off the summary now - a row that
+                          could not name the buyer was a table of reference
+                          codes. */}
+                      <p className="max-w-[16rem] truncate font-medium">
+                        {row.buyerName ?? row.buyerEmail ?? 'Buyer'}
+                      </p>
+                      <p className="max-w-[16rem] truncate text-xs text-muted-foreground">
+                        Order {row.orderReference} · {formatMediumDate(row.requestedAt)}
+                      </p>
+                    </TableCell>
+                    <TableCell className="max-w-[14rem] truncate text-[13px] text-muted-foreground">
+                      {row.items ?? '—'}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {formatPrice(row.approvedAmount ?? row.requestedAmount)}
+                    </TableCell>
+                    <TableCell className="text-[13px] text-muted-foreground">
+                      {row.resolution === 'REPLACEMENT' ? 'Replacement' : 'Refund'}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={row.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {/* The design's two verbs: Review while it still wants
+                          something, View once it is settled. Stops propagation
+                          so the row's own click does not also fire. */}
+                      <TableAction
+                        variant={needsAction ? 'default' : 'outline'}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          open(row)
+                        }}
+                      >
+                        {needsAction ? 'Review' : 'View'}
+                      </TableAction>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
-        </div>
+        </TableContainer>
       )}
 
-      {rows.length > 0 && (
-        // The same footer as every other paged list: range, Per page, and
-        // Prev · 1 2 3 · Next. A size change is a filter change, so patch()
-        // drops ?page= with it.
-        <PaginationBar
-          page={shownPage}
-          totalPages={totalPages}
-          onPageChange={(next) => patch({ page: next === 0 ? undefined : String(next) })}
-          range={{
-            totalElements: total,
-            pageSize: size,
-            sizes: PAGE_SIZES,
-            onSizeChange: (next) => patch({ size: String(next) }),
-          }}
-        />
-      )}
-
-      <DetailDrawer
+      {/* The shared Drawer, not the old DetailDrawer wrapper: the status pill goes
+          in the header's own slot, the reference is the muted chip beside it, and
+          "Full page" is a link to the dedicated route in a new tab - so the queue
+          keeps its filter, page and scroll position behind it. */}
+      <Drawer
         open={Boolean(openId)}
         onOpenChange={(next) => {
           if (next) return
           setOpenId(null)
           setOpenSnapshot(null)
         }}
-        title={openRow ? `Request ${openRow.reference}` : 'Refund request'}
-        description={openRow?.orderReference}
-        fullPageTo={`/seller/refunds/${openRow?.id ?? ''}`}
+        ariaLabel="Refund request"
+        // 560 is the design's panel width for this screen, wider than the 520 a
+        // product record reads at: the decision body holds a segmented control, an
+        // amount field and a message box side by side.
+        width={560}
+        fullPageTo={openRow ? `/seller/refunds/${openRow.id}` : undefined}
       >
-        {openRow && <RefundDecisionPanel refundRequestId={openRow.id} />}
-      </DetailDrawer>
+        {openRow && (
+          <>
+            <DrawerHeader
+              status={<StatusBadge status={openRow.status} />}
+              meta={<span className="font-mono">{openRow.reference}</span>}
+            >
+              <DrawerTitle>{openRow.buyerName ?? openRow.buyerEmail ?? 'Refund request'}</DrawerTitle>
+              <DrawerSubline>
+                Order {openRow.orderReference} · requested {formatMediumDate(openRow.requestedAt)}
+                {openRow.buyerEmail ? ` · ${openRow.buyerEmail}` : ''}
+              </DrawerSubline>
+            </DrawerHeader>
+            <DrawerBody>
+              {/* The header above already carries the status pill and the
+                  reference, so the panel does not draw its own. */}
+              <RefundDecisionPanel refundRequestId={openRow.id} showIdentity={false} />
+            </DrawerBody>
+          </>
+        )}
+      </Drawer>
     </div>
   )
 }
