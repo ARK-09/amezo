@@ -283,7 +283,7 @@ class SellerProductApiTest {
         Seller hog = seller("hog@example.com");
         Product hogged = productRepository.save(Product.builder()
                 .sellerId(hog.getId()).title("Already full").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
-        imageRepository.save(Image.builder()
+        Image filler = imageRepository.save(Image.builder()
                 .productId(hogged.getId())
                 .s3Key("products/" + hogged.getId() + "/filler")
                 .position(0)
@@ -295,13 +295,22 @@ class SellerProductApiTest {
         Product theirs = productRepository.save(Product.builder()
                 .sellerId(other.getId()).title("Wants one pixel").categoryId(Fixtures.categoryId(categoryRepository, "outdoor")).slug(Fixtures.uniqueSlug("fixture")).build());
 
-        mockMvc.perform(post("/products/" + theirs.getId() + "/images/upload-url")
-                        .cookie(sessionCookieFor(other))
-                        .contentType("application/json")
-                        .content("""
-                                {"contentType":"image/jpeg","fileSizeBytes":1024,"position":0}"""))
-                .andExpect(status().isInsufficientStorage())
-                .andExpect(jsonPath("$.type").value("https://api/errors/storage-cap-reached"));
+        // The filler is removed however this ends. The cap it fills is
+        // deployment-wide and this class shares one database with no rollback
+        // between tests, so leaving 10 GiB behind made every later presign in the
+        // class answer 507 - which is how anEighthImageIsRefused came to expect
+        // 409 and get a storage error instead.
+        try {
+            mockMvc.perform(post("/products/" + theirs.getId() + "/images/upload-url")
+                            .cookie(sessionCookieFor(other))
+                            .contentType("application/json")
+                            .content("""
+                                    {"contentType":"image/jpeg","fileSizeBytes":1024,"position":0}"""))
+                    .andExpect(status().isInsufficientStorage())
+                    .andExpect(jsonPath("$.type").value("https://api/errors/storage-cap-reached"));
+        } finally {
+            imageRepository.deleteById(filler.getId());
+        }
     }
 
     /**
@@ -516,7 +525,11 @@ class SellerProductApiTest {
                 .andExpect(jsonPath("$.title").value("New title"))
                 .andExpect(jsonPath("$.brandName").value("Keep me"))
                 .andExpect(jsonPath("$.description").value("Keep this too"))
-                .andExpect(jsonPath("$.category").value("outdoor"));
+                // category is the contract's Category object, not the flat slug
+                // string this asserted before it was nested. The response was
+                // right; the assertion had not followed the shape.
+                .andExpect(jsonPath("$.category.slug").value("outdoor"))
+                .andExpect(jsonPath("$.category.name").value("Outdoor"));
     }
 
     @Test
