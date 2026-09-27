@@ -100,10 +100,8 @@ export function SiteHeader() {
               is always - so "someone@example.com" showed up as "Someone" in the
               header of a shared screen. The identity is still reachable: the avatar
               is the link to /account, which is where the address belongs. */}
-          {/* A seller is not a buyer. Sending them to /account showed them the
-              buyer account page, and in demo mode - where the portal signs in
-              locally with no cookie - they were pitched "Sell on Amezo" while
-              already selling. Either way the portal is where they meant to go. */}
+          {/* A seller is not a buyer: sending them to /account showed them the buyer
+              account page, when the portal is where they meant to go. */}
           {role === 'seller' ? (
             <Link
               to="/seller/dashboard"
@@ -121,12 +119,20 @@ export function SiteHeader() {
               <Avatar name={session.data!.fullName ?? session.data!.email} size="sm" />
             </Link>
           ) : (
+            /* The buyer's way in, which the header had no room for while it carried
+               the seller pitch instead - so /sign-in was reachable only from a
+               product's reviews panel, from /account redirecting, or by typing it.
+               "Sell on Amezo" lives in the footer, which is where the design puts it
+               and where it already was, so nothing is lost by it leaving here.
+
+               Not hidden on small screens, unlike the seller link it replaces:
+               signing in is the buyer's own entry point, and on a phone the account
+               area was otherwise Deliver-to and a cart. */
             <Link
-              to="/seller/sign-in"
-              className="hidden items-center gap-1.5 text-[13px] font-semibold whitespace-nowrap hover:text-primary sm:inline-flex"
+              to="/sign-in"
+              className="inline-flex items-center text-[13px] font-semibold whitespace-nowrap hover:text-primary"
             >
-              <Store className="size-4" aria-hidden />
-              Sell on Amezo
+              Sign in
             </Link>
           )}
         </div>
