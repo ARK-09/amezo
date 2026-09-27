@@ -1,5 +1,6 @@
-import { Maximize2, Minimize2, X } from 'lucide-react'
+import { Maximize2, X } from 'lucide-react'
 import { useMemo, type ReactNode } from 'react'
+import { Link } from 'react-router'
 
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
@@ -27,8 +28,8 @@ import { cn } from '@/lib/utils'
  * growing list of optional ReactNodes (`headerExtra`, `footerNote`,
  * `footerActions`, `eyebrow`...), each one a decision the drawer has to make on
  * the caller's behalf. As slots, the drawer owns only what is genuinely common
- * - the panel, the scroll boundary, the expand/collapse pair, the dialog
- * semantics - and the caller composes the rest.
+ * - the panel, the scroll boundary, the header controls, the dialog semantics -
+ * and the caller composes the rest.
  *
  * ## Why flat named exports, not dot notation
  *
@@ -41,14 +42,18 @@ import { cn } from '@/lib/utils'
  * who prefer that spelling - the same object either way, not a second
  * implementation.
  *
- * ## Why expanding does not remount
+ * ## Why "Full page" opens a new tab
  *
- * "Full page" used to open a new browser tab, which loses everything typed into
- * the drawer and gives no way back. Here it is one panel that changes size: the
- * Radix dialog stays mounted and only its classes change, so `children` keep
- * their position in the React tree and every piece of in-progress form state
- * survives both directions. Rendering the body in a different container when
- * expanded would look identical and silently remount the form.
+ * It used to expand the panel in place - one dialog whose classes changed, so
+ * that a half-typed form survived the trip. That is gone. "Full page" is now a
+ * link to the dedicated route, opened in a new tab, in every mode: the list
+ * behind the drawer keeps the filter, the page and the scroll position the
+ * seller was on, and the record gets a URL that can be bookmarked, shared or
+ * opened twice side by side. An in-place expand could do none of that, and the
+ * state it protected is the state of a form the seller is choosing to leave.
+ *
+ * Because the drawer no longer changes size, nothing here is stateful: the
+ * three modes differ only in what the caller composes into the slots.
  *
  * Shared on purpose: SellerOrders and SellerRefunds pair the old drawer with a
  * panel component in exactly this shape and can move onto it unchanged.
@@ -68,11 +73,15 @@ export interface DrawerProps {
    * a screen reader user needs to hear is "Product details".
    */
   ariaLabel: string
-  /** Panel width in px when not expanded. The design uses 520 to view, 620 to edit. */
+  /** Panel width in px. The design uses 520 to view, 620 to edit or add. */
   width?: number
-  /** Controlled expand state. Omit both to hide the expand control entirely. */
-  expanded?: boolean
-  onExpandedChange?: (expanded: boolean) => void
+  /**
+   * The dedicated page for what this drawer is showing - `/seller/products/p1`,
+   * `/seller/products/new`. The header renders it as "Full page" in all three
+   * modes and opens it in a new tab. Omit it only where no such route exists;
+   * a drawer with no dedicated page shows no control rather than a dead link.
+   */
+  fullPageTo?: string
   children: ReactNode
 }
 
@@ -84,16 +93,15 @@ export function Drawer({
   mode = 'view',
   ariaLabel,
   width = DEFAULT_WIDTH,
-  expanded = false,
-  onExpandedChange,
+  fullPageTo,
   children,
 }: DrawerProps) {
   // Memoised so the context value is a new object only when something in it
   // actually changed. The drawer is shared, and a fresh object every render
   // would re-render every consumer of useDrawer on any parent render.
   const value = useMemo<DrawerContextValue>(
-    () => ({ mode, expanded, onExpandedChange, close: () => onOpenChange(false) }),
-    [mode, expanded, onExpandedChange, onOpenChange],
+    () => ({ mode, fullPageTo, close: () => onOpenChange(false) }),
+    [mode, fullPageTo, onOpenChange],
   )
 
   return (
@@ -106,13 +114,8 @@ export function Drawer({
           // Inline, not a Tailwind class: the width is a number the caller
           // chooses per drawer, and a class name cannot be built from one at
           // runtime without a safelist.
-          style={expanded ? undefined : { maxWidth: `min(${width}px, 96vw)` }}
-          className={cn(
-            'flex w-full flex-col gap-0 p-0 [&>button:last-child]:hidden',
-            // Expanded is the same panel filling the viewport, NOT a different
-            // container - see the note above on why that matters.
-            expanded && 'max-w-none border-l-0 sm:max-w-none',
-          )}
+          style={{ maxWidth: `min(${width}px, 96vw)` }}
+          className="flex w-full flex-col gap-0 p-0 [&>button:last-child]:hidden"
         >
           {/* Radix names the dialog from its Title, and aria-labelledby beats
               aria-label - so the name has to come from a Title or it is ignored.
@@ -129,35 +132,54 @@ export function Drawer({
 }
 
 /**
- * The header slot. Lays out whatever the caller puts in it on the left, and the
- * drawer's own controls - expand/collapse, then close - on the right, so every
- * drawer in the portal puts them in the same place.
+ * The header slot.
+ *
+ * `status` is the design's status pill and `meta` the muted chip beside it: a
+ * named slot each, rather than a row the caller composes, because five screens
+ * put a pill in this header and they must all put it in the same place. The
+ * drawer knows nothing about what the pill says - it is given a node and told
+ * where it goes.
+ *
+ * `children` is the title and sub-line under that row, and the drawer's own
+ * controls - "Full page", then close - always sit on the right.
  */
-export function DrawerHeader({ children, className }: { children: ReactNode; className?: string }) {
-  const { expanded, onExpandedChange, close } = useDrawer()
+export function DrawerHeader({
+  status,
+  meta,
+  children,
+  className,
+}: {
+  status?: ReactNode
+  meta?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
+  const { fullPageTo, close } = useDrawer()
 
   return (
     <div className={cn('flex items-start justify-between gap-3 border-b px-5 py-4', className)}>
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1">
+        {(status != null || meta != null) && (
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+            {status}
+            {meta != null && <span className="text-xs text-muted-foreground">{meta}</span>}
+          </div>
+        )}
+        {children}
+      </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        {onExpandedChange && (
-          <button
-            type="button"
-            onClick={() => onExpandedChange(!expanded)}
+        {fullPageTo && (
+          // target=_blank, so the list behind the drawer - and the filter, page
+          // and scroll position the seller was on - is still there afterwards.
+          <Link
+            to={fullPageTo}
+            target="_blank"
+            rel="noreferrer"
             className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors hover:border-primary hover:text-primary"
           >
-            {expanded ? (
-              <>
-                <Minimize2 className="size-3.5" aria-hidden />
-                Back to panel
-              </>
-            ) : (
-              <>
-                <Maximize2 className="size-3.5" aria-hidden />
-                Full page
-              </>
-            )}
-          </button>
+            <Maximize2 className="size-3.5" aria-hidden />
+            Full page
+          </Link>
         )}
         <button
           type="button"
@@ -170,11 +192,6 @@ export function DrawerHeader({ children, className }: { children: ReactNode; cla
       </div>
     </div>
   )
-}
-
-/** The small row above the title - a status pill and a category, in the design. */
-export function DrawerEyebrow({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('mb-1.5 flex items-center gap-2', className)}>{children}</div>
 }
 
 /**
@@ -197,20 +214,19 @@ export function DrawerSubline({ children, className }: { children: ReactNode; cl
  * reachable without scrolling to the bottom of a long form.
  */
 export function DrawerBody({ children, className }: { children: ReactNode; className?: string }) {
-  const { expanded } = useDrawer()
-  return (
-    <div className={cn('min-h-0 flex-1 overflow-y-auto px-5 py-5', className)}>
-      {/* Expanded, the panel is as wide as the window; a form stretched to
-          1900px is unreadable, so the content keeps a column and centres. */}
-      <div className={cn(expanded && 'mx-auto w-full max-w-[860px]')}>{children}</div>
-    </div>
-  )
+  return <div className={cn('min-h-0 flex-1 overflow-y-auto px-5 py-5', className)}>{children}</div>
 }
 
 /**
- * The action bar. `note` is the design's left-hand hint - which fields are still
- * missing, or whether there is anything to save - and the children are the
- * buttons.
+ * The action bar: the drawer's primary Save/Cancel pair, and the design's
+ * left-hand hint beside it.
+ *
+ * `note` is that hint - which fields are still missing, or whether there is
+ * anything to save - and the children are the buttons, in the design's order
+ * (Cancel, then the primary). The note is allowed to wrap and the buttons are
+ * not: a form whose note grows to "Title, price and one variant are still
+ * missing" must not squash Save off the edge, and a disabled Save has to stay
+ * where an enabled one was so it is visibly the same control.
  */
 export function DrawerFooter({
   note,
@@ -228,8 +244,8 @@ export function DrawerFooter({
         className,
       )}
     >
-      {note ? <p className="text-[13px] text-muted-foreground">{note}</p> : <span />}
-      <div className="flex items-center gap-2">{children}</div>
+      {note ? <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">{note}</p> : <span />}
+      <div className="flex shrink-0 items-center gap-2">{children}</div>
     </div>
   )
 }
@@ -239,7 +255,6 @@ export function DrawerFooter({
  * functions as the flat exports above - one implementation, two spellings.
  */
 Drawer.Header = DrawerHeader
-Drawer.Eyebrow = DrawerEyebrow
 Drawer.Title = DrawerTitle
 Drawer.Subline = DrawerSubline
 Drawer.Body = DrawerBody

@@ -14,8 +14,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
+  TableAction,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableHeader,
   TableRow,
@@ -30,7 +32,6 @@ import { useDeleteProduct } from '@/features/seller-portal/api/useSellerProducts
 import {
   Drawer,
   DrawerBody,
-  DrawerEyebrow,
   DrawerFooter,
   DrawerHeader,
   DrawerSubline,
@@ -98,14 +99,20 @@ type DrawerState =
   | { mode: 'add' }
   | null
 
+/**
+ * The route the drawer's "Full page" opens, for whatever it is showing. Null
+ * while the drawer is closed, which is also when there is nothing to link to.
+ */
+function fullPageTo(drawer: DrawerState) {
+  if (!drawer) return undefined
+  return drawer.mode === 'add' ? '/seller/products/new' : `/seller/products/${drawer.id}`
+}
+
 export function SellerProducts() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [drawer, setDrawer] = useState<DrawerState>(null)
   // The design confirms a row delete inline in the cell rather than in a modal.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
-  // Expanding is a property of the drawer session, not of the mode: swapping
-  // view -> edit while expanded should stay expanded.
-  const [expanded, setExpanded] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const categories = useCategories()
@@ -174,7 +181,6 @@ export function SellerProducts() {
 
   function closeDrawer() {
     setDrawer(null)
-    setExpanded(false)
   }
 
   const rows = query.data?.content ?? []
@@ -186,8 +192,11 @@ export function SellerProducts() {
   const hasFilters = Boolean(q) || status !== 'all' || categorySlug !== 'all' || sort !== 'newest'
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    // h-full, and every child but the table shrink-0: the shell hands this page a
+    // definite height and owns the only scrollbar, so the table is the one thing
+    // that gives way rather than the page growing past the window.
+    <div className="flex h-full flex-col gap-5">
+      <div className="flex shrink-0 flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold">Products</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -201,12 +210,12 @@ export function SellerProducts() {
       </div>
 
       {flash && (
-        <div className="rounded-lg border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-sm font-medium text-[#b8560a]">
+        <div className="shrink-0 rounded-lg border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-sm font-medium text-[#b8560a]">
           {flash}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative max-w-[360px] min-w-[220px] flex-1">
           <Search
             className="absolute top-1/2 left-3 size-[15px] -translate-y-1/2 text-muted-foreground"
@@ -274,13 +283,13 @@ export function SellerProducts() {
       {/* The confirm popover closes as soon as the request settles, so a delete
           that failed used to leave the row sitting there looking untouched. */}
       {deleteProduct.isError && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="shrink-0 text-sm text-destructive">
           {deleteProduct.error.detail ?? deleteProduct.error.title}
         </p>
       )}
 
       {query.isError && (
-        <div className="flex flex-col items-start gap-3 rounded-lg border p-6">
+        <div className="flex shrink-0 flex-col items-start gap-3 rounded-lg border p-6">
           <p className="font-medium">Couldn't load your products</p>
           <p className="text-sm text-muted-foreground">
             {query.error?.detail ?? 'Something went wrong. Try again.'}
@@ -292,7 +301,7 @@ export function SellerProducts() {
       )}
 
       {query.isLoading && (
-        <div className="flex flex-col gap-2">
+        <div className="flex shrink-0 flex-col gap-2">
           {Array.from({ length: 5 }, (_, i) => (
             <Skeleton key={i} className="h-14 w-full" />
           ))}
@@ -300,7 +309,7 @@ export function SellerProducts() {
       )}
 
       {query.isSuccess && rows.length === 0 && (
-        <div className="flex flex-col items-center gap-3 rounded-lg border py-16 text-center">
+        <div className="flex shrink-0 flex-col items-center gap-3 rounded-lg border py-16 text-center">
           <p className="font-medium">
             {hasFilters ? 'No products match those filters' : 'No products here'}
           </p>
@@ -319,8 +328,31 @@ export function SellerProducts() {
         </div>
       )}
 
+      {/* The table and its pager are one container, as the design draws them:
+          the rows scroll inside the border and the bar stays pinned to its
+          bottom edge, so paging never means scrolling the page to find it.
+          Shown whenever there are rows, not only past page one: Per page is how
+          you get back from 50 to 5, and at 50 there is often only one page. */}
       {rows.length > 0 && (
-        <div className="overflow-hidden rounded-lg border">
+        <TableContainer
+          fill
+          footer={
+            <PaginationBar
+              page={shownPage}
+              totalPages={totalPages}
+              onPageChange={(next) => patch({ page: String(next) })}
+              range={{
+                totalElements: total,
+                pageSize: size,
+                sizes: PAGE_SIZES,
+                // A new page size makes the old offset meaningless, so patch
+                // drops ?page= with it - as it does for any other filter change.
+                onSizeChange: (next) =>
+                  patch({ size: next === DEFAULT_SIZE ? undefined : String(next) }),
+              }}
+            />
+          }
+        >
           <Table>
             <TableHeader>
               <TableRow>
@@ -411,16 +443,15 @@ export function SellerProducts() {
                       </div>
                     ) : (
                       <div className="flex justify-end gap-1.5">
-                        <Button
+                        <TableAction
                           variant="outline"
-                          size="sm"
                           onClick={(e) => {
                             e.stopPropagation()
                             setDrawer({ mode: 'edit', id: row.id, row })
                           }}
                         >
                           Edit
-                        </Button>
+                        </TableAction>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -439,26 +470,7 @@ export function SellerProducts() {
               ))}
             </TableBody>
           </Table>
-        </div>
-      )}
-
-      {/* Shown whenever there are rows, not only past page one: Per page is how
-          you get back from 50 to 5, and at 50 there is often only one page. */}
-      {rows.length > 0 && (
-        <PaginationBar
-          page={shownPage}
-          totalPages={totalPages}
-          onPageChange={(next) => patch({ page: String(next) })}
-          range={{
-            totalElements: total,
-            pageSize: size,
-            sizes: PAGE_SIZES,
-            // A new page size makes the old offset meaningless, so patch drops
-            // ?page= with it - as it does for any other filter change.
-            onSizeChange: (next) =>
-              patch({ size: next === DEFAULT_SIZE ? undefined : String(next) }),
-          }}
-        />
+        </TableContainer>
       )}
 
       <Drawer
@@ -470,8 +482,10 @@ export function SellerProducts() {
         ariaLabel={drawer?.mode === 'view' ? 'Product details' : 'Product form'}
         // The design's two widths: 520 to read a record, 620 to edit one.
         width={drawer?.mode === 'view' ? 520 : 620}
-        expanded={expanded}
-        onExpandedChange={setExpanded}
+        // The dedicated route behind "Full page", per mode. All three exist:
+        // /seller/products/new for a new listing, /seller/products/:id for one
+        // that is already there.
+        fullPageTo={fullPageTo(drawer)}
       >
         {drawer?.mode === 'view' && (
           <ViewDrawerContent
@@ -553,11 +567,10 @@ function ViewDrawerContent({
 
   return (
     <>
-      <DrawerHeader>
-        <DrawerEyebrow>
-          {row && <StatusBadge status={row.status} />}
-          <span className="text-xs text-muted-foreground">{row?.category.name}</span>
-        </DrawerEyebrow>
+      <DrawerHeader
+        status={row && <StatusBadge status={row.status} />}
+        meta={row?.category.name}
+      >
         <DrawerTitle>{row?.title ?? 'Product'}</DrawerTitle>
         <DrawerSubline>{row?.brandName || 'No brand set'}</DrawerSubline>
       </DrawerHeader>
@@ -640,9 +653,8 @@ function AddDrawerContent({
   onCreated: (title: string) => void
   onCancel: () => void
 }) {
-  // Lives here, above both the body and the footer, so the footer can read
-  // whether the form is complete - and so expanding to full page, which only
-  // changes the panel's classes, never unmounts it and never loses a keystroke.
+  // Lives here, above both the body and the footer, so the footer's Save can
+  // read whether the form is complete without the fields having to pass it up.
   const form = useProductCreateForm({ onCreated: ({ title }) => onCreated(title) })
 
   return (

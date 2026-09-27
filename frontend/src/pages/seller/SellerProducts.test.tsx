@@ -296,7 +296,7 @@ describe('SellerProducts', () => {
     expect(asked.every((size) => size === '5')).toBe(true)
   })
 
-  it('opens the edit drawer and expands it in place, with a way back', async () => {
+  it('offers Full page from the edit drawer, pointing at the listing own route', async () => {
     seed()
     renderPage()
     await screen.findByText('Trail Backpack')
@@ -304,13 +304,47 @@ describe('SellerProducts', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
 
     const drawer = await screen.findByRole('dialog', { name: 'Product form' })
-    // A button, not a link: expanding keeps the same panel mounted so nothing
-    // typed into the form is lost, where the old link opened a new browser tab.
-    await userEvent.click(within(drawer).getByRole('button', { name: /Full page/ }))
-    expect(within(drawer).getByRole('button', { name: /Back to panel/ })).toBeInTheDocument()
+    // A link in a new tab, not an in-place expand: the list keeps the filter and
+    // the page the seller was on, and the listing gets a URL of its own.
+    expect(within(drawer).getByRole('link', { name: 'Full page' })).toHaveAttribute(
+      'href',
+      '/seller/products/p1',
+    )
+  })
 
-    await userEvent.click(within(drawer).getByRole('button', { name: /Back to panel/ }))
-    expect(within(drawer).getByRole('button', { name: /Full page/ })).toBeInTheDocument()
+  it('offers Full page from the add drawer too, pointing at the new-product route', async () => {
+    seed()
+    renderPage()
+    await screen.findByText('Trail Backpack')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add product' }))
+
+    const drawer = await screen.findByRole('dialog', { name: 'Product form' })
+    expect(within(drawer).getByRole('link', { name: 'Full page' })).toHaveAttribute(
+      'href',
+      '/seller/products/new',
+    )
+  })
+
+  /**
+   * The design draws the table and its pager as one bordered box whose rows
+   * scroll inside it. They were two siblings with the pager floating under the
+   * border, and a long page grew a second scrollbar on the portal shell.
+   */
+  it('renders the table and its pagination inside one container', async () => {
+    seedMany(8)
+    renderPage()
+    await screen.findByText('Item 1')
+
+    const container = document.querySelector('[data-slot="table-container"]')
+    expect(container).not.toBeNull()
+    expect(container).toContainElement(screen.getByRole('table'))
+    expect(container).toContainElement(screen.getByRole('navigation', { name: 'pagination' }))
+    expect(container).toContainElement(screen.getByText('Showing 1–5 of 8'))
+    // The rows scroll, not the page: the scroll boundary is inside the border.
+    expect(container?.querySelector('[data-slot="table-scroll"]')).toContainElement(
+      screen.getByRole('table'),
+    )
   })
 
   it('opens the view drawer when a row is clicked, and swaps to the form from it', async () => {
