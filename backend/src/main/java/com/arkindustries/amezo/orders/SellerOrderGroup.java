@@ -122,7 +122,8 @@ enum SellerOrderGroup {
 
     /**
      * Held as a String because {@link OrderStatus} deliberately has no REFUNDED
-     * constant - it is derived from the refund request and never stored.
+     * constant - it is derived from the refund request and never stored. Read from
+     * OrderStatus so the buyer's list and this one overlay the same spelling.
      */
-    static final String REFUNDED_STATUS = "REFUNDED";
+    static final String REFUNDED_STATUS = OrderStatus.DERIVED_REFUNDED;
 }

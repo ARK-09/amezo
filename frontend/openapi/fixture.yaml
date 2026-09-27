@@ -1813,6 +1813,10 @@ components:
       type: object
       required: [identityType, identityId, email, expiresAt]
       properties:
+        # The door the person signed in through, and what "signed in as" should say.
+        # NOT the list of things the session may do: one email address can hold a
+        # buyer account and a seller account, and a session carries the roles of
+        # both. Branch on the two ids below, never on this.
         identityType: { type: string, enum: [BUYER, SELLER] }
         identityId: { type: string, format: uuid }
         email: { type: string }
@@ -1820,6 +1824,12 @@ components:
         # supplied an email, and seller.full_name is nullable to match.
         fullName: { type: string, nullable: true }
         expiresAt: { type: string, format: date-time }
+        # Every identity this address owns, each null when that half does not exist.
+        # These are the ids the API's own buyer- and seller-scoped routes act as, so
+        # a screen reading them cannot disagree with the server about who it is
+        # talking to. A signed-in person always has at least one.
+        buyerIdentityId: { type: string, format: uuid, nullable: true }
+        sellerId: { type: string, format: uuid, nullable: true }
     SellerProductSummary:
       type: object
       required: [id, slug, title, category, variantCount, createdAt]

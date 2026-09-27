@@ -24,5 +24,15 @@ package com.arkindustries.amezo.orders;
  * it.
  */
 public enum OrderStatus {
-    PLACED, PACKED, SHIPPED, DELIVERED, CANCELLED
+    PLACED, PACKED, SHIPPED, DELIVERED, CANCELLED;
+
+    /**
+     * The derived REFUNDED value, as the wire spells it.
+     *
+     * It lives here rather than beside one of the two group enums because BOTH order
+     * lists overlay it - the buyer's and the seller's - and two spellings of the same
+     * derived status is how the two sides of one order come to disagree about it. A
+     * String and not a constant of this enum for the reason above: no column holds it.
+     */
+    public static final String DERIVED_REFUNDED = "REFUNDED";
 }

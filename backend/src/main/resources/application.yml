@@ -94,6 +94,24 @@ app:
       # the verified domain, so it lives in the environment only - never in this
       # file, and never in git.
       api-key: ${RESEND_API_KEY:}
+    dev-mailbox:
+      # Keeps the last 50 outgoing emails in memory and serves them back from
+      # GET /dev/emails, so sign-in works on an instance where Resend cannot
+      # deliver - an unverified sending domain, a spent free-tier allowance, or no
+      # key at all. For development and demo instances; NOT for anywhere real
+      # accounts live, because a magic-link email IS a way in and this hands the
+      # text of one to whoever holds the token below.
+      #
+      # Off unless deliberately turned on, and the controller that reads the
+      # mailbox does not exist while it is off - so the path 404s rather than
+      # being a guarded route somebody could find a way past.
+      enabled: ${DEV_MAILBOX_ENABLED:false}
+      # The operator's token, required on every read. No default on purpose: a
+      # hardcoded one would be a published password, and enabling the mailbox
+      # without setting this FAILS THE BOOT rather than opening it (see
+      # identity/EmailSenderConfig). It is not any account's credential - it
+      # authorises reading this buffer and nothing else.
+      token: ${DEV_MAILBOX_TOKEN:}
   s3:
     bucket: ${AWS_S3_BUCKET:amezo-dev}
     region: ${AWS_REGION:us-east-1}

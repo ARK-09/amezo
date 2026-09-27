@@ -18,12 +18,11 @@ export function BuyerSignIn() {
   const { mutate, isPending, isError, error } = useRequestBuyerMagicLink()
   const viewer = useViewerRole()
 
-  // Already signed in as a buyer: nobody needs to be asked for an address
-  // they've just used. A seller is a different matter - they hold a seller
-  // session, not a buyer one, so this form is exactly what they came for, and
-  // bouncing them to the buyer account page answered a question they hadn't
-  // asked.
-  if (viewer.role === 'buyer') {
+  // Already able to buy: nobody needs to be asked for an address they have just
+  // used. This tests isBuyer and not `role`, which prefers seller - a seller IS a
+  // buyer on the same address now, and reading the role would have shown them this
+  // form forever while their account page sat one click away.
+  if (viewer.isBuyer) {
     return <Navigate to="/account" replace />
   }
 
@@ -66,8 +65,12 @@ export function BuyerSignIn() {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              {viewer.role === 'seller'
-                ? "You're signed in as a seller. Signing in here gives you a separate buyer account."
+              {viewer.isSeller
+                ? // Reachable only for a seller with no buyer half yet, since the
+                  // redirect above catches everyone who has one. Signing in on the
+                  // SAME address joins the two into one account; a different address
+                  // is a different account, which is the thing worth saying.
+                  'Use the same email you sell with and it stays one account.'
                 : "No password. We'll email you a link that signs you in."}
             </p>
             {isError && (

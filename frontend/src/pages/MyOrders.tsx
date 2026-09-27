@@ -102,11 +102,15 @@ function summaryLine(orders: number, openRefunds: number | null) {
 }
 
 export function MyOrders() {
-  // A seller has no buyer order history. Firing the request anyway returned a
+  // Only a buyer has a buyer order history. Firing the request anyway returned a
   // 401 that this page printed as "Session is missing, expired, or invalid" -
   // about a session that was valid, just not a buyer's.
+  //
+  // isBuyer, not `role !== 'seller'`: someone who sells AND buys on one address is
+  // both, and reading the role - which prefers seller - showed them the "this page is
+  // for buyer orders" panel over the orders they had actually placed.
   const viewer = useViewerRole()
-  const isSeller = viewer.role === 'seller'
+  const canSeeOrders = viewer.isBuyer
   const [searchParams, setSearchParams] = useSearchParams()
   // Which order is expanded lives in the URL, like every other record drawer in the
   // app (lib/recordDrawer): a refresh, a shared link and Back all reopen the same
@@ -146,7 +150,7 @@ export function MyOrders() {
 
   // Held until the session has answered, so a seller loading /orders directly
   // does not fire the doomed request in the gap before their role is known.
-  const ordersEnabled = !viewer.isPending && !isSeller
+  const ordersEnabled = !viewer.isPending && canSeeOrders
   const query = useBuyerOrders(filters, { enabled: ordersEnabled })
   // The same window the list is showing, spelled the way each endpoint takes
   // it: the same `from`/`to` dates for both. The counts used to take their own
@@ -226,23 +230,40 @@ export function MyOrders() {
         ? null
         : `${inWindow} order${inWindow === 1 ? '' : 's'} in ${periodPhrase(period)}`
 
-  if (isSeller) {
+  // Nobody whose orders these could be. Two ways to get here: a seller-only account
+  // whose address has never bought anything, and a visitor. Waiting on the session
+  // first, so the gap before it answers does not flash "sign in" at someone who is.
+  if (!viewer.isPending && !canSeeOrders) {
     return (
       <div className="mx-auto w-full max-w-[1320px] flex-1 px-7 pt-5 pb-[72px]">
         <OrdersBreadcrumb />
         <h1 className="text-[28px] leading-[1.2] font-bold tracking-[-0.01em]">Your orders</h1>
         <div className="flex flex-col items-center gap-3 py-16 text-center">
-          <p className="font-medium">This page is for buyer orders</p>
-          <p className="max-w-[420px] text-sm text-muted-foreground">
-            You're signed in as a seller. The orders buyers have placed with you live in the
-            seller portal.
-          </p>
-          <Button variant="outline" asChild>
-            <Link to="/seller/orders">
-              <Store className="size-4" aria-hidden />
-              Go to seller orders
-            </Link>
-          </Button>
+          {viewer.isSeller ? (
+            <>
+              <p className="font-medium">Nothing bought on this account yet</p>
+              <p className="max-w-[420px] text-sm text-muted-foreground">
+                This page is your own purchases. The orders buyers have placed with you live in
+                the seller portal.
+              </p>
+              <Button variant="outline" asChild>
+                <Link to="/seller/orders">
+                  <Store className="size-4" aria-hidden />
+                  Go to seller orders
+                </Link>
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="font-medium">Sign in to see your orders</p>
+              <p className="max-w-[420px] text-sm text-muted-foreground">
+                Your order history is tied to your account. We'll email you a link - no password.
+              </p>
+              <Button variant="outline" asChild>
+                <Link to="/sign-in">Sign in</Link>
+              </Button>
+            </>
+          )}
         </div>
       </div>
     )

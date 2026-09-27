@@ -15,11 +15,10 @@ export function SiteFooter() {
   // The same entry point the header carries, and for the same reason: a seller
   // browsing the buyer side was still being pitched "Sell on Amezo" down here
   // after the header had stopped doing it.
-  const { role } = useViewerRole()
-  const sellerLink =
-    role === 'seller'
-      ? { to: '/seller/dashboard', label: 'Seller dashboard' }
-      : { to: '/seller/sign-in', label: 'Sell on Amezo' }
+  const { isSeller } = useViewerRole()
+  const sellerLink = isSeller
+    ? { to: '/seller/dashboard', label: 'Seller dashboard' }
+    : { to: '/seller/sign-in', label: 'Sell on Amezo' }
 
   return (
     <footer className="border-t bg-muted/50">

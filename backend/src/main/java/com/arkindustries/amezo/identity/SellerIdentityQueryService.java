@@ -22,16 +22,19 @@ class SellerIdentityQueryService implements SellerIdentityQuery {
      * Unlike CurrentSellerResolver this never throws: it is called from a route that
      * is open to guests, where "nobody is signed in" is the normal case rather than
      * an impossible one.
+     *
+     * Reads the principal's seller id rather than testing its primary type, so
+     * checkout still refuses someone their own products when they are signed in
+     * through the buyer half of an account that also sells.
      */
     @Override
     public Optional<UUID> currentSellerId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null
-                || !(authentication.getPrincipal() instanceof SessionCookieAuthenticationFilter.AuthenticatedIdentity identity)
-                || identity.type() != IdentityType.SELLER) {
+                || !(authentication.getPrincipal() instanceof SessionCookieAuthenticationFilter.AuthenticatedIdentity identity)) {
             return Optional.empty();
         }
-        return Optional.of(identity.id());
+        return Optional.ofNullable(identity.sellerId());
     }
 
     @Override

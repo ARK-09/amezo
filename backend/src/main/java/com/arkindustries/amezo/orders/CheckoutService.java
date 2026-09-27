@@ -5,6 +5,7 @@ import com.arkindustries.amezo.catalog.api.OfferSnapshot;
 import com.arkindustries.amezo.catalog.api.OfferStockService;
 import com.arkindustries.amezo.common.exception.ConflictException;
 import com.arkindustries.amezo.identity.api.BuyerIdentityLookup;
+import com.arkindustries.amezo.identity.api.CurrentBuyer;
 import com.arkindustries.amezo.identity.api.SellerIdentityQuery;
 import com.arkindustries.amezo.orders.dto.CheckoutAddressRequest;
 import com.arkindustries.amezo.orders.dto.CheckoutLineRequest;
@@ -35,6 +36,7 @@ public class CheckoutService {
     private final OfferCheckoutQuery offerCheckoutQuery;
     private final OfferStockService offerStockService;
     private final BuyerIdentityLookup buyerIdentityLookup;
+    private final CurrentBuyer currentBuyer;
     private final SellerIdentityQuery sellerIdentityQuery;
 
     public CheckoutService(
@@ -43,12 +45,14 @@ public class CheckoutService {
             OfferCheckoutQuery offerCheckoutQuery,
             OfferStockService offerStockService,
             BuyerIdentityLookup buyerIdentityLookup,
+            CurrentBuyer currentBuyer,
             SellerIdentityQuery sellerIdentityQuery) {
         this.orderRepository = orderRepository;
         this.orderLineRepository = orderLineRepository;
         this.offerCheckoutQuery = offerCheckoutQuery;
         this.offerStockService = offerStockService;
         this.buyerIdentityLookup = buyerIdentityLookup;
+        this.currentBuyer = currentBuyer;
         this.sellerIdentityQuery = sellerIdentityQuery;
     }
 
@@ -70,8 +74,7 @@ public class CheckoutService {
         failOnPriceDrift(lines, offersByVariantId);
         decrementStockOrAbort(lines, offersByVariantId);
 
-        UUID buyerIdentityId =
-                buyerIdentityLookup.findOrCreateByEmail(request.email(), request.shippingAddress().fullName());
+        UUID buyerIdentityId = ownerOf(request);
 
         Address shippingAddress = toAddress(request.shippingAddress());
         Address billingAddress =
@@ -112,6 +115,33 @@ public class CheckoutService {
         }
 
         return new OrderResponse(order.getId(), order.getPlacedAt(), lineResponses, total);
+    }
+
+    /**
+     * Whose order this is.
+     *
+     * The signed-in account wins over the email typed into the form, and that is the
+     * fix for orders going missing. The contact email on checkout is a field like any
+     * other - people put a work address on a work order, a partner's on a gift - and
+     * routing ownership through it meant an order placed by a signed-in buyer landed
+     * on a SECOND buyer_identity row, invisible in the My Orders of the account that
+     * placed it. There was no way back to it either: the list is scoped by
+     * buyer_identity_id, which is the only column that can be.
+     *
+     * The typed address is not lost. It stays on buyer_email_snapshot, which is
+     * exactly what that column is for - the address this order is about, at the
+     * moment it was placed - and it remains what receipts and the seller's queue read.
+     *
+     * A guest keeps the old behaviour, because there is no account to prefer: their
+     * email is the only handle on the order, so it resolves or creates the identity as
+     * before. That is also what later lets them sign in and find it - the address they
+     * used IS their account - and it is why nothing here creates a row for an address
+     * a signed-in buyer merely typed as a contact.
+     */
+    private UUID ownerOf(CheckoutRequest request) {
+        return currentBuyer.currentBuyerIdentityId().orElseGet(() ->
+                buyerIdentityLookup.findOrCreateByEmail(
+                        request.email(), request.shippingAddress().fullName()));
     }
 
     /**

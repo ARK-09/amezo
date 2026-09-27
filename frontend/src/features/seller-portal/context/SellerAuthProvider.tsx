@@ -30,10 +30,12 @@ export function SellerAuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const identity = session.data
 
-  // A seller, or nobody. A BUYER cookie is not a seller - the portal's own guard
-  // sends them to sign in rather than showing them a shop they do not have.
-  const sellerId = identity?.identityType === 'SELLER' ? identity.identityId : null
-  const email = identity?.identityType === 'SELLER' ? identity.email : null
+  // A seller, or nobody - read off sellerId rather than identityType, because one
+  // email address can hold both halves of an account and a person who signed in
+  // through the buyer door may well have a shop. identityType is the door they came
+  // in by; sellerId is whether there is a shop, which is the question here.
+  const sellerId = identity?.sellerId ?? null
+  const email = sellerId ? (identity?.email ?? null) : null
 
   useEffect(() => {
     /**
@@ -74,6 +76,11 @@ export function SellerAuthProvider({ children }: { children: ReactNode }) {
           identityType: 'SELLER' as const,
           identityId: next.sellerId,
           email: next.email,
+          // The id the portal reads. buyerIdentityId is left out rather than guessed:
+          // verify does create the buyer half for this address, but what this write
+          // knows is only what verify returned, and the invalidate below is what
+          // replaces it with the server's own answer a moment later.
+          sellerId: next.sellerId,
         })
         void queryClient.invalidateQueries({ queryKey: sessionKeys.current })
       },
