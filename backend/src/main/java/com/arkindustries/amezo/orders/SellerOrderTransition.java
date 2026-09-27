@@ -11,9 +11,10 @@ import java.util.Set;
  * contract's SellerOrderTransition.
  *
  * Narrower than {@link OrderStatus} because most of that enum is not the seller's
- * to declare: the carrier states are system-driven and REFUNDED is derived from
- * the refund request. What is left is the part of fulfilment the seller performs
- * by hand.
+ * to declare: IN_TRANSIT and OUT_FOR_DELIVERY are carrier states nothing here can
+ * report, and REFUNDED is derived from the refund request. What is left is the part
+ * of fulfilment the seller performs by hand - plus DELIVERED, which is theirs only
+ * until a carrier can report it.
  *
  * The guard lives here rather than in the service so that "which moves are legal"
  * is one table to read instead of a chain of if statements, and so the 409 says
@@ -30,6 +31,23 @@ public enum SellerOrderTransition {
      * and refusing that would only teach them to file a fake packing event first.
      */
     SHIPPED(Set.of(OrderStatus.PLACED, OrderStatus.PACKED)),
+
+    /**
+     * It arrived.
+     *
+     * A STAND-IN for carrier reporting, which does not exist: there is no
+     * integration and no webhook, so DELIVERED was a status nothing could ever
+     * write and the "Delivered" tab was permanently empty. Until something can
+     * report it, the seller says so by hand and V26's delivered_at records when
+     * they said it.
+     *
+     * From PACKED as well as SHIPPED, for the reason SHIPPED accepts PLACED: a
+     * seller who never got round to recording the handover has still delivered the
+     * parcel, and refusing that would only teach them to file a handover they did
+     * not make. Not from PLACED - an order nobody has even packed has not arrived,
+     * and if it truly has, recording the handover first is one click.
+     */
+    DELIVERED(Set.of(OrderStatus.PACKED, OrderStatus.SHIPPED)),
 
     /**
      * Called off before it went anywhere. PLACED only - once a parcel is packed or

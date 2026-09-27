@@ -429,6 +429,70 @@ class SellerOrderRowApiTest {
     }
 
     @Test
+    void markingAnOrderDeliveredRecordsWhenItArrived() throws Exception {
+        Seller me = seller();
+        Cookie cookie = sellerCookie(me);
+        Order order = orderWithOneLine(me, buyer(), new BigDecimal("10.00"), 1);
+
+        mockMvc.perform(patch("/api/v1/sellers/me/orders/{id}", order.getId()).cookie(cookie)
+                        .contentType("application/json").content("{\"status\":\"SHIPPED\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/v1/sellers/me/orders/{id}", order.getId()).cookie(cookie)
+                        .contentType("application/json")
+                        .content("{\"status\":\"DELIVERED\",\"note\":\"Left with the neighbour\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DELIVERED"))
+                // A real date, from somebody saying so at a particular moment - not
+                // inferred from the status, which is what made this null before V26.
+                .andExpect(jsonPath("$.shipment.deliveredAt").exists())
+                // The handover facts survive it.
+                .andExpect(jsonPath("$.shipment.shippedAt").exists())
+                .andExpect(jsonPath("$.shipment.trackingNumber").value(
+                        org.hamcrest.Matchers.startsWith("AMZ")));
+
+        assertThat(orderRepository.findById(order.getId()).orElseThrow().getDeliveredAt()).isNotNull();
+
+        // And it is filed under Delivered by the tabs and by the list they open.
+        mockMvc.perform(get("/api/v1/sellers/me/orders").param("group", "delivered").cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(order.getId().toString()));
+    }
+
+    @Test
+    void anOrderCanBeMarkedDeliveredFromPackedWithoutARecordedHandover() throws Exception {
+        Seller me = seller();
+        Cookie cookie = sellerCookie(me);
+        Order order = orderWithOneLine(me, buyer(), new BigDecimal("10.00"), 1);
+
+        mockMvc.perform(patch("/api/v1/sellers/me/orders/{id}", order.getId()).cookie(cookie)
+                        .contentType("application/json").content("{\"status\":\"PACKED\",\"parcels\":1}"))
+                .andExpect(status().isOk());
+
+        // Refusing this would only teach a seller to file a handover they never made.
+        mockMvc.perform(patch("/api/v1/sellers/me/orders/{id}", order.getId()).cookie(cookie)
+                        .contentType("application/json").content("{\"status\":\"DELIVERED\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DELIVERED"));
+    }
+
+    @Test
+    void anOrderNobodyHasPackedCannotBeDelivered() throws Exception {
+        Seller me = seller();
+        Cookie cookie = sellerCookie(me);
+        Order order = orderWithOneLine(me, buyer(), new BigDecimal("10.00"), 1);
+
+        // Straight from PLACED: it has not left the shelf, so it has not arrived.
+        mockMvc.perform(patch("/api/v1/sellers/me/orders/{id}", order.getId()).cookie(cookie)
+                        .contentType("application/json").content("{\"status\":\"DELIVERED\"}"))
+                .andExpect(status().isConflict());
+
+        assertThat(orderRepository.findById(order.getId()).orElseThrow().getStatus())
+                .isEqualTo(OrderStatus.PLACED);
+    }
+
+    @Test
     void anIllegalTransitionIs409AndLeavesTheOrderAlone() throws Exception {
         Seller me = seller();
         Cookie cookie = sellerCookie(me);

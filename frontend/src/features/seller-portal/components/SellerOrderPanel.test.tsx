@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -64,9 +64,13 @@ describe('SellerOrderPanel', () => {
 
     expect(screen.getByRole('button', { name: 'Packed' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Handed over' })).toBeEnabled()
-    // Transit and delivery come from the carrier, so they are not offered.
+    // Delivered is offered but not yet reachable: nothing that has only been
+    // placed has arrived. It is a stand-in for carrier reporting, which is why
+    // the seller has it at all.
+    expect(screen.getByRole('button', { name: 'Delivered' })).toBeDisabled()
+    // Transit is still the carrier's, and nothing here can report it.
     expect(screen.queryByRole('button', { name: /In transit/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Delivered/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Out for delivery/i })).not.toBeInTheDocument()
   })
 
   it('marks an order packed with a parcel count', async () => {
@@ -109,9 +113,37 @@ describe('SellerOrderPanel', () => {
   it('will not offer packing again once the order has moved on', async () => {
     seed('SHIPPED')
     renderPanel()
+    await screen.findByText('Add an update')
+
+    expect(screen.getByRole('button', { name: 'Packed' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Handed over' })).toBeDisabled()
+    // The one move left, and the reason the compose box is still here at all.
+    expect(screen.getByRole('button', { name: 'Delivered' })).toBeEnabled()
+  })
+
+  it('records the delivery when the seller marks it', async () => {
+    seed('SHIPPED')
+    renderPanel()
+    await screen.findByText('Add an update')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Mark as delivered' }))
+
+    // Delivered is the end of what a seller can do, so the compose box goes.
+    await waitFor(() => expect(screen.queryByText('Add an update')).not.toBeInTheDocument())
+    // And the log dates the step from what was recorded, rather than leaving a
+    // ticked step with no date beside it. Scoped to the log, because the status
+    // badge at the top of the panel now reads "Delivered" too.
+    const log = screen.getByText('Fulfilment log').closest('section')
+    const delivered = within(log!).getByText('Delivered').closest('li')
+    expect(delivered).not.toBeNull()
+    expect(within(delivered!).queryByText('Not yet')).not.toBeInTheDocument()
+  })
+
+  it('offers nothing once the order is delivered', async () => {
+    seed('DELIVERED')
+    renderPanel()
     await screen.findByText('Fulfilment log')
 
-    // Nothing left for the seller to do, so the compose box is gone entirely.
     expect(screen.queryByText('Add an update')).not.toBeInTheDocument()
   })
 

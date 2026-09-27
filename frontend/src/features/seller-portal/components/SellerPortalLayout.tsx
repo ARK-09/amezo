@@ -3,7 +3,7 @@ import { Navigate, NavLink, Outlet } from 'react-router'
 
 import { BackendWakingBanner } from '@/components/layout/BackendWakingBanner'
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { SprinterLoader } from '@/components/ui/sprinter-loader'
 import { useSellerSignOut } from '@/features/seller-portal/api/useSellerAuth'
 import { useSellerAuth } from '@/features/seller-portal/context/SellerAuthContext'
 import { cn } from '@/lib/utils'
@@ -28,11 +28,10 @@ export function SellerPortalLayout() {
   // exists for. The banner is inside it so that wait explains itself.
   if (isUnknown) {
     return (
-      <div className="flex h-screen flex-col">
-        <BackendWakingBanner />
-        <div className="flex flex-1 items-center justify-center" role="status" aria-label="Loading">
-          <Spinner className="size-6 text-primary" />
-        </div>
+      <div className="flex h-screen flex-col items-center justify-center">
+        {/* No BackendWakingBanner here: the loader says the same thing, off the
+            same signal, without a second strip of chrome above an empty screen. */}
+        <SprinterLoader label="Opening your portal" />
       </div>
     )
   }

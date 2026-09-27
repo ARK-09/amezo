@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { InputGroup, InputGroupInput, InputGroupText } from '@/components/ui/input-group'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Sprinter } from '@/components/ui/sprinter'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { BrandingSection } from '@/features/store-settings/components/BrandingSection'
@@ -619,6 +620,7 @@ export function StoreSettings() {
             </Button>
           )}
           <Button disabled={!canSave} onClick={save}>
+            {update.isPending && <Sprinter size="sm" className="-ml-0.5" />}
             {update.isPending ? 'Saving…' : 'Save changes'}
           </Button>
         </div>

@@ -206,15 +206,24 @@ class BuyerOrderApiTest {
                 .andExpect(jsonPath("$.shipment.estimatedDeliveryAt").isEmpty())
                 .andExpect(jsonPath("$.refundWindowEndsAt").isEmpty())
                 .andExpect(jsonPath("$.canRequestRefund").value(false))
-                // Three stages, the ones this schema can actually express.
-                .andExpect(jsonPath("$.timeline.length()").value(3))
+                // Four stages, the ones this schema can actually express. PACKED joined
+                // them with V24's status and packed_at; IN_TRANSIT and
+                // OUT_FOR_DELIVERY are carrier codes nothing here can report, and
+                // drawing them would tell the buyer their parcel never travelled.
+                .andExpect(jsonPath("$.timeline.length()").value(4))
                 .andExpect(jsonPath("$.timeline[0].code").value("PLACED"))
                 .andExpect(jsonPath("$.timeline[0].completed").value(true))
                 .andExpect(jsonPath("$.timeline[0].at").isNotEmpty())
-                .andExpect(jsonPath("$.timeline[1].code").value("SHIPPED"))
+                .andExpect(jsonPath("$.timeline[1].code").value("PACKED"))
+                // Shipped without a recorded packing step, so the stage is complete
+                // and carries no date rather than borrowing the shipment's.
                 .andExpect(jsonPath("$.timeline[1].completed").value(true))
-                .andExpect(jsonPath("$.timeline[2].code").value("DELIVERED"))
-                .andExpect(jsonPath("$.timeline[2].completed").value(false));
+                .andExpect(jsonPath("$.timeline[1].at").isEmpty())
+                .andExpect(jsonPath("$.timeline[2].code").value("SHIPPED"))
+                .andExpect(jsonPath("$.timeline[2].completed").value(true))
+                .andExpect(jsonPath("$.timeline[3].code").value("DELIVERED"))
+                .andExpect(jsonPath("$.timeline[3].completed").value(false))
+                .andExpect(jsonPath("$.timeline[3].at").isEmpty());
     }
 
     @Test

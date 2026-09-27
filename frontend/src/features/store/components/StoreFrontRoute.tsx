@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, useParams } from 'react-router'
 
-import { Spinner } from '@/components/ui/spinner'
+import { SprinterLoader } from '@/components/ui/sprinter-loader'
 import { StoreFront } from '@/pages/StoreFront'
 import { apiClient, type ProblemDetail } from '@/lib/api/client'
 
@@ -63,7 +63,7 @@ export function StoreFrontRoute() {
     if (resolved.isLoading) {
       return (
         <div className="mx-auto flex w-full max-w-[1320px] flex-1 items-center justify-center px-7 py-5">
-          <Spinner className="size-6 text-primary" />
+          <SprinterLoader label="Finding this store" />
         </div>
       )
     }

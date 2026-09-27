@@ -4,7 +4,7 @@ import { Link, Navigate } from 'react-router'
 import { Avatar } from '@/components/Avatar'
 import { displayNameFor } from '@/lib/displayName'
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { SprinterLoader } from '@/components/ui/sprinter-loader'
 import { useBuyerSignOut } from '@/features/session/api/useBuyerAuth'
 import { useSession } from '@/features/session/api/useSession'
 
@@ -24,11 +24,11 @@ export function Account() {
     return <Navigate to="/" replace />
   }
   if (session.isPending) {
-    // Centred in the space the page will fill, so the spinner does not sit at
-    // the top of an empty screen and then jump when the account loads under it.
+    // Centred in the space the page will fill, so the mark does not sit at the
+    // top of an empty screen and then jump when the account loads under it.
     return (
       <div className="flex flex-1 items-center justify-center px-7 py-16">
-        <Spinner className="size-6 text-primary" />
+        <SprinterLoader label="Your account" />
       </div>
     )
   }

@@ -112,6 +112,16 @@ public class Order {
     @Column(name = "cancelled_at")
     private Instant cancelledAt;
 
+    /**
+     * When the order arrived (V26). Written by the seller marking it delivered,
+     * which is a stand-in until a carrier can report it - see
+     * SellerOrderTransition.DELIVERED. Null on an order that reached DELIVERED
+     * before anything recorded when, which is why the timeline prints no date for
+     * those rather than inferring one.
+     */
+    @Column(name = "delivered_at")
+    private Instant deliveredAt;
+
     @CreationTimestamp
     @Column(name = "placed_at", nullable = false, updatable = false)
     private Instant placedAt;

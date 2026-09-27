@@ -472,11 +472,12 @@ export const handlers = [
       return HttpResponse.json({ type: 'about:blank', title: 'Not found', status: 404 }, { status: 404 })
     }
 
-    // The same state machine the contract describes: the seller owns packing
-    // and handover, and nothing else.
+    // The same state machine the contract describes: the seller owns packing,
+    // handover, and - until a carrier can report it - delivery.
     const legal =
       (body.status === 'PACKED' && order.status === 'PLACED') ||
-      (body.status === 'SHIPPED' && ['PLACED', 'PACKED'].includes(order.status))
+      (body.status === 'SHIPPED' && ['PLACED', 'PACKED'].includes(order.status)) ||
+      (body.status === 'DELIVERED' && ['PACKED', 'SHIPPED'].includes(order.status))
     if (!legal) {
       return HttpResponse.json(
         {
@@ -500,6 +501,7 @@ export const handlers = [
       ...(body.status === 'SHIPPED'
         ? { trackingNumber: `AZ${order.id.replace(/-/g, '').slice(-8).toUpperCase()}`, shippedAt: new Date().toISOString() }
         : {}),
+      ...(body.status === 'DELIVERED' ? { deliveredAt: new Date().toISOString() } : {}),
     })!
     return HttpResponse.json(sellerOrderRowDetailOf(updated))
   }),
