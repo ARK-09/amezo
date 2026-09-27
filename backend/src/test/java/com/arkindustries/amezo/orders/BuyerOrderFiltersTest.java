@@ -123,42 +123,4 @@ class BuyerOrderFiltersTest {
                     .isEqualTo(!terminal);
         }
     }
-
-    // -----------------------------------------------------------------
-    // Periods.
-    // -----------------------------------------------------------------
-
-    @Test
-    void periodsParseFromTheTokensTheClientsSelectOffers() {
-        assertThat(BuyerOrderPeriod.from("all")).isEqualTo(BuyerOrderPeriod.ALL);
-        assertThat(BuyerOrderPeriod.from("30d")).isEqualTo(BuyerOrderPeriod.PAST_30_DAYS);
-        assertThat(BuyerOrderPeriod.from("6m")).isEqualTo(BuyerOrderPeriod.PAST_6_MONTHS);
-        assertThat(BuyerOrderPeriod.from("12m")).isEqualTo(BuyerOrderPeriod.PAST_12_MONTHS);
-        assertThat(BuyerOrderPeriod.from(null)).isEqualTo(BuyerOrderPeriod.ALL);
-        assertThat(BuyerOrderPeriod.from("")).isEqualTo(BuyerOrderPeriod.ALL);
-    }
-
-    @Test
-    void anUnknownPeriodIs422RatherThanQuietlyCountingAllTime() {
-        assertThatThrownBy(() -> BuyerOrderPeriod.from("90d"))
-                .isInstanceOf(UnprocessableEntityException.class)
-                .satisfies(thrown -> assertThat(((UnprocessableEntityException) thrown).getErrors())
-                        .singleElement()
-                        .extracting(UnprocessableEntityException.FieldError::field)
-                        .isEqualTo("period"));
-    }
-
-    /**
-     * The day counts have to match MyOrders.tsx exactly - 30 / 183 / 365 - or a
-     * tab reads "3" and opens a list of two.
-     */
-    @Test
-    void periodStartsMatchTheDayCountsTheClientUses() {
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
-
-        assertThat(BuyerOrderPeriod.ALL.startDate()).isNull();
-        assertThat(BuyerOrderPeriod.PAST_30_DAYS.startDate()).isEqualTo(today.minusDays(30));
-        assertThat(BuyerOrderPeriod.PAST_6_MONTHS.startDate()).isEqualTo(today.minusDays(183));
-        assertThat(BuyerOrderPeriod.PAST_12_MONTHS.startDate()).isEqualTo(today.minusDays(365));
-    }
 }

@@ -1,7 +1,7 @@
 import type { ProgressStep } from '@/features/orders/components/ProgressSteps'
 import type { RefundRequestSummary } from '@/features/refunds/api/useRefundRequests'
 import { formatPrice } from '@/lib/formatPrice'
-import { formatShortDate } from '@/lib/formatDate'
+import { formatMediumDate, formatShortDate } from '@/lib/formatDate'
 
 /**
  * One place that turns a refund's status into the stepper, heading and summary
@@ -56,10 +56,44 @@ export function refundStepsFor(refund: RefundRequestSummary): ProgressStep[] {
   })
 }
 
-export function refundTitleFor(refund: RefundRequestSummary): string {
+/**
+ * Everything the buyer-facing copy below reads. A `RefundRequestSummary` satisfies
+ * it, and a `RefundRequestDetail` satisfies it with more: the design's sentences
+ * name the product, the decline reason and the day the money moved, none of which
+ * the summary a list serves carries. Each of those is optional here so the copy
+ * degrades to a shorter true sentence rather than waiting on a second request.
+ */
+export interface RefundCopySource {
+  status: RefundRequestSummary['status']
+  requestedAmount: number
+  approvedAmount?: number | null
+  returnTrackingNumber?: string | null
+  refundedAt?: string | null
+  declineReason?: string | null
+  lines?: { productTitle: string }[]
+}
+
+/** The amount actually at stake: what the seller settled on, or what was asked. */
+function amountOf(refund: RefundCopySource): string {
+  return formatPrice(refund.approvedAmount ?? refund.requestedAmount)
+}
+
+/**
+ * What the request is about, as the buyer copy names it. One line reads as the
+ * product; several read as a count, because the sentences are built around a
+ * single subject and "Drop A, B and C at any carrier point" is not the design.
+ */
+function subjectOf(refund: RefundCopySource): string {
+  const lines = refund.lines ?? []
+  if (lines.length === 1) return lines[0].productTitle
+  if (lines.length > 1) return `${lines.length} items`
+  return 'this item'
+}
+
+export function refundTitleFor(refund: RefundCopySource): string {
   switch (refund.status) {
     case 'REFUNDED':
-      return 'Refund complete'
+      return 'Refunded'
     case 'REPLACEMENT_SENT':
       return 'Replacement on the way'
     case 'DECLINED':
@@ -68,7 +102,7 @@ export function refundTitleFor(refund: RefundRequestSummary): string {
       return 'Refund cancelled'
     case 'AWAITING_RETURN':
     case 'APPROVED':
-      return 'Return in progress'
+      return 'Refund approved — send the item back'
     case 'RETURN_RECEIVED':
       return 'Return received'
     default:
@@ -76,25 +110,31 @@ export function refundTitleFor(refund: RefundRequestSummary): string {
   }
 }
 
-export function refundSummaryLine(refund: RefundRequestSummary): string {
-  const amount = formatPrice(refund.approvedAmount ?? refund.requestedAmount)
+export function refundSummaryLine(refund: RefundCopySource): string {
+  const amount = amountOf(refund)
+  const subject = subjectOf(refund)
   switch (refund.status) {
     case 'REFUNDED':
-      return `${amount} was returned to your original payment method.`
+      return refund.refundedAt
+        ? `${amount} went back to your card on ${formatMediumDate(refund.refundedAt)}. Statements usually show it within five working days.`
+        : `${amount} went back to your card. Statements usually show it within five working days.`
     case 'REPLACEMENT_SENT':
-      return 'A replacement has been sent. Nothing further is needed from you.'
+      return `The seller is sending a new ${subject} instead of a refund. No return needed for the original.`
     case 'DECLINED':
-      return 'The seller declined this request.'
+      return refund.declineReason
+        ? `The seller declined this request: ${refund.declineReason}.`
+        : 'The seller declined this request.'
     case 'CANCELLED':
-      return 'You cancelled this request.'
+      return 'You cancelled this request, so nothing is being returned or refunded.'
     case 'AWAITING_RETURN':
-      return `Approved for ${amount}. Send the item back to finish the refund.`
+    case 'APPROVED':
+      return refund.returnTrackingNumber
+        ? `Drop ${subject} at any carrier point using label ${refund.returnTrackingNumber}. ${amount} is released once it is scanned in.`
+        : `Send ${subject} back to the seller. ${amount} is released once it is scanned in.`
     case 'RETURN_RECEIVED':
       return `Your return arrived. ${amount} will be paid back shortly.`
-    case 'APPROVED':
-      return `Approved for ${amount}.`
     default:
-      return `Requested ${amount}. The seller has not responded yet.`
+      return `You asked for ${amount} back on ${subject}. The seller has not answered yet.`
   }
 }
 
@@ -110,12 +150,25 @@ export function refundBadgeLabel(status: RefundRequestSummary['status']): string
     case 'CANCELLED':
       return 'Refund cancelled'
     case 'AWAITING_RETURN':
-      return 'Return in progress'
+      return 'Return this item'
+    case 'APPROVED':
+      return 'Refund approved'
     case 'RETURN_RECEIVED':
       return 'Return received'
     default:
-      return 'Refund requested'
+      return 'Refund under review'
   }
+}
+
+/**
+ * The tag on an order line a refund covers: "REFUNDED" once the money has moved,
+ * "IN REFUND" while it is still in hand. A declined or cancelled request leaves
+ * no tag - nothing about that line is being returned or paid back, which is also
+ * why the design flags the lines of every other status and not those.
+ */
+export function refundLineTag(status: RefundRequestSummary['status']): string | null {
+  if (status === 'DECLINED' || status === 'CANCELLED') return null
+  return status === 'REFUNDED' ? 'REFUNDED' : 'IN REFUND'
 }
 
 /** Whether a refund is still live, as opposed to settled one way or another. */

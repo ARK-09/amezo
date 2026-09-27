@@ -89,9 +89,10 @@ public class BuyerOrderController {
     @GetMapping("/facets")
     public FacetListResponse facetsForMine(
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) String period) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
 
-        return buyerOrderService.facetsForMine(q, BuyerOrderPeriod.from(period));
+        return buyerOrderService.facetsForMine(q, from, to);
     }
 
     @GetMapping("/{orderId}")

@@ -10,8 +10,11 @@ import {
 import {
   buyerOrderDetailOf,
   findBuyerOrder,
+  inBuyerDateRange,
   inBuyerGroup,
+  isBuyerOrderId,
   listBuyerOrders,
+  matchesBuyerQuery,
 } from './fixtures/buyerOrders'
 import { systemCategories } from './fixtures/categories'
 import { currentLastCheckoutDetails } from './fixtures/checkoutDetails'
@@ -379,9 +382,14 @@ export const handlers = [
     const buyer = currentBuyer()
     if (!buyer) return unauthorized()
     const url = new URL(request.url)
-    const q = url.searchParams.get('q')?.toLowerCase()
+    const q = url.searchParams.get('q')
+    // The same from/to the list takes. This used to be its own `period` token,
+    // which meant the client and the server each decided what a window was; the
+    // dates are now computed once, by the select, for both calls.
+    const from = url.searchParams.get('from')
+    const to = url.searchParams.get('to')
     const rows = listBuyerOrders().filter(
-      (row) => !q || `${row.reference} ${row.seller.name}`.toLowerCase().includes(q),
+      (row) => matchesBuyerQuery(row, q) && inBuyerDateRange(row, from, to),
     )
     // Keyed by the same group values GET /api/v1/orders takes.
     const counted = (group: string) => rows.filter((row) => inBuyerGroup(row, group)).length
@@ -532,20 +540,20 @@ export const handlers = [
     if (!currentBuyer()) return unauthorized()
     const url = new URL(request.url)
     const group = url.searchParams.get('group') ?? 'all'
-    const q = url.searchParams.get('q')?.toLowerCase()
+    const q = url.searchParams.get('q')
+    const from = url.searchParams.get('from')
+    const to = url.searchParams.get('to')
     const page = Number(url.searchParams.get('page') ?? 0)
     const size = Number(url.searchParams.get('size') ?? 10)
 
-    const filtered = listBuyerOrders().filter((order) => {
-      if (!inBuyerGroup(order, group)) return false
-      if (q) {
-        const haystack = [order.reference, ...(order.previewLines ?? []).map((l) => l.productTitle)]
-          .join(' ')
-          .toLowerCase()
-        if (!haystack.includes(q)) return false
-      }
-      return true
-    })
+    const filtered = listBuyerOrders().filter(
+      (order) =>
+        inBuyerGroup(order, group) &&
+        matchesBuyerQuery(order, q) &&
+        // from/to were accepted and dropped, so the date select narrowed the tab
+        // counts and left the list showing every order regardless of window.
+        inBuyerDateRange(order, from, to),
+    )
 
     return HttpResponse.json({
       content: filtered.slice(page * size, page * size + size),
@@ -628,6 +636,34 @@ export const handlers = [
     addRefundRequest(created)
 
     return HttpResponse.json(created, { status: 201 })
+  }),
+
+  /**
+   * The buyer's own refund requests. "Own" is every request raised against an order
+   * in the buyer order store - the same join the backend will make on order_id -
+   * so the seller queue's other buyers' requests are not the caller's business.
+   *
+   * The header on My Orders reads `totalElements` off this with `status` set and
+   * `size: 1`, so the filter and the count both have to be real.
+   */
+  http.get('http://localhost:8080/api/v1/refund-requests', ({ request }) => {
+    if (!currentBuyer()) return unauthorized()
+    const url = new URL(request.url)
+    const status = url.searchParams.get('status')
+    const page = Number(url.searchParams.get('page') ?? 0)
+    const size = Number(url.searchParams.get('size') ?? 10)
+
+    const rows = listRefundRequests()
+      .filter((refund) => isBuyerOrderId(refund.orderId))
+      .filter((refund) => !status || refund.status === status)
+      .map(summaryOfRefund)
+
+    return HttpResponse.json({
+      content: rows.slice(page * size, page * size + size),
+      page,
+      totalElements: rows.length,
+      totalPages: Math.ceil(rows.length / size) || 1,
+    })
   }),
 
   http.get('http://localhost:8080/api/v1/refund-requests/:refundRequestId', ({ params }) => {

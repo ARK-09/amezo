@@ -175,9 +175,11 @@ function pageWindow(page: number, totalPages: number): PageSlot[] {
  * control rather than five.
  *
  * `page` is 0-based, like the API and the ?page= param; the buttons are
- * labelled from 1. Leave `range` out where a list has no page size to offer;
- * every list in the app passes one, so the bar normally carries the range label
- * and the Per page select together.
+ * labelled from 1. Leave `range` out where a list has neither a count nor a page
+ * size to show. Pass a `range` without `sizes` for the range label on its own -
+ * the buyer's My Orders is designed without a Per page control, and a select the
+ * design does not have is not a harmless extra: it changes what ?size= means to
+ * the person reading the page.
  */
 function PaginationBar({
   page,
@@ -192,9 +194,9 @@ function PaginationBar({
   range?: {
     totalElements: number
     pageSize: number
-    /** The sizes offered; anything else in ?size= is not honoured. */
-    sizes: readonly number[]
-    onSizeChange: (size: number) => void
+    /** The sizes offered; anything else in ?size= is not honoured. Omit for no select. */
+    sizes?: readonly number[]
+    onSizeChange?: (size: number) => void
     /** Noun for the count, as in "of 8 orders". */
     unit?: string
   }
@@ -216,26 +218,28 @@ function PaginationBar({
       {range && (
         <div className="flex flex-wrap items-center gap-3 text-[13px] text-muted-foreground">
           <p>{rangeLabel(current, range.pageSize, range.totalElements, range.unit)}</p>
-          {/* A span, not a label: the trigger is a button, which a label
-              cannot be attached to - hence the aria-label on it. */}
-          <span className="flex items-center gap-2">
-            Per page
-            <Select
-              value={String(range.pageSize)}
-              onValueChange={(value) => range.onSizeChange(Number(value))}
-            >
-              <SelectTrigger aria-label="Rows per page" className="h-8 text-[13px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {range.sizes.map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </span>
+          {range.sizes && range.onSizeChange && (
+            /* A span, not a label: the trigger is a button, which a label
+               cannot be attached to - hence the aria-label on it. */
+            <span className="flex items-center gap-2">
+              Per page
+              <Select
+                value={String(range.pageSize)}
+                onValueChange={(value) => range.onSizeChange?.(Number(value))}
+              >
+                <SelectTrigger aria-label="Rows per page" className="h-8 text-[13px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {range.sizes.map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </span>
+          )}
         </div>
       )}
 

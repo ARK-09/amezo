@@ -1385,9 +1385,16 @@ paths:
         - name: q
           in: query
           schema: { type: string }
-        - name: period
+        # The same window the list takes, deliberately. A separate `period`
+        # vocabulary here meant the client and the server each decided what
+        # "past 3 months" was, so a tab could count a window the list it opened
+        # did not use. Dates are computed once, on the client, from the select.
+        - name: from
           in: query
-          schema: { type: string }
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
       responses:
         '200':
           description: OK

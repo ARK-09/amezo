@@ -492,7 +492,7 @@ class BuyerOrderApiTest {
         order(seller, buyer, OrderStatus.PLACED, tag + " a", new BigDecimal("1.00"), 1);
         order(seller, buyer, OrderStatus.DELIVERED, tag + " b", new BigDecimal("1.00"), 1);
 
-        mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("q", tag).param("period", "30d"))
+        mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("q", tag).param("from", LocalDate.now().minusDays(30).toString()))
                 .andExpect(jsonPath("$.facets[1].count").value(1))
                 .andExpect(jsonPath("$.facets[2].count").value(1));
 
@@ -517,11 +517,11 @@ class BuyerOrderApiTest {
         withPlacedAt(order(seller, buyer, OrderStatus.PLACED, tag + " ancient", new BigDecimal("1.00"), 1),
                 Instant.now().minus(400, ChronoUnit.DAYS));
 
-        mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("q", tag).param("period", "30d"))
+        mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("q", tag).param("from", LocalDate.now().minusDays(30).toString()))
                 .andExpect(jsonPath("$.facets[0].count").value(1));
-        mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("q", tag).param("period", "12m"))
+        mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("q", tag).param("from", LocalDate.now().minusDays(365).toString()))
                 .andExpect(jsonPath("$.facets[0].count").value(1));
-        mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("q", tag).param("period", "all"))
+        mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("q", tag))
                 .andExpect(jsonPath("$.facets[0].count").value(2));
         // Absent means all time.
         mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("q", tag))
@@ -541,9 +541,8 @@ class BuyerOrderApiTest {
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.errors[0].field").value("group"));
 
-        mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("period", "7y"))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.errors[0].field").value("period"));
+        mockMvc.perform(get("/api/v1/orders/facets").cookie(cookie).param("from", "not-a-date"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

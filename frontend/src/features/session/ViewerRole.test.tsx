@@ -107,7 +107,8 @@ describe('my orders', () => {
     signInBuyerSession({ buyerIdentityId: 'buyer-1', email: 'ada@example.com' })
     renderAt('/orders', <MyOrders />)
 
-    expect(await screen.findByText('Signed in as ada@example.com')).toBeInTheDocument()
+    // The header counts the buyer's own history, which only a buyer request answers.
+    expect(await screen.findByText(/orders on file/)).toBeInTheDocument()
     expect(screen.queryByText('This page is for buyer orders')).not.toBeInTheDocument()
   })
 })

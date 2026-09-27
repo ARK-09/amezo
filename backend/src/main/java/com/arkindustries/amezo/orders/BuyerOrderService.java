@@ -178,8 +178,11 @@ public class BuyerOrderService {
      * the list its tab opens.
      */
     @Transactional(readOnly = true)
-    public FacetListResponse facetsForMine(String q, BuyerOrderPeriod period) {
-        List<Candidate> inWindow = candidatesFor(period.startDate(), null).stream()
+    public FacetListResponse facetsForMine(String q, LocalDate from, LocalDate to) {
+        // The same window helper the list uses, so a tab's count and the list it
+        // opens are computed from one date range rather than two vocabularies
+        // that can disagree about what "past 3 months" means.
+        List<Candidate> inWindow = candidatesFor(from, to).stream()
                 .filter(candidate -> candidate.matches(q))
                 .toList();
 
