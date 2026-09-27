@@ -145,26 +145,36 @@ describe('StoreFront', () => {
   })
 
   /**
-   * The logo tile reads as sitting ON the cover rather than being cut into it.
+   * The logo tile straddles the cover's bottom edge, and is VISIBLE doing it.
    *
-   * The 3px white border was doing the separating on its own, which works over a pale
-   * cover and disappears over a dark or busy one - and this page's fallback cover is
-   * the dark band. A shadow does not depend on what is behind it, and the extra lift
-   * is what gives the shadow somewhere to fall.
+   * Every class asserted here was broken on its own, which is why each is named rather
+   * than the lot being taken on trust:
+   *
+   *  - `relative`/`z-10`, because the cover band above is position:relative and CSS
+   *    paints positioned elements above non-positioned ones whatever the source order.
+   *    Without these the tile overlapped the band by a measured 44px and was painted
+   *    underneath it, so only the half below the band showed;
+   *  - `self-start`, because the row is items-end, which pins an item by its
+   *    margin-box BOTTOM - so the negative margin beside it moved nothing at all;
+   *  - `-mt-[44px]`, which then means what it says: half the tile over the band;
+   *  - the shadow, because a white border on a white background separates nothing
+   *    below the band.
+   *
+   * jsdom computes no layout and paints nothing, so the geometry and the paint order
+   * are checked in Chromium; this is the guard on the classes that produce them.
    */
-  it('lifts the store logo off the cover with a shadow', async () => {
+  it('lifts the store logo onto the cover with a shadow', async () => {
     seed(undefined, { logoUrl: 'https://cdn.example.com/logo.png' })
     renderStore()
 
     await screen.findByRole('heading', { name: 'Aurora Audio' })
     const tile = document.querySelector<HTMLElement>('img[src="https://cdn.example.com/logo.png"]')!
       .parentElement!
-    expect(tile.className).toContain('shadow-lg')
-    // Half the tile over the band. self-start is load-bearing: the row is items-end,
-    // which pins an item by its margin-box bottom, so the negative margin beside it
-    // moved nothing at all until this was added.
-    expect(tile.className).toContain('-mt-[44px]')
+    expect(tile.className).toContain('relative')
+    expect(tile.className).toContain('z-10')
     expect(tile.className).toContain('self-start')
+    expect(tile.className).toContain('-mt-[44px]')
+    expect(tile.className).toMatch(/shadow-\[/)
   })
 
   it('shows the about text and the seller’s own policies', async () => {
