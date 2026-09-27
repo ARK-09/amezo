@@ -1137,7 +1137,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [slot, contentType]
+              # fileSizeBytes is required, not informational: the server signs it
+              # into the presigned URL as Content-Length, so a PUT of any other
+              # size fails the signature rather than quietly costing storage, and
+              # it is the number the 5 MB per-file cap is checked against before
+              # any URL is issued. An upload with no declared size cannot be
+              # capped at all, so there is no useful behaviour behind omitting it.
+              required: [slot, contentType, fileSizeBytes]
               properties:
                 slot: { type: string, enum: [COVER, LOGO] }
                 contentType: { type: string }
@@ -2465,7 +2471,12 @@ components:
         handle: { $ref: '#/components/schemas/StoreHandle' }
         tagline: { type: string }
         location: { type: string }
-        foundedYear: { type: integer }
+        # Nullable, because "Selling since" is a box the seller can empty and the
+        # storefront preview then reads "New seller". An omitted field is left as
+        # it is and a blank string clears the text fields, but an integer has no
+        # blank - so null is the only way to say "remove the founding year", and
+        # without it a year could be set and never taken back out.
+        foundedYear: { type: integer, nullable: true }
         supportEmail: { type: string }
         about: { type: string }
         coverUrl: { type: string, nullable: true }
