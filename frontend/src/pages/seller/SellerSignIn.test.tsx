@@ -2,11 +2,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { SellerAuthProvider } from '@/features/seller-portal/context/SellerAuthProvider'
-import { signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
+import { clearSellerSession, setDemoEmail, signInSellerSession } from '@/test/msw/fixtures/sellerAuth'
 import { server } from '@/test/msw/server'
 
 import { SellerSignIn } from './SellerSignIn'
@@ -25,7 +25,10 @@ function renderPage() {
 }
 
 describe('SellerSignIn', () => {
-  afterEach(() => localStorage.clear())
+  afterEach(() => {
+    localStorage.clear()
+    clearSellerSession()
+  })
 
   it('sends a magic link and shows a confirmation message', async () => {
     renderPage()
@@ -126,4 +129,71 @@ describe('SellerSignIn', () => {
     renderPage()
     expect(screen.getByLabelText('Email')).toBeInTheDocument()
   })
+
+  /**
+   * The demo account. An instance with no working email provider cannot let anybody
+   * in - every sign-in here is a magic link - so the ONE configured address gets its
+   * token in the response instead, and this walks it through the same /verify route an
+   * emailed link opens. See the backend's identity/DemoAccount for why that is narrow
+   * enough to be safe.
+   */
+  describe('the demo address', () => {
+    it('redeems the token it is handed instead of naming an inbox', async () => {
+      setDemoEmail('demo@amezo.com')
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      render(
+        <QueryClientProvider client={queryClient}>
+          <SellerAuthProvider>
+            <MemoryRouter initialEntries={['/seller/sign-in']}>
+              <Routes>
+                <Route path="/seller/sign-in" element={<SellerSignIn />} />
+                {/* Stands in for SellerVerify, asserting only that the token arrived
+                    here - that screen's own test covers what it does with one. */}
+                <Route
+                  path="/seller/verify"
+                  element={<VerifyProbe />}
+                />
+              </Routes>
+            </MemoryRouter>
+          </SellerAuthProvider>
+        </QueryClientProvider>,
+      )
+
+      await userEvent.type(screen.getByLabelText('Email'), 'demo@amezo.com')
+      await userEvent.click(screen.getByRole('button', { name: 'Send magic link' }))
+
+      // Straight to verify with a token, rather than "Check your email" for a mail
+      // that was deliberately never sent.
+      expect(await screen.findByTestId('verify-token')).toHaveTextContent(/^mock-token-/)
+      expect(screen.queryByText('Check your email')).not.toBeInTheDocument()
+    })
+
+    it('leaves every other address on the emailed path', async () => {
+      setDemoEmail('demo@amezo.com')
+      renderPage()
+
+      // One character different, and it is not the demo address: the match is on the
+      // whole address, never a domain or a pattern that could admit a second one.
+      await userEvent.type(screen.getByLabelText('Email'), 'demo2@amezo.com')
+      await userEvent.click(screen.getByRole('button', { name: 'Send magic link' }))
+
+      expect(await screen.findByText('Check your email')).toBeInTheDocument()
+    })
+
+    it('does nothing special when no demo address is configured', async () => {
+      renderPage()
+
+      await userEvent.type(screen.getByLabelText('Email'), 'demo@amezo.com')
+      await userEvent.click(screen.getByRole('button', { name: 'Send magic link' }))
+
+      // Unset by default, so there is no demo address at all - not even this one.
+      expect(await screen.findByText('Check your email')).toBeInTheDocument()
+    })
+  })
 })
+
+/** Reads the token out of the verify URL, so the test can assert one arrived. */
+function VerifyProbe() {
+  const [params] = useSearchParams()
+  return <p data-testid="verify-token">{params.get('token')}</p>
+}

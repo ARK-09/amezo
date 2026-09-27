@@ -59,7 +59,12 @@ class SellerAuthApiTest {
         mockMvc.perform(post("/auth/seller/magic-link")
                         .contentType("application/json")
                         .content("{\"email\":\"seller1@example.com\"}"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk())
+                // The token is NOT in the body for an ordinary address - only the
+                // configured demo one gets it there (identity/DemoAccount), and a token
+                // returned for any address anybody asked about would be a way in to
+                // every account. This assertion is that door staying shut.
+                .andExpect(jsonPath("$.token").doesNotExist());
 
         assertThat(magicLinkTokenRepository.findAll())
                 .anyMatch(t -> t.getEmail().equals("seller1@example.com")
@@ -144,7 +149,7 @@ class SellerAuthApiTest {
         mockMvc.perform(post("/auth/seller/magic-link")
                         .contentType("application/json")
                         .content("{\"email\":\"" + email + "\"}"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk());
 
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(emailSender).send(eq(email), anyString(), bodyCaptor.capture());

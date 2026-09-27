@@ -57,6 +57,7 @@ class SellerStoreApiTest {
 
     @Autowired
     private SessionRepository sessionRepository;
+    @Autowired private BuyerIdentityRepository buyerIdentityRepository;
 
     // ------------------------------------------------------- auto-provisioning
 
@@ -364,7 +365,7 @@ class SellerStoreApiTest {
     /** A buyer session is not a seller session, whatever it is pointed at. */
     @Test
     void aBuyerSessionCannotReachTheSellerStore() throws Exception {
-        Cookie buyer = Fixtures.sessionCookie(sessionRepository, IdentityType.BUYER, UUID.randomUUID());
+        Cookie buyer = Fixtures.buyerSessionCookie(sessionRepository, buyerIdentityRepository);
 
         mockMvc.perform(get(STORE).cookie(buyer))
                 .andExpect(status().isForbidden());

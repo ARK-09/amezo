@@ -496,6 +496,12 @@ describe('StoreSettings branding', () => {
     expect(screen.getByText(/storefront\.png · shown at the top/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove cover' })).toBeInTheDocument()
 
+    // The preview is the storefront band's own shape, so what the seller sees here is
+    // what shoppers will. At a fixed height it cropped the cover the same way the
+    // storefront did, which meant they could not tell from this screen that the top and
+    // bottom of their image were being thrown away.
+    expect(cover.parentElement!.className).toContain('aspect-[4/1]')
+
     // The point of the section: the storefront preview carries the same image.
     expect(preview().querySelector('img')?.getAttribute('src')).toBe(cover.getAttribute('src'))
     expect(within(preview()).queryByText('No cover uploaded')).not.toBeInTheDocument()

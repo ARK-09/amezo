@@ -170,6 +170,25 @@ export function SellerRefunds() {
   // page slammed shut the instant the decision succeeded.
   const openRow = useRecordSnapshot(drawer.recordId, rows)
 
+  /**
+   * Follow a request that has just moved into the tab it moved to.
+   *
+   * Keeping the drawer open was only half of it: the row itself left the list, so
+   * closing the drawer left a seller staring at a queue with no sign of the refund
+   * they had just approved. The tabs are a status filter and the screen opens on
+   * "Needs a decision", which by definition is the one tab a decided request cannot
+   * be in.
+   *
+   * Written to the URL, which is where the open tab lives, so Back still walks out of
+   * it - and `replace`, because following the record is part of the decision the
+   * seller just made rather than a navigation they would want to undo separately.
+   * Nothing to do on "All", or when the new status is already in view.
+   */
+  function followStatus(next: RefundStatus) {
+    if (status === 'all' || status === next) return
+    patch({ status: next }, true)
+  }
+
   return (
     // h-full, and every child but the table shrink-0: the shell hands this page a
     // definite height and owns the only scrollbar, so the table is the one thing
@@ -357,7 +376,11 @@ export function SellerRefunds() {
             <DrawerBody>
               {/* The header above already carries the status pill and the
                   reference, so the panel does not draw its own. */}
-              <RefundDecisionPanel refundRequestId={openRow.id} showIdentity={false} />
+              <RefundDecisionPanel
+                refundRequestId={openRow.id}
+                showIdentity={false}
+                onStatusChange={followStatus}
+              />
             </DrawerBody>
           </>
         )}

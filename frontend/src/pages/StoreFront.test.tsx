@@ -120,6 +120,30 @@ describe('StoreFront', () => {
     expect(screen.getByText('On Amezo').previousSibling).toHaveTextContent('Since 2021')
   })
 
+  /**
+   * The cover band's shape. The upload hint asks sellers for "1600 x 400 or wider"
+   * - 4:1 - and the design's fixed 172px band is about 7.4:1 at this page's width, so
+   * object-cover was throwing away more than half the height of every cover made to
+   * that instruction. The two numbers cannot both be honoured and the seller acted on
+   * the first one.
+   */
+  it('gives the cover a 4:1 band so a 1600x400 image is not cropped', async () => {
+    seed(undefined, { coverUrl: 'https://cdn.example.com/cover.png' })
+    renderStore()
+
+    // alt="" - it is decorative, the store's name is the heading beside it - so there
+    // is no accessible role to query it by.
+    await screen.findByRole('heading', { name: 'Aurora Audio' })
+    const cover = document.querySelector<HTMLImageElement>('img[src="https://cdn.example.com/cover.png"]')!
+    expect(cover).not.toBeNull()
+    const band = cover.parentElement!
+    expect(band.className).toContain('aspect-[4/1]')
+    expect(band.className).not.toContain('h-[172px]')
+    // object-cover stays: a cover that is NOT 4:1 should still be trimmed rather than
+    // squashed. For a 4:1 one it now has nothing to trim.
+    expect(cover.className).toContain('object-cover')
+  })
+
   it('shows the about text and the seller’s own policies', async () => {
     seed()
     renderStore()

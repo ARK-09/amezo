@@ -66,6 +66,7 @@ still runs locally; this table is what a *deployment* cares about.
 | `APP_MAGIC_LINK_TTL_MINUTES` | `15` | No |
 | `RESEND_API_KEY` | empty (log the link) | **Yes**, for real sign-in emails |
 | `APP_EMAIL_FROM` | `onboarding@resend.dev` | Yes, once a domain is verified |
+| `DEMO_EMAIL` | empty (no demo account) | Demo instances only — see below |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | — | Image upload only |
 | `AWS_SESSION_TOKEN` | — | Only for temporary credentials |
 | `AWS_S3_BUCKET` | `amezo-dev` | Image upload only |
@@ -206,6 +207,32 @@ itself.
   a link — sign in with your own Resend account address, or verify a domain
   (Resend dashboard → Domains, three DNS records) and set `APP_EMAIL_FROM` to an
   address on it.
+
+- **`DEMO_EMAIL` — signing in without an inbox.** Set it to one address and a
+  magic link requested for *that address* comes back in the response body instead
+  of being emailed; the sign-in screen redeems it and you are in. Nothing else
+  changes — it is an ordinary single-use magic-link token with the same expiry,
+  redeemed through the same `/verify` endpoint — so this is a change to delivery,
+  not to authentication.
+
+  It exists because the sandbox catch above makes a demo depend on somebody else's
+  rate limit, and because an instance that cannot deliver email cannot let anyone
+  in at all.
+
+  **It is a public shared account.** Anyone who knows the address can sign in as
+  it, exactly like a "try the demo" button, so point it at an account holding demo
+  data and nothing else. What it is *not* is a way in to anything else: it is unset
+  by default (no demo address exists unless you make one), and the match is on the
+  **whole address** — never a domain, never a pattern — so no other address is
+  affected. `identity/DemoAccount.java` is the whole of it.
+
+  ```
+  DEMO_EMAIL=demo@amezo.com
+  ```
+
+  Sign in through the seller door (`/seller/sign-in`) to get both halves of the
+  account: verifying a seller link also creates the buyer identity, so the same
+  demo login can list products and place orders.
 
   A refusal surfaces as a 502 `ProblemDetail` from `POST /auth/seller/magic-link`,
   with the provider's own reason in the server log. It is deliberately not

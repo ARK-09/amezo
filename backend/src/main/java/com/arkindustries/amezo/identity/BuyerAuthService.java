@@ -27,8 +27,9 @@ public class BuyerAuthService {
         this.magicLinks = magicLinks;
     }
 
-    public void requestMagicLink(String email) {
-        magicLinks.requestMagicLink(IdentityType.BUYER, email, "/verify", "Sign in to Amezo");
+    /** @return the raw token for the demo address, else null - see DemoAccount. */
+    public String requestMagicLink(String email) {
+        return magicLinks.requestMagicLink(IdentityType.BUYER, email, "/verify", "Sign in to Amezo");
     }
 
     public VerifyResult verify(String rawToken) {

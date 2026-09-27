@@ -11,12 +11,18 @@ export type BuyerSession = components['schemas']['BuyerSession']
  * Buyer sign-in, the same magic-link flow the seller portal uses. It exists because
  * a review has to be attributable: until now the only way to become a known buyer
  * was to place an order, which never created a session.
+ *
+ * Resolves to a token for the demo address and to null for every other one, which is
+ * the whole of the difference: a normal address is told to check its email, and the
+ * demo address is handed the token the email would have carried. See the backend's
+ * identity/DemoAccount for why that is one configured address and not a pattern.
  */
 export function useRequestBuyerMagicLink() {
-  return useMutation<void, ProblemDetail, string>({
+  return useMutation<string | null, ProblemDetail, string>({
     mutationFn: async (email) => {
-      const { error } = await apiClient.POST('/auth/buyer/magic-link', { body: { email } })
+      const { data, error } = await apiClient.POST('/auth/buyer/magic-link', { body: { email } })
       if (error) throw error
+      return data.token ?? null
     },
   })
 }

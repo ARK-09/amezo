@@ -14,9 +14,13 @@ import com.arkindustries.amezo.orders.dto.BuyerOrderSummaryPageResponse;
 import com.arkindustries.amezo.orders.dto.BuyerOrderSummaryResponse;
 import com.arkindustries.amezo.orders.dto.FacetListResponse;
 import com.arkindustries.amezo.orders.dto.FacetResponse;
+import com.arkindustries.amezo.orders.dto.OrderRefundSummaryResponse;
 import com.arkindustries.amezo.orders.dto.OrderTimelineEntryResponse;
 import com.arkindustries.amezo.orders.dto.ShipmentInfoResponse;
 import com.arkindustries.amezo.orders.dto.StoreRefResponse;
+import com.arkindustries.amezo.refunds.api.OrderRefundQuery;
+import com.arkindustries.amezo.refunds.api.OrderRefundSnapshot;
+import com.arkindustries.amezo.refunds.api.RefundWindowPolicy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +34,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -66,33 +71,30 @@ import java.util.stream.Collectors;
  * plainly so that the day a buyer with ten thousand orders exists, this paragraph
  * is where the fix starts.
  *
- * WHAT IS MISSING, AND THE ONE THING THAT WOULD FILL IT. Refunds are modelled
- * once, by refund_request, with their own state machine - so nothing here derives,
- * stores or invents refund state, and there is no second refund model in this
- * feature. Several contract fields are consequently empty, and ONE batched query
- * from the refund feature fills all of them:
+ * REFUND STATE COMES FROM REFUNDS, AND IS NEVER STORED HERE. Refunds are modelled
+ * once, by refund_request, with their own state machine, so this feature reads them
+ * through {@code refunds.api.OrderRefundQuery} and writes nothing. One batched call
+ * per request ({@code refundsByOrderIds}) answers every refund field the contract
+ * puts on an order:
  *
- *   Map&lt;UUID, List&lt;OrderRefundSnapshot&gt;&gt; refundsByOrderIds(Collection&lt;UUID&gt;)
+ *  - status REFUNDED - DERIVED from a request settled with money, never stored
+ *    (statusOf). A REPLACEMENT_SENT request is settled but moved a parcel rather
+ *    than money, and leaves the fulfilment status alone;
+ *  - BuyerOrderSummary.openRefundRequestId / openRefundStatus - the LATEST request
+ *    against the order, settled ones included, because that is what the card's badge
+ *    reports;
+ *  - BuyerOrderLine.refundRequestId / refundStatus - per line, the request still
+ *    OPEN over it, which is what the contract says those two mean;
+ *  - BuyerOrderDetail.refundRequests - every request, oldest first;
+ *  - the Refunds tab - any request at all, so a refund does not leave the tab at the
+ *    moment it is paid out (see BuyerOrderGroup);
+ *  - canRequestRefund / refundWindowEndsAt - {@code refunds.api.RefundWindowPolicy}
+ *    plus the units still unclaimed, which is the rule POST /api/v1/refund-requests
+ *    actually enforces.
  *
- * on the refund feature's own `.api` package, where a snapshot carries the
- * request's id, reference, status, resolution, requestedAt, requestedAmount,
- * approvedAmount, currency, whether its status counts as OPEN, and the order line
- * ids it covers. With that in hand:
- *
- *  - BuyerOrderSummary.openRefundRequestId / openRefundStatus - the request
- *    currently attached to the order (toSummary);
- *  - BuyerOrderLine.refundRequestId / refundStatus - per line, the open one
- *    (toLineResponse);
- *  - BuyerOrderDetail.refundRequests - the list, a field BuyerOrderDetailResponse
- *    does not declare because declaring it means declaring RefundStatus here;
- *  - status REFUNDED - derived when a request reaches REFUNDED, never stored
- *    (statusOf);
- *  - the Refunds tab - the hasOpenRefund argument BuyerOrderGroup already takes;
- *  - canRequestRefund - the "and no open request" half it is missing.
- *
- * Each is a single call site in this class. Nothing is stubbed to look finished:
- * the Refunds tab honestly counts zero because this database holds no refund rows,
- * not because a zero is hard-coded into the response.
+ * THIS IS THE SAME SOURCE THE SELLER SIDE READS. SellerOrderRowService derives its
+ * REFUNDED the same way from the same query, which is what makes "the seller settled
+ * it" and "the buyer can see it was settled" one fact rather than two that drift.
  */
 @Service
 public class BuyerOrderService {
@@ -126,6 +128,8 @@ public class BuyerOrderService {
     private final ProductCatalogSummaryQuery productCatalogSummaryQuery;
     private final ProductVariantSummaryQuery productVariantSummaryQuery;
     private final SellerStoreRefQuery sellerStoreRefQuery;
+    private final OrderRefundQuery orderRefundQuery;
+    private final RefundWindowPolicy refundWindow;
 
     public BuyerOrderService(
             OrderRepository orderRepository,
@@ -133,13 +137,17 @@ public class BuyerOrderService {
             CurrentBuyer currentBuyer,
             ProductCatalogSummaryQuery productCatalogSummaryQuery,
             ProductVariantSummaryQuery productVariantSummaryQuery,
-            SellerStoreRefQuery sellerStoreRefQuery) {
+            SellerStoreRefQuery sellerStoreRefQuery,
+            OrderRefundQuery orderRefundQuery,
+            RefundWindowPolicy refundWindow) {
         this.orderRepository = orderRepository;
         this.orderLineRepository = orderLineRepository;
         this.currentBuyer = currentBuyer;
         this.productCatalogSummaryQuery = productCatalogSummaryQuery;
         this.productVariantSummaryQuery = productVariantSummaryQuery;
         this.sellerStoreRefQuery = sellerStoreRefQuery;
+        this.orderRefundQuery = orderRefundQuery;
+        this.refundWindow = refundWindow;
     }
 
     @Transactional(readOnly = true)
@@ -147,8 +155,12 @@ public class BuyerOrderService {
             OrderStatus status, BuyerOrderGroup group, String q, LocalDate from, LocalDate to, int page, int size) {
 
         List<BuyerOrderSummaryResponse> matching = candidatesFor(from, to).stream()
-                .filter(candidate -> status == null || candidate.summary().status() == status)
-                .filter(candidate -> group.contains(candidate.summary().status(), candidate.hasOpenRefund()))
+                // ?status= is a FULFILMENT status, so it is compared by name against the
+                // derived one. An order refunded after delivery no longer matches
+                // status=DELIVERED, which is the same answer the seller's list gives:
+                // REFUNDED is what that order is now.
+                .filter(candidate -> status == null || status.name().equals(candidate.summary().status()))
+                .filter(candidate -> group.contains(candidate.summary().status(), candidate.hasRefundRequest()))
                 .filter(candidate -> candidate.matches(q))
                 .map(Candidate::summary)
                 .toList();
@@ -191,7 +203,7 @@ public class BuyerOrderService {
                         group.wireValue(),
                         inWindow.stream()
                                 .filter(candidate ->
-                                        group.contains(candidate.summary().status(), candidate.hasOpenRefund()))
+                                        group.contains(candidate.summary().status(), candidate.hasRefundRequest()))
                                 .count()))
                 .toList());
     }
@@ -210,8 +222,9 @@ public class BuyerOrderService {
 
         List<OrderLine> lines = sortedLines(orderLineRepository.findByOrderId(order.getId()));
         Catalog catalog = catalogFor(lines);
+        List<OrderRefundSnapshot> refunds = orderRefundQuery.refundsForOrder(order.getId());
         List<BuyerOrderLineResponse> lineResponses = lines.stream()
-                .map(line -> toLineResponse(line, catalog))
+                .map(line -> toLineResponse(line, catalog, refunds))
                 .toList();
 
         BigDecimal subtotal = sumOf(lineResponses);
@@ -220,7 +233,7 @@ public class BuyerOrderService {
                 order.getId(),
                 OrderReferences.of(order.getId()),
                 order.getPlacedAt(),
-                statusOf(order),
+                statusOf(order, refunds),
                 storeRefFor(lines, catalog),
                 lineResponses,
                 subtotal,
@@ -235,19 +248,76 @@ public class BuyerOrderService {
                 // columns are NOT NULL and hold a copy of shipping whenever
                 // billing_same_as_shipping is set. See BuyerOrderDetailResponse.
                 order.isBillingSameAsShipping() ? null : toAddressResponse(order.getBillingAddress()),
-                // The half of the contract's rule this backend can answer. The
-                // other half - "and there is no open refund request" - needs the
-                // refund query named in the class doc comment. Until then this
-                // over-permits, and POST /api/v1/refund-requests stays the thing
-                // that actually refuses a duplicate: a UI hint that is too
-                // generous is recoverable, one that hides the button from someone
-                // entitled to press it is not.
-                statusOf(order) == OrderStatus.DELIVERED,
-                // No return window is defined anywhere - no column, no policy
-                // table, no configured duration. A date computed from a duration
-                // this code invented would be a deadline the marketplace never
-                // agreed to, printed on the buyer's screen as though it had.
-                null);
+                refundSummaries(order, refunds),
+                canRequestRefund(order, lines),
+                // The real window, from the one class that owns its length. The order
+                // detail publishes it and POST /api/v1/refund-requests refuses a late
+                // request by it, so the date the buyer is shown is the date they are
+                // actually held to.
+                refundWindow.endsAt(order.getPlacedAt()));
+    }
+
+    /**
+     * Whether the buyer may still raise a request against this order.
+     *
+     * Server-owned, as the contract requires, and computed from the three things
+     * POST /api/v1/refund-requests actually checks, so the button and the endpoint
+     * cannot disagree:
+     *
+     *  - the goods arrived. Read from the STORED status, deliberately not the derived
+     *    one: a PARTIAL refund derives the whole order to REFUNDED, and testing that
+     *    would hide the button from a buyer entitled to ask about the items they kept.
+     *    A UI hint that is too generous is recoverable; one that hides the button from
+     *    someone entitled to press it is not.
+     *  - the return window is open;
+     *  - something is still returnable. A line is spoken for when its whole quantity
+     *    has been claimed by requests that were not released - which is the exact rule
+     *    POST enforces, rather than the coarser "no open request anywhere on the order"
+     *    that would refuse a second request about a different item.
+     */
+    private boolean canRequestRefund(Order order, List<OrderLine> lines) {
+        if (order.getStatus() != OrderStatus.DELIVERED) {
+            return false;
+        }
+        if (!refundWindow.isOpenAt(order.getPlacedAt(), Instant.now())) {
+            return false;
+        }
+        List<UUID> lineIds = lines.stream().map(OrderLine::getId).toList();
+        Set<UUID> locked = orderRefundQuery.orderLineIdsUnderOpenRequest(lineIds);
+        Map<UUID, Integer> claimed = orderRefundQuery.claimedQuantityByOrderLineId(lineIds);
+        return lines.stream().anyMatch(line -> !locked.contains(line.getId())
+                && line.getQuantity() - claimed.getOrDefault(line.getId(), 0) > 0);
+    }
+
+    /**
+     * Every request against the order, oldest first, in the shape the seller's own
+     * order detail publishes - so the two sides of a refund describe it identically.
+     *
+     * buyerName and buyerEmail stay null: this is the buyer's own order and they are
+     * the buyer. {@code items} likewise - the card names the products from the order's
+     * own lines, and the seller's queue is what needs a one-line summary of them.
+     */
+    private static List<OrderRefundSummaryResponse> refundSummaries(
+            Order order, List<OrderRefundSnapshot> refunds) {
+
+        String orderReference = OrderReferences.of(order.getId());
+        return refunds.stream()
+                .map(refund -> new OrderRefundSummaryResponse(
+                        refund.id(),
+                        refund.reference(),
+                        refund.status(),
+                        refund.resolution(),
+                        refund.requestedAt(),
+                        refund.requestedAmount(),
+                        refund.approvedAmount(),
+                        refund.currency(),
+                        order.getId(),
+                        orderReference,
+                        refund.returnTrackingNumber(),
+                        null,
+                        null,
+                        null))
+                .toList();
     }
 
     // ---------------------------------------------------------------------
@@ -263,7 +333,10 @@ public class BuyerOrderService {
      * how it does that without a second query per card, and without the request
      * state on a shared singleton that the alternative needs.
      */
-    private record Candidate(BuyerOrderSummaryResponse summary, List<BuyerOrderLineResponse> allLines) {
+    private record Candidate(
+            BuyerOrderSummaryResponse summary,
+            List<BuyerOrderLineResponse> allLines,
+            boolean hasRefundRequest) {
 
         /**
          * Search, over the fields the contract names: "order reference and product
@@ -284,14 +357,6 @@ public class BuyerOrderService {
                             .anyMatch(line -> line.productTitle().toLowerCase(Locale.ROOT).contains(term));
         }
 
-        /**
-         * Always false today: this database holds no refund rows to open. The one
-         * place the refund query named in the class doc comment gets wired in, so
-         * that it is one edit rather than a scatter of `false` literals.
-         */
-        boolean hasOpenRefund() {
-            return summary.openRefundRequestId() != null;
-        }
     }
 
     /**
@@ -318,22 +383,38 @@ public class BuyerOrderService {
         Catalog catalog = catalogFor(
                 linesByOrderId.values().stream().flatMap(List::stream).toList());
 
+        // One query for every order's refunds, not one per card. Absent from the map
+        // means no request was ever raised against that order.
+        Map<UUID, List<OrderRefundSnapshot>> refundsByOrderId =
+                orderRefundQuery.refundsByOrderIds(orders.stream().map(Order::getId).toList());
+
         return orders.stream()
                 .map(order -> toCandidate(
-                        order, sortedLines(linesByOrderId.getOrDefault(order.getId(), List.of())), catalog))
+                        order,
+                        sortedLines(linesByOrderId.getOrDefault(order.getId(), List.of())),
+                        catalog,
+                        refundsByOrderId.getOrDefault(order.getId(), List.of())))
                 .toList();
     }
 
-    private Candidate toCandidate(Order order, List<OrderLine> lines, Catalog catalog) {
+    private Candidate toCandidate(
+            Order order, List<OrderLine> lines, Catalog catalog, List<OrderRefundSnapshot> refunds) {
+
         List<BuyerOrderLineResponse> lineResponses = lines.stream()
-                .map(line -> toLineResponse(line, catalog))
+                .map(line -> toLineResponse(line, catalog, refunds))
                 .toList();
+
+        // The latest request, whatever became of it. The card badges this one, and a
+        // declined request still has to say so - "a refund that has been approved or
+        // declined does not read the same as one nobody has looked at yet". Whether it
+        // is still running is the status' answer, which the screen reads itself.
+        OrderRefundSnapshot latestRefund = refunds.isEmpty() ? null : refunds.get(refunds.size() - 1);
 
         BuyerOrderSummaryResponse summary = new BuyerOrderSummaryResponse(
                 order.getId(),
                 OrderReferences.of(order.getId()),
                 order.getPlacedAt(),
-                statusOf(order),
+                statusOf(order, refunds),
                 sumOf(lineResponses),
                 CURRENCY,
                 // Items, not lines: two of one shirt is two items on one line, and
@@ -342,12 +423,10 @@ public class BuyerOrderService {
                 storeRefFor(lines, catalog),
                 lineResponses.stream().limit(PREVIEW_LINES).toList(),
                 shipmentFor(order),
-                // See the class doc comment: refund state has one owner, and it is
-                // not this feature.
-                null,
-                null);
+                latestRefund == null ? null : latestRefund.id(),
+                latestRefund == null ? null : latestRefund.status());
 
-        return new Candidate(summary, lineResponses);
+        return new Candidate(summary, lineResponses, !refunds.isEmpty());
     }
 
     // ---------------------------------------------------------------------
@@ -357,19 +436,49 @@ public class BuyerOrderService {
     /**
      * The order's status as a buyer sees it.
      *
-     * A method rather than a getter call because REFUNDED is DERIVED, never
-     * declared: the contract's OrderStatus says so, and the day the refund feature
-     * exposes its state this is the one expression that has to learn "a settled
-     * refund request makes this order REFUNDED". Today it is the stored value,
-     * which is the honest answer while no refund can exist.
+     * REFUNDED is DERIVED, never stored: the refund request is the single source of
+     * that fact, so there is no order column a client could also set and nothing to
+     * reconcile when a seller settles a refund from their queue rather than from the
+     * order. SellerOrderRowService derives it from the same query, which is what makes
+     * both sides agree about the same order.
+     *
+     * A REPLACEMENT_SENT request is settled but is deliberately NOT refunded - it moved
+     * a parcel, not money - which is why this reads the snapshot's own
+     * {@code refunded()} rather than testing for a terminal status.
      */
-    private static OrderStatus statusOf(Order order) {
-        return order.getStatus();
+    private static String statusOf(Order order, List<OrderRefundSnapshot> refunds) {
+        boolean refunded = refunds.stream().anyMatch(OrderRefundSnapshot::refunded);
+        return refunded ? OrderStatus.DERIVED_REFUNDED : order.getStatus().name();
     }
 
-    private BuyerOrderLineResponse toLineResponse(OrderLine line, Catalog catalog) {
+    /**
+     * The request covering this line, if one is still OPEN over it.
+     *
+     * Open only, because that is exactly what the contract says the line's two refund
+     * fields mean: "set when this line is inside an open refund request". A settled one
+     * leaves the line unmarked here and is still findable - the requests' own line
+     * lists say which lines the money went back on, which is what the buyer's card
+     * reads to keep tagging them.
+     *
+     * The newest open one wins where an order's lines were split across two requests;
+     * per line there can only be one, since V21's partial unique index refuses a second.
+     */
+    private static OrderRefundSnapshot openRefundOver(UUID orderLineId, List<OrderRefundSnapshot> refunds) {
+        OrderRefundSnapshot found = null;
+        for (OrderRefundSnapshot refund : refunds) {
+            if (refund.open() && refund.orderLineIds().contains(orderLineId)) {
+                found = refund;
+            }
+        }
+        return found;
+    }
+
+    private BuyerOrderLineResponse toLineResponse(
+            OrderLine line, Catalog catalog, List<OrderRefundSnapshot> refunds) {
+
         ProductCatalogSummary product = catalog.products().get(line.getProductIdSnapshot());
         BigDecimal lineTotal = line.getUnitPriceSnapshot().multiply(BigDecimal.valueOf(line.getQuantity()));
+        OrderRefundSnapshot openRefund = openRefundOver(line.getId(), refunds);
 
         return new BuyerOrderLineResponse(
                 line.getId(),
@@ -383,8 +492,8 @@ public class BuyerOrderService {
                 line.getQuantity(),
                 line.getUnitPriceSnapshot(),
                 lineTotal,
-                null,
-                null);
+                openRefund == null ? null : openRefund.id(),
+                openRefund == null ? null : openRefund.status());
     }
 
     /**
@@ -440,9 +549,13 @@ public class BuyerOrderService {
      *
      * `estimated` is false throughout - nothing here projects a future date, and
      * ShipmentInfo.estimatedDeliveryAt is null for the same reason.
+     *
+     * The STORED status, not the derived one. A refund does not un-deliver a parcel:
+     * the buyer had the thing, and a delivery bar that untickled itself when the money
+     * came back would be describing a journey that did not happen.
      */
     private static List<OrderTimelineEntryResponse> timelineFor(Order order) {
-        OrderStatus status = statusOf(order);
+        OrderStatus status = order.getStatus();
         boolean packed = order.getPackedAt() != null
                 || status == OrderStatus.PACKED
                 || status == OrderStatus.SHIPPED

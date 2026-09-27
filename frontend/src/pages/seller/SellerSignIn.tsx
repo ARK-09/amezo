@@ -1,6 +1,6 @@
 import { ShoppingBag } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
-import { Navigate } from 'react-router'
+import { Navigate, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,14 +13,31 @@ export function SellerSignIn() {
   const [sent, setSent] = useState(false)
   const { mutate, isPending, isError, error } = useRequestMagicLink()
   const { seller } = useSellerAuth()
+  const navigate = useNavigate()
 
-  // One path, the real one: ask for a link, then say so. The bypass that used to
-  // sit here signed the seller in on the spot with a fabricated session
-  // (crypto.randomUUID and the typed email, no cookie), which the rest of the app -
-  // the landing page included - then read as a signed-in seller.
+  /**
+   * One path, the real one: ask for a link, then say so. The bypass that used to sit
+   * here signed the seller in on the spot with a fabricated session
+   * (crypto.randomUUID and the typed email, no cookie), which the rest of the app -
+   * the landing page included - then read as a signed-in seller.
+   *
+   * The demo address is not that bypass returning. The server answers it with a real
+   * magic-link token instead of emailing one, and this walks that token through the
+   * SAME verify route an emailed link opens - so the session is minted by the server,
+   * the token is single-use, and nothing here invents an identity. Telling the reader
+   * to check an inbox for a mail that was deliberately not sent is the only other
+   * option, and it would leave the demo stuck on a screen that lies.
+   *
+   * replace, so Back does not return to a form behind an already-spent token.
+   */
   function submit(e: FormEvent) {
     e.preventDefault()
-    mutate(email, { onSuccess: () => setSent(true) })
+    mutate(email, {
+      onSuccess: (token) => {
+        if (token) void navigate(`/seller/verify?token=${encodeURIComponent(token)}`, { replace: true })
+        else setSent(true)
+      },
+    })
   }
 
   // Already signed in: nobody needs to be asked for an email they've already

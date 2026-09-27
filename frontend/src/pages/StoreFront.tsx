@@ -95,7 +95,9 @@ function StorePolicyList({ store }: { store: PublicStore }) {
 function StoreHeaderSkeleton() {
   return (
     <section className="overflow-hidden rounded-xl border">
-      <Skeleton className="h-[172px] w-full rounded-none" />
+      {/* Same aspect-[4/1] the real band uses, so the header does not change height
+          under the reader the moment the store loads. */}
+      <Skeleton className="aspect-[4/1] w-full rounded-none" />
       <div className="flex flex-wrap items-end gap-6 px-6 pb-[22px]">
         <Skeleton className="-mt-[38px] size-[88px] shrink-0 rounded-xl" />
         <div className="min-w-[260px] flex-1 pt-4">
@@ -215,7 +217,20 @@ export function StoreFront() {
       ) : (
         store.data && (
           <section className="overflow-hidden rounded-xl border">
-            <div className="relative flex h-[172px] items-center justify-center bg-foreground">
+            {/*
+              aspect-[4/1], not the design's fixed 172px height.
+
+              The upload hint asks sellers for "1600 x 400 or wider" - 4:1 - and a
+              172px band is about 7.4:1 at this page's width, so object-cover was
+              throwing away more than half the height of every cover anybody
+              followed the instructions to make. The two numbers cannot both be
+              honoured, and the one the seller acted on is the one that has to win.
+
+              object-cover stays, because it is still what should happen to a cover
+              that is NOT 4:1 - a taller image is trimmed rather than squashed. For a
+              4:1 one it now has nothing to trim.
+            */}
+            <div className="relative flex aspect-[4/1] items-center justify-center bg-foreground">
               {store.data.coverUrl ? (
                 <img
                   src={store.data.coverUrl}

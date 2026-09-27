@@ -7,6 +7,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @Service
 class CurrentSessionService {
 
@@ -28,6 +30,13 @@ class CurrentSessionService {
     SessionIdentityResponse describeCurrent() {
         SessionCookieAuthenticationFilter.AuthenticatedIdentity identity = authenticatedIdentity();
 
+        // Taken off the principal rather than resolved again: the authentication
+        // filter has already asked which identities this address owns, and a second
+        // answer computed here could differ from the one the request's own
+        // authorization was decided with.
+        UUID buyerIdentityId = identity.buyerIdentityId();
+        UUID sellerId = identity.sellerId();
+
         return switch (identity.type()) {
             case SELLER -> sellerRepository.findById(identity.id())
                     .map(seller -> new SessionIdentityResponse(
@@ -35,7 +44,9 @@ class CurrentSessionService {
                             seller.getId(),
                             seller.getEmail(),
                             seller.getFullName(),
-                            identity.expiresAt()))
+                            identity.expiresAt(),
+                            buyerIdentityId,
+                            sellerId))
                     .orElseThrow(CurrentSessionService::identityGone);
             case BUYER -> buyerIdentityRepository.findById(identity.id())
                     .map(buyer -> new SessionIdentityResponse(
@@ -43,7 +54,9 @@ class CurrentSessionService {
                             buyer.getId(),
                             buyer.getEmail(),
                             buyer.getFullName(),
-                            identity.expiresAt()))
+                            identity.expiresAt(),
+                            buyerIdentityId,
+                            sellerId))
                     .orElseThrow(CurrentSessionService::identityGone);
         };
     }

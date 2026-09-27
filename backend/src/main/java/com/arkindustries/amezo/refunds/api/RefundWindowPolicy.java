@@ -14,16 +14,18 @@ import java.time.Instant;
  *
  * <h2>Flagged: the window is anchored to the order date, not the delivery date</h2>
  *
- * A return window should run from when the buyer received the goods. Nothing in
- * this schema records that: {@code orders} has {@code placed_at} and
- * {@code shipped_at} and no delivered_at, and OrderStatus.DELIVERED carries no
- * timestamp of its own. The design mentions "Outside the 30-day return window"
- * only as a decline reason, and names no anchor.
+ * A return window should run from when the buyer received the goods, and
+ * {@code orders.delivered_at} now exists (V26) - so the reason this is still anchored
+ * to {@code placed_at} is no longer that nothing records delivery. It is that the
+ * length of the window is a business rule and so is its anchor: the design mentions
+ * "Outside the 30-day return window" only as a decline reason and names no anchor, and
+ * moving it would silently lengthen every live window, including for orders whose
+ * buyers have already been told when theirs ends.
  *
- * So the window runs from {@code placed_at}, which is the only timestamp that
- * exists on every order. The consequence is real and worth stating: a slow
- * delivery eats into the buyer's window. Once a delivery timestamp is recorded,
- * this class is the single line to change.
+ * The consequence of leaving it is real and worth stating plainly: a slow delivery
+ * eats into the buyer's window. Re-anchoring is a one-line change here, to take the
+ * delivery timestamp where there is one and fall back to {@code placed_at} where
+ * there is not - and it needs a decision, not an implementation.
  */
 public interface RefundWindowPolicy {
 

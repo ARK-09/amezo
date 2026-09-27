@@ -1,5 +1,6 @@
 package com.arkindustries.amezo.identity;
 
+import com.arkindustries.amezo.identity.dto.MagicLinkResponse;
 import com.arkindustries.amezo.identity.dto.SellerMagicLinkRequest;
 import com.arkindustries.amezo.identity.dto.SellerSessionResponse;
 import com.arkindustries.amezo.identity.dto.SellerVerifyRequest;
@@ -34,10 +35,16 @@ public class SellerAuthController {
         this.sessionCookies = sessionCookies;
     }
 
+    /**
+     * 200 with a body rather than the 204 this used to answer, because the demo
+     * address gets its token back here instead of by email (see identity/DemoAccount).
+     * For every other address the body's token is null and the behaviour is unchanged
+     * - including that it succeeds whether or not the address has an account, so the
+     * response still says nothing about who exists.
+     */
     @PostMapping("/magic-link")
-    public ResponseEntity<Void> requestMagicLink(@Valid @RequestBody SellerMagicLinkRequest request) {
-        sellerAuthService.requestMagicLink(request.email());
-        return ResponseEntity.noContent().build();
+    public MagicLinkResponse requestMagicLink(@Valid @RequestBody SellerMagicLinkRequest request) {
+        return new MagicLinkResponse(sellerAuthService.requestMagicLink(request.email()));
     }
 
     @PostMapping("/verify")

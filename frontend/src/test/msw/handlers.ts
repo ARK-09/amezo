@@ -4,6 +4,7 @@ import {
   clearSellerSession,
   consumeMagicLinkToken,
   currentSessionIdentity,
+  demoTokenFor,
   issueMagicLinkToken,
   signInBuyerSession,
 } from './fixtures/sellerAuth'
@@ -120,10 +121,23 @@ function unauthorized() {
   )
 }
 
-/** The signed-in buyer, or null - the same mock cookie the other routes read. */
+/**
+ * The signed-in buyer, or null - the same mock cookie the other routes read.
+ *
+ * Keyed on buyerIdentityId rather than identityType, which is how the real backend
+ * authorises: one email can hold both halves of an account, so a session minted
+ * through the seller door still identifies a buyer. Reading identityType here was
+ * what made a seller's own order history answer 401 to them.
+ */
 function currentBuyer() {
   const identity = currentSessionIdentity()
-  return identity?.identityType === 'BUYER' ? identity : null
+  return identity?.buyerIdentityId ? identity : null
+}
+
+/** The signed-in seller, or null. The seller half of the same rule as currentBuyer. */
+function currentSeller() {
+  const identity = currentSessionIdentity()
+  return identity?.sellerId ? identity : null
 }
 
 /** What a bucket of orders is worth, for the tabs that print it. */
@@ -255,8 +269,8 @@ export const handlers = [
    * error states the real endpoint will show it.
    */
   http.post('http://localhost:8080/api/v1/sellers/me/store/images', async ({ request }) => {
-    const seller = currentSessionIdentity()
-    if (!seller || seller.identityType !== 'SELLER') return unauthorized()
+    const seller = currentSeller()
+    if (!seller) return unauthorized()
     const { slot, contentType } = (await request.json()) as { slot: 'COVER' | 'LOGO'; contentType: string }
     if (!contentType?.startsWith('image/')) {
       return HttpResponse.json(
@@ -277,8 +291,8 @@ export const handlers = [
   }),
 
   http.post('http://localhost:8080/api/v1/sellers/me/store/images/confirm', async ({ request }) => {
-    const seller = currentSessionIdentity()
-    if (!seller || seller.identityType !== 'SELLER') return unauthorized()
+    const seller = currentSeller()
+    if (!seller) return unauthorized()
     const { id, slot } = (await request.json()) as { id: string; slot: 'COVER' | 'LOGO' }
     const result = confirmStoreImage(id, slot)
     if (result === 'not-found') return notFound()
@@ -819,8 +833,8 @@ export const handlers = [
 
   http.post('http://localhost:8080/auth/buyer/magic-link', async ({ request }) => {
     const { email } = (await request.json()) as { email: string }
-    issueMagicLinkToken(email)
-    return new HttpResponse(null, { status: 204 })
+    const token = issueMagicLinkToken(email)
+    return HttpResponse.json({ token: demoTokenFor(email, token) })
   }),
 
   http.post('http://localhost:8080/auth/buyer/verify', async ({ request }) => {
@@ -848,7 +862,7 @@ export const handlers = [
    */
   http.delete('http://localhost:8080/auth/buyer/session', () => {
     const identity = currentSessionIdentity()
-    if (identity?.identityType !== 'BUYER') {
+    if (!identity?.buyerIdentityId) {
       return HttpResponse.json(
         {
           type: 'https://api/errors/forbidden',
@@ -870,7 +884,7 @@ export const handlers = [
    */
   http.get('http://localhost:8080/products/:productRef/reviews/eligibility', ({ params }) => {
     const identity = currentSessionIdentity()
-    if (!identity || identity.identityType !== 'BUYER') {
+    if (!identity?.buyerIdentityId) {
       return HttpResponse.json(
         { type: 'https://api/errors/unauthorized', title: 'Unauthorized', status: 401 },
         { status: 401 },
@@ -907,7 +921,7 @@ export const handlers = [
    */
   http.post('http://localhost:8080/reviews', async ({ request }) => {
     const identity = currentSessionIdentity()
-    if (!identity || identity.identityType !== 'BUYER') {
+    if (!identity?.buyerIdentityId) {
       return HttpResponse.json(
         { type: 'https://api/errors/unauthorized', title: 'Unauthorized', status: 401 },
         { status: 401 },
@@ -946,7 +960,7 @@ export const handlers = [
 
   http.patch('http://localhost:8080/api/v1/reviews/:reviewId', async ({ params, request }) => {
     const identity = currentSessionIdentity()
-    if (!identity || identity.identityType !== 'BUYER') return unauthorized()
+    if (!identity?.buyerIdentityId) return unauthorized()
 
     const body = (await request.json()) as { rating?: number; body?: string | null }
     if (body.rating != null && (body.rating < 1 || body.rating > 5)) {
@@ -994,7 +1008,7 @@ export const handlers = [
    */
   http.get('http://localhost:8080/checkout/last-details', () => {
     const identity = currentSessionIdentity()
-    if (!identity || identity.identityType !== 'BUYER') {
+    if (!identity?.buyerIdentityId) {
       return HttpResponse.json(
         {
           type: 'https://api/errors/unauthorized',
@@ -1360,7 +1374,7 @@ export const handlers = [
     // the mock at all. The token is real and single-use - this is the mock delivering
     // the email, not a bypass of the flow.
     console.info(`[MSW] magic link for ${email}: /seller/verify?token=${token}`)
-    return new HttpResponse(null, { status: 204 })
+    return HttpResponse.json({ token: demoTokenFor(email, token) })
   }),
 
   http.post('http://localhost:8080/auth/seller/verify', async ({ request }) => {

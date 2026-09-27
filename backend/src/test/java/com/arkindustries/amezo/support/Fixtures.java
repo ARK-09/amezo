@@ -3,6 +3,8 @@ package com.arkindustries.amezo.support;
 import com.arkindustries.amezo.catalog.Category;
 import com.arkindustries.amezo.catalog.CategoryRepository;
 import com.arkindustries.amezo.catalog.Slugs;
+import com.arkindustries.amezo.identity.BuyerIdentity;
+import com.arkindustries.amezo.identity.BuyerIdentityRepository;
 import com.arkindustries.amezo.identity.IdentityType;
 import com.arkindustries.amezo.identity.Session;
 import com.arkindustries.amezo.identity.SessionRepository;
@@ -71,6 +73,16 @@ public final class Fixtures {
      * indistinguishable from a signed-in one.
      *
      * The magic-link flow itself is covered by the auth tests that live in identity.
+     *
+     * <h2>identityId has to name a real row</h2>
+     *
+     * The authentication filter resolves the session's identity into every identity
+     * its ADDRESS owns, so that one email can buy and sell (identity/AccountIdentities)
+     * - which means it reads the row. A session pointing at an id nothing owns now
+     * names nobody and authenticates as nobody: 401, the same answer an expired cookie
+     * gets, rather than the role its type used to be trusted for. Use
+     * {@link #buyerSessionCookie} where a test wants a buyer and does not otherwise
+     * care which one.
      */
     public static Cookie sessionCookie(SessionRepository sessions, IdentityType type, UUID identityId) {
         byte[] random = new byte[32];
@@ -85,6 +97,27 @@ public final class Fixtures {
                 .build());
 
         return new Cookie(SESSION_COOKIE, rawToken);
+    }
+
+    /**
+     * A signed-in buyer, row and all.
+     *
+     * Three tests used to mint a BUYER session over {@code UUID.randomUUID()} to check
+     * that a buyer is refused a seller-only route. That passed for the wrong reason
+     * once the filter started reading the row: the session named nobody, so the answer
+     * became 401 ("not signed in") where the test meant to assert 403 ("signed in, not
+     * a seller"). A real buyer makes the assertion mean what it says.
+     *
+     * The address is unique per call - buyer_identity.email is UNIQUE and rows are not
+     * cleaned up between a class's methods, so a fixed one would fail on whichever
+     * test happened to run second.
+     */
+    public static Cookie buyerSessionCookie(SessionRepository sessions, BuyerIdentityRepository buyers) {
+        BuyerIdentity buyer = buyers.save(BuyerIdentity.builder()
+                .email("buyer-" + UUID.randomUUID() + "@example.com")
+                .fullName("Test Buyer")
+                .build());
+        return sessionCookie(sessions, IdentityType.BUYER, buyer.getId());
     }
 
     private static String sha256Hex(String raw) {

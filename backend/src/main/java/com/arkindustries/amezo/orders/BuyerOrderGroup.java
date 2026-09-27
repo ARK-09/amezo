@@ -33,13 +33,9 @@ enum BuyerOrderGroup {
      * Statuses that mean the order is finished, whatever the outcome - the
      * complement of "In progress".
      *
-     * Held as NAMES and not as OrderStatus constants on purpose. The contract's
-     * OrderStatus already has CANCELLED and REFUNDED; the Java enum does not
-     * yet, because nothing writes them (see OrderStatus, and the decision that
-     * REFUNDED is derived from a settled refund request rather than declared).
-     * Naming them here means the day the enum gains either one, a cancelled
-     * order stops being counted as "In progress" without anybody having to
-     * remember this file existed.
+     * Held as NAMES and not as OrderStatus constants on purpose: REFUNDED is derived
+     * from a settled refund request rather than declared, so the Java enum has no
+     * such constant and the derived status this predicate is given is a String.
      */
     private static final Set<String> TERMINAL_STATUS_NAMES = Set.of("DELIVERED", "CANCELLED", "REFUNDED");
 
@@ -84,18 +80,26 @@ enum BuyerOrderGroup {
     /**
      * Whether an order belongs in this bucket.
      *
-     * hasOpenRefund is passed in rather than read from the order: refunds are
-     * modelled once, by refund_request, and that table does not exist yet. Today
-     * every caller passes false and the Refunds tab honestly counts zero; when
-     * the refund domain lands, this predicate is already the only place that has
-     * to learn about it.
+     * Takes the DERIVED status - the one the card reports, with REFUNDED already
+     * overlaid - rather than {@code order.getStatus()}, so a settled refund cannot be
+     * counted in "Delivered" by the facets and shown as refunded by the list. A String
+     * for the same reason the response field is one: REFUNDED is not a value
+     * {@link OrderStatus} can hold. {@link SellerOrderGroup#contains} takes its status
+     * the same way.
+     *
+     * hasRefundRequest is ANY request against the order, settled ones included, and
+     * not just a live one. "Refunds &amp; returns" is where a buyer goes to find out
+     * what happened to a return - so a refund vanishing from the tab at the moment it
+     * was paid out would hide it exactly when they came looking. A request that is
+     * still being argued over is ALSO in whichever fulfilment bucket the order is
+     * really in, which is what the card's own badge is for.
      */
-    boolean contains(OrderStatus status, boolean hasOpenRefund) {
+    boolean contains(String derivedStatus, boolean hasRefundRequest) {
         return switch (this) {
             case ALL -> true;
-            case IN_PROGRESS -> !TERMINAL_STATUS_NAMES.contains(status.name());
-            case DELIVERED -> status == OrderStatus.DELIVERED;
-            case REFUNDS -> hasOpenRefund;
+            case IN_PROGRESS -> !TERMINAL_STATUS_NAMES.contains(derivedStatus);
+            case DELIVERED -> OrderStatus.DELIVERED.name().equals(derivedStatus);
+            case REFUNDS -> hasRefundRequest;
         };
     }
 }

@@ -1,7 +1,5 @@
 package com.arkindustries.amezo.orders.dto;
 
-import com.arkindustries.amezo.orders.OrderStatus;
-
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -28,19 +26,20 @@ import java.util.UUID;
  * shipping when billing_same_as_shipping is set, and echoing that copy back would
  * have every screen print the same address twice.
  *
- * TWO CONTRACT FIELDS ARE DELIBERATELY ABSENT rather than present-and-empty:
+ * ONE CONTRACT FIELD IS DELIBERATELY ABSENT rather than present-and-empty:
+ * `payment` (PaymentSummary: brand + last4). No payment is taken anywhere in this
+ * system and no card is stored, so both fields would have to be invented. It is not
+ * in the contract's required list and the screen reads `order.payment &&`, so an
+ * absent field prints nothing.
  *
- *  - `payment` (PaymentSummary: brand + last4). No payment is taken anywhere in
- *    this system and no card is stored, so both fields would have to be invented.
- *    Neither is in the contract's required list and the screen reads
- *    `order.payment &&`, so an absent field prints nothing.
- *  - `refundRequests` (RefundRequestSummary[]). Refunds are modelled once, by
- *    refund_request, with their own state machine - and giving this record a
- *    typed empty list would mean declaring RefundStatus and RefundResolution
- *    here, which is precisely the second refund model that must not exist. The
- *    screens read `order.refundRequests ?? []`. See BuyerOrderService for the one
- *    query the refund feature needs to expose, and the four fields that light up
- *    when it does.
+ * `refundRequests` IS here now. It carries every request raised against the order,
+ * oldest first, as OrderRefundSummaryResponse - the shape the seller's own order
+ * detail already publishes, so both sides of a refund read one description of it.
+ * Refunds stay modelled once, by refund_request: this list is assembled from
+ * refunds.api.OrderRefundSnapshot and nothing here stores or infers refund state.
+ *
+ * {@code status} is a String for the reason BuyerOrderSummaryResponse gives:
+ * REFUNDED is derived and OrderStatus has no such constant.
  *
  * canRequestRefund IS present, as a real boolean: the screen tests it with
  * `=== false`, so an absent field would read as "yes, go ahead".
@@ -49,7 +48,7 @@ public record BuyerOrderDetailResponse(
         UUID id,
         String reference,
         Instant placedAt,
-        OrderStatus status,
+        String status,
         StoreRefResponse seller,
         List<BuyerOrderLineResponse> lines,
         BigDecimal subtotal,
@@ -61,6 +60,7 @@ public record BuyerOrderDetailResponse(
         ShipmentInfoResponse shipment,
         AddressResponse shippingAddress,
         AddressResponse billingAddress,
+        List<OrderRefundSummaryResponse> refundRequests,
         boolean canRequestRefund,
         Instant refundWindowEndsAt
 ) {

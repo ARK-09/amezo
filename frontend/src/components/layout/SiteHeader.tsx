@@ -27,7 +27,7 @@ export function SiteHeader() {
   // Still read directly for the avatar's name and email; the role itself comes
   // from the shared hook, which four screens now agree on.
   const session = useSession()
-  const { role } = useViewerRole()
+  const { isSeller, isBuyer } = useViewerRole()
 
   const onSearchPage = location.pathname === '/search'
   // Every buyer page renders this header from the layout route, so none of
@@ -100,9 +100,12 @@ export function SiteHeader() {
               is always - so "someone@example.com" showed up as "Someone" in the
               header of a shared screen. The identity is still reachable: the avatar
               is the link to /account, which is where the address belongs. */}
-          {/* A seller is not a buyer: sending them to /account showed them the buyer
-              account page, when the portal is where they meant to go. */}
-          {role === 'seller' ? (
+          {/* Both, for someone who buys and sells on one address - which used to be
+              impossible to be, so this was an either/or. The portal link and the
+              account avatar answer different questions ("where is my shop" and "where
+              is my account"), and showing only the first sent a seller who wanted
+              their own orders to a dashboard. */}
+          {isSeller && (
             <Link
               to="/seller/dashboard"
               className="hidden items-center gap-1.5 text-[13px] font-semibold whitespace-nowrap hover:text-primary sm:inline-flex"
@@ -110,7 +113,8 @@ export function SiteHeader() {
               <Store className="size-4" aria-hidden />
               Seller dashboard
             </Link>
-          ) : role === 'buyer' ? (
+          )}
+          {isBuyer ? (
             <Link
               to="/account"
               className="flex items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -118,7 +122,7 @@ export function SiteHeader() {
             >
               <Avatar name={session.data!.fullName ?? session.data!.email} size="sm" />
             </Link>
-          ) : (
+          ) : isSeller ? null : (
             /* The buyer's way in, which the header had no room for while it carried
                the seller pitch instead - so /sign-in was reachable only from a
                product's reviews panel, from /account redirecting, or by typing it.

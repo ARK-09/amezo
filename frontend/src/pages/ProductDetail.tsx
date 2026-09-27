@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router'
 
 import { RatingBadge } from '@/components/RatingBadge'
+import { SprinterLoader } from '@/components/ui/sprinter-loader'
 import { ProductFacts } from '@/features/catalog/components/ProductFacts'
 import { ProductSpecs } from '@/features/catalog/components/ProductSpecs'
 import { Button } from '@/components/ui/button'
@@ -58,7 +59,12 @@ export function ProductDetail() {
 
   return (
     <div className="mx-auto w-full max-w-[1320px] flex-1 px-7 py-5">
-      {query.isLoading && <p className="text-sm text-muted-foreground">Loading product…</p>}
+      {/* The shared loader, not a line of grey text. A product page is often the
+          first thing a cold-started instance is asked for, and a motionless
+          "Loading product…" through three seconds of that reads as a page that has
+          hung - which is the whole reason SprinterLoader exists and says something
+          truer the longer it waits. */}
+      {query.isLoading && <SprinterLoader label="Loading this product" />}
 
       {query.isError && (
         <div className="flex flex-col items-center gap-3 py-16 text-center">

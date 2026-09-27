@@ -204,8 +204,19 @@ class BuyerOrderApiTest {
                 // No column carries these; they are null rather than invented.
                 .andExpect(jsonPath("$.shipment.carrier").isEmpty())
                 .andExpect(jsonPath("$.shipment.estimatedDeliveryAt").isEmpty())
-                .andExpect(jsonPath("$.refundWindowEndsAt").isEmpty())
+                // The return window is real and server-owned: refunds.api
+                // .RefundWindowPolicy owns its length, the order detail publishes the
+                // date, and POST /api/v1/refund-requests refuses a late request by the
+                // same rule - so the deadline the buyer is shown is the one they are
+                // actually held to.
+                .andExpect(jsonPath("$.refundWindowEndsAt").isNotEmpty())
+                // False because this order has not been delivered, not because the flag
+                // is unimplemented.
                 .andExpect(jsonPath("$.canRequestRefund").value(false))
+                // Present and empty: nothing has been raised against this order. It is
+                // an array rather than an absent field so a screen reading
+                // `refundRequests ?? []` and one reading `.length` agree.
+                .andExpect(jsonPath("$.refundRequests.length()").value(0))
                 // Four stages, the ones this schema can actually express. PACKED joined
                 // them with V24's status and packed_at; IN_TRANSIT and
                 // OUT_FOR_DELIVERY are carrier codes nothing here can report, and
