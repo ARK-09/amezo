@@ -12,13 +12,15 @@ import { useSellerAuth } from './SellerAuthContext'
 import { SellerAuthProvider } from './SellerAuthProvider'
 
 const URL = 'http://localhost:8080/sessions/current'
-const STORED = { sellerId: 'seller-1', email: 'stored@example.com' }
 
 function Probe() {
-  const { seller, signOut } = useSellerAuth()
+  const { seller, isUnknown, signOut } = useSellerAuth()
   return (
     <div>
       <span data-testid="seller">{seller?.email ?? '(signed out)'}</span>
+      {/* The third state, and the whole point of it: not signed in is not the same
+          answer as nobody has said yet. */}
+      <span data-testid="known">{isUnknown ? 'unknown' : 'known'}</span>
       <button onClick={signOut}>Sign out</button>
     </div>
   )
@@ -37,13 +39,15 @@ function renderProvider() {
 describe('SellerAuthProvider session verification', () => {
   /**
    * The cold-start case that would look broken: a seller opens the portal, the
-   * instance is asleep, and the boot-time check fails. Failing to reach the
-   * server is not the server saying "you are not signed in", so the stored
-   * session stands and the portal keeps rendering - including after the retries
-   * are spent.
+   * instance is asleep, and every retry comes back 502.
+   *
+   * Failing to reach the server is NOT the server saying "you are not signed in", so
+   * the answer stays unknown rather than becoming signed-out - which is what stops
+   * SellerPortalLayout bouncing them to the sign-in page while the instance wakes.
+   * This used to be held up by a localStorage copy of the session; there is no second
+   * copy any more, so the distinction has to live in the state itself.
    */
-  it('keeps the stored session when the backend never answers', async () => {
-    localStorage.setItem('seller:session', JSON.stringify(STORED))
+  it('reports the session as unknown, not gone, when the backend never answers', async () => {
     let attempts = 0
     server.use(
       http.get(URL, () => {
@@ -60,8 +64,7 @@ describe('SellerAuthProvider session verification', () => {
     // Every attempt spent, so this is the terminal state, not a lucky snapshot
     // taken mid-retry.
     await waitFor(() => expect(attempts).toBe(4), { timeout: 25_000 })
-    await waitFor(() => expect(screen.getByTestId('seller')).toHaveTextContent('stored@example.com'))
-    expect(localStorage.getItem('seller:session')).not.toBeNull()
+    await waitFor(() => expect(screen.getByTestId('known')).toHaveTextContent('unknown'))
   }, 30_000)
 
   /**
@@ -70,7 +73,6 @@ describe('SellerAuthProvider session verification', () => {
    * route guard can send them to sign-in.
    */
   it('signs the seller out when the server says the session is gone', async () => {
-    localStorage.setItem('seller:session', JSON.stringify(STORED))
     server.use(
       http.get(URL, () =>
         HttpResponse.json(
@@ -83,24 +85,23 @@ describe('SellerAuthProvider session verification', () => {
     renderProvider()
 
     await waitFor(() => expect(screen.getByTestId('seller')).toHaveTextContent('(signed out)'))
-    expect(localStorage.getItem('seller:session')).toBeNull()
+    // Answered, and the answer is nobody - which IS a redirect to sign-in.
+    expect(screen.getByTestId('known')).toHaveTextContent('known')
   })
 
   /**
-   * A valid cookie with no local flag - a cleared site-data, a new tab in a
-   * different profile. The session is live, so there is nothing to sign in to
-   * again.
+   * A live cookie in a browser this app has never run in - cleared site data, a new
+   * profile, a second device. There is nothing to restore and nothing to sign in to
+   * again: the cookie is the session.
    */
-  it('adopts a live server session when nothing is stored locally', async () => {
+  it('reports the seller behind a live cookie', async () => {
     signInSellerSession({ sellerId: 'seller-7', email: 'cookie@example.com' })
 
     renderProvider()
 
     await waitFor(() => expect(screen.getByTestId('seller')).toHaveTextContent('cookie@example.com'))
-    expect(JSON.parse(localStorage.getItem('seller:session')!)).toEqual({
-      sellerId: 'seller-7',
-      email: 'cookie@example.com',
-    })
+    // Nothing is written anywhere else. The session query is the only copy.
+    expect(localStorage.getItem('seller:session')).toBeNull()
   })
 
   /**

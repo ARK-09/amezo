@@ -1,5 +1,3 @@
-import { useOptionalSellerAuth } from '@/features/seller-portal/context/SellerAuthContext'
-
 import { useSession } from './useSession'
 
 export type ViewerRole = 'seller' | 'buyer' | 'visitor'
@@ -14,10 +12,11 @@ export type ViewerRole = 'seller' | 'buyer' | 'visitor'
  * request and reported the resulting 401 as "Session is missing, expired, or
  * invalid" about a session that was perfectly valid.
  *
- * Two sources, because a seller can be signed in without a server session: in
- * demo mode the portal keeps its own local flag and never sets a cookie. A real
- * cookie wins over that flag, so a buyer cookie beside a stale seller flag is
- * treated as the buyer it is.
+ * ONE source: the session the server knows about. It used to have two, because
+ * the portal's demo sign-in bypass minted a seller with no cookie behind it and
+ * this had to report that as a signed-in seller - which is how the landing page
+ * came to show an authenticated experience off a fabricated session. The bypass is
+ * gone and so is the second source.
  *
  * `isPending` is the session query still in flight. Chrome can ignore it - the
  * signed-out branch is the right thing to show for the moment it takes - but a
@@ -25,17 +24,10 @@ export type ViewerRole = 'seller' | 'buyer' | 'visitor'
  */
 export function useViewerRole(): { role: ViewerRole; isPending: boolean } {
   const session = useSession()
-  const sellerAuth = useOptionalSellerAuth()
   const identity = session.data?.identityType
 
   const role: ViewerRole =
-    identity === 'SELLER'
-      ? 'seller'
-      : identity === 'BUYER'
-        ? 'buyer'
-        : identity == null && sellerAuth?.seller
-          ? 'seller'
-          : 'visitor'
+    identity === 'SELLER' ? 'seller' : identity === 'BUYER' ? 'buyer' : 'visitor'
 
   return { role, isPending: session.isPending }
 }

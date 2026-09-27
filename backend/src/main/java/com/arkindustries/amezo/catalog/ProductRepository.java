@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -38,6 +39,18 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
      * still holding stock. Products with no offers at all keep a NULL aggregate:
      * they survive an unfiltered search and drop out of any price or stock filter
      * rather than being silently treated as free or in stock.
+     *
+     * sellerId is what makes this ONE pipeline serve both the search page and a
+     * storefront's listings (GET /api/v1/stores/{handle}/products). A second query
+     * for the store page is how a storefront ends up advertising a product the
+     * search page will not show, or a count the listings endpoint disagrees with.
+     *
+     * {@code p.status = 'ACTIVE'} is unconditional and is a FIX, not a filter the
+     * caller chose. product.status exists to say "whether a listing is visible to
+     * shoppers" (V17, ProductStatus), the seller's own query has always honoured it -
+     * and this one did not, so every DRAFT listing was publicly searchable. Not a
+     * parameter, because there is no version of a public search that should return a
+     * draft.
      */
     @Query(
         value = "SELECT p.* FROM product p " +
@@ -53,6 +66,8 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                 "  AND (CAST(:priceMin AS numeric) IS NULL OR agg.price_from >= CAST(:priceMin AS numeric)) " +
                 "  AND (CAST(:priceMax AS numeric) IS NULL OR agg.price_from <= CAST(:priceMax AS numeric)) " +
                 "  AND (CAST(:inStockOnly AS boolean) = FALSE OR COALESCE(agg.max_stock, 0) > 0) " +
+                "  AND (CAST(:sellerId AS uuid) IS NULL OR p.seller_id = CAST(:sellerId AS uuid)) " +
+                "  AND p.status = 'ACTIVE' " +
                 "ORDER BY " +
                 "  CASE WHEN CAST(:sort AS text) = 'relevance' AND CAST(:query AS text) IS NOT NULL " +
                 "       THEN ts_rank(p.search_vector, plainto_tsquery('english', CAST(:query AS text))) END DESC NULLS LAST, " +
@@ -74,17 +89,71 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
                 "  AND (CAST(:categorySlug AS text) IS NULL OR cat.slug = CAST(:categorySlug AS text)) " +
                 "  AND (CAST(:priceMin AS numeric) IS NULL OR agg.price_from >= CAST(:priceMin AS numeric)) " +
                 "  AND (CAST(:priceMax AS numeric) IS NULL OR agg.price_from <= CAST(:priceMax AS numeric)) " +
-                "  AND (CAST(:inStockOnly AS boolean) = FALSE OR COALESCE(agg.max_stock, 0) > 0)",
+                "  AND (CAST(:inStockOnly AS boolean) = FALSE OR COALESCE(agg.max_stock, 0) > 0) " +
+                "  AND (CAST(:sellerId AS uuid) IS NULL OR p.seller_id = CAST(:sellerId AS uuid)) " +
+                "  AND p.status = 'ACTIVE'",
         nativeQuery = true
     )
     Page<Product> search(
             @Param("query") String query,
             @Param("categorySlug") String categorySlug,
+            @Param("sellerId") UUID sellerId,
             @Param("priceMin") BigDecimal priceMin,
             @Param("priceMax") BigDecimal priceMax,
             @Param("inStockOnly") boolean inStockOnly,
             @Param("sort") String sort,
             Pageable pageable);
+
+    /**
+     * How many listings a storefront has, and how many of them can be bought right
+     * now - PublicStore.productCount and inStockCount.
+     *
+     * ACTIVE only, the same rule the public search applies: a storefront must not
+     * advertise a count that includes drafts the shopper cannot see. Counted in the
+     * database rather than by loading the store's products, because the number is all
+     * the header prints.
+     */
+    @Query(value = "SELECT count(*) FROM product p "
+            + "WHERE p.seller_id = :sellerId AND p.status = 'ACTIVE'",
+            nativeQuery = true)
+    long countActiveForSeller(@Param("sellerId") UUID sellerId);
+
+    @Query(value = "SELECT count(*) FROM product p "
+            + "WHERE p.seller_id = :sellerId AND p.status = 'ACTIVE' "
+            + "  AND EXISTS (SELECT 1 FROM variant v JOIN offer o ON o.variant_id = v.id "
+            + "              WHERE v.product_id = p.id AND o.stock_qty > 0)",
+            nativeQuery = true)
+    long countInStockForSeller(@Param("sellerId") UUID sellerId);
+
+    /**
+     * The categories a storefront actually lists in, for its filter chips.
+     *
+     * Ids rather than whole rows: the caller already holds the category table as a map
+     * (CategoryService.byId) and needs it in merchandising order, which this cannot
+     * give. Not derivable on the client either - a page of listings only knows its own
+     * page, and the system category list would offer categories this seller does not
+     * sell.
+     */
+    @Query(value = "SELECT DISTINCT p.category_id FROM product p "
+            + "WHERE p.seller_id = :sellerId AND p.status = 'ACTIVE'",
+            nativeQuery = true)
+    List<UUID> activeCategoryIdsForSeller(@Param("sellerId") UUID sellerId);
+
+    /**
+     * The ids of a storefront's listings, for the one figure that cannot be counted in
+     * this feature's own tables: its rating. Reviews live in another feature and are
+     * asked for by product id (reviews.api.ReviewSummaryQuery), so the ids have to
+     * come out first.
+     *
+     * Bounded by ONE STORE'S CATALOGUE. A shop with ten thousand listings would send
+     * ten thousand ids into that IN clause, which is the same judgement call - and the
+     * same caveat - as BuyerOrderService's window. Said plainly so the day that shop
+     * exists, this is where the fix starts: a seller-scoped aggregate on reviews' side.
+     */
+    @Query(value = "SELECT p.id FROM product p "
+            + "WHERE p.seller_id = :sellerId AND p.status = 'ACTIVE'",
+            nativeQuery = true)
+    List<UUID> activeProductIdsForSeller(@Param("sellerId") UUID sellerId);
 
     /**
      * The seller's own catalogue, filtered and sorted the way their products

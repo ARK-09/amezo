@@ -37,6 +37,12 @@ import java.util.UUID;
  * sellerId is here so a card can refuse to add a seller's own product to their
  * cart without a second request. The rule itself is enforced in checkout - this
  * only lets the button say so before the buyer finds out the hard way.
+ *
+ * store is the {name, handle} a card links to the storefront with, and the id it
+ * matches its own listings by. brandName cannot do any of that: it is free text the
+ * seller types per product, so two sellers can share one and a storefront cannot be
+ * addressed by it. Nullable in the contract and null here only for a product whose
+ * seller row is gone.
  */
 public record ProductSummaryResponse(
         UUID id,
@@ -51,6 +57,7 @@ public record ProductSummaryResponse(
         BigDecimal defaultVariantPrice,
         Double avgRating,
         long reviewCount,
-        UUID sellerId
+        UUID sellerId,
+        StoreRefResponse store
 ) {
 }

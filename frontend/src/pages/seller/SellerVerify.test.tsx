@@ -33,9 +33,9 @@ describe('SellerVerify', () => {
     renderPage(`/seller/verify?token=${token}`)
 
     expect(await screen.findByText('Products page')).toBeInTheDocument()
-    expect(JSON.parse(localStorage.getItem('seller:session')!)).toEqual(
-      expect.objectContaining({ email: 'seller@example.com' }),
-    )
+    // Landing on the portal IS the assertion now. The verified session is written
+    // into the one place the app reads identity from - the session query - rather
+    // than into a localStorage copy beside it, so there is no second store to check.
   })
 
   it('shows an error and a way back to sign-in for an invalid token', async () => {

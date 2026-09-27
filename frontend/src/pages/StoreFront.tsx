@@ -9,13 +9,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ProductTile } from '@/features/catalog/components/ProductTile'
 import { ProductCardSkeleton } from '@/features/search/components/ProductCardSkeleton'
 import {
-  useFollowStore,
   usePublicStore,
   useStoreProducts,
   type PublicStore,
   type StoreSort,
 } from '@/features/store/api/useStorefront'
-import { MessageStoreDialog } from '@/features/store/components/MessageStoreDialog'
 import { apiErrorMessage } from '@/lib/api/transient'
 import { cn } from '@/lib/utils'
 
@@ -147,7 +145,6 @@ export function StoreFront() {
     [q, category, sort, page],
   )
   const products = useStoreProducts(handle, filters)
-  const follow = useFollowStore(handle)
 
   function patch(next: Record<string, string | undefined>, replace = false) {
     const params = new URLSearchParams(searchParams)
@@ -261,30 +258,12 @@ export function StoreFront() {
                 </p>
               </div>
 
-              <div className="flex gap-2.5 pt-4">
-                {/* Null following means signed out - there is nobody to follow on
-                    behalf of, so the control sends them to sign in instead. */}
-                {store.data.following == null ? (
-                  <Button className="h-10 rounded-full px-[22px]" asChild>
-                    <Link to="/sign-in">Follow store</Link>
-                  </Button>
-                ) : (
-                  <Button
-                    className="h-10 rounded-full px-[22px]"
-                    variant={store.data.following ? 'outline' : 'default'}
-                    aria-pressed={store.data.following}
-                    disabled={follow.isPending}
-                    onClick={() => follow.mutate(!store.data!.following)}
-                  >
-                    {store.data.following ? 'Following' : 'Follow store'}
-                  </Button>
-                )}
-                <MessageStoreDialog
-                  handle={handle}
-                  storeName={store.data.name}
-                  signedIn={store.data.following != null}
-                />
-              </div>
+              {/* Follow store and Message the seller are not rendered.
+                  PUT/DELETE /api/v1/stores/{handle}/follow and POST its /messages
+                  have no backend: there is no store_follow table, and no seller
+                  inbox for a message to arrive in. The hooks and MessageStoreDialog
+                  are written and waiting for them (useStorefront.ts) - what is not
+                  here is a button that looks like it works and does not. */}
             </div>
 
             {store.data.status === 'VACATION' && (

@@ -7,7 +7,10 @@ import com.arkindustries.amezo.catalog.dto.CategoryResponse;
 import com.arkindustries.amezo.catalog.dto.ProductDetailResponse;
 import com.arkindustries.amezo.catalog.dto.ProductSummaryResponse;
 import com.arkindustries.amezo.catalog.dto.VariantOfferResponse;
+import com.arkindustries.amezo.catalog.dto.StoreRefResponse;
 import com.arkindustries.amezo.common.exception.NotFoundException;
+import com.arkindustries.amezo.identity.api.StoreRef;
+import com.arkindustries.amezo.identity.api.StoreRefQuery;
 import com.arkindustries.amezo.reviews.api.ReviewSummaryQuery;
 import com.arkindustries.amezo.reviews.api.ReviewSummaryView;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,6 +41,7 @@ public class ProductService
     private final ReviewSummaryQuery reviewSummaryQuery;
     private final CategoryService categoryService;
     private final ImageUrlResolver imageUrls;
+    private final StoreRefQuery storeRefQuery;
 
     public ProductService(
             ProductRepository productRepository,
@@ -46,7 +50,8 @@ public class ProductService
             ImageRepository imageRepository,
             ReviewSummaryQuery reviewSummaryQuery,
             CategoryService categoryService,
-            ImageUrlResolver imageUrls) {
+            ImageUrlResolver imageUrls,
+            StoreRefQuery storeRefQuery) {
         this.productRepository = productRepository;
         this.variantRepository = variantRepository;
         this.offerRepository = offerRepository;
@@ -54,11 +59,19 @@ public class ProductService
         this.reviewSummaryQuery = reviewSummaryQuery;
         this.categoryService = categoryService;
         this.imageUrls = imageUrls;
+        this.storeRefQuery = storeRefQuery;
     }
 
+    /**
+     * The catalogue, filtered. {@code sellerId} narrows it to one seller's listings,
+     * which is what GET /api/v1/stores/{handle}/products is - the same pipeline rather
+     * than a second one, so a storefront cannot advertise a product the search page
+     * will not show. Null means the whole marketplace.
+     */
     public Page<ProductSummaryResponse> search(
             String query,
             String categorySlug,
+            UUID sellerId,
             BigDecimal priceMin,
             BigDecimal priceMax,
             boolean inStockOnly,
@@ -71,13 +84,14 @@ public class ProductService
         // sorts on actually exists.
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
         Page<Product> products = productRepository.search(
-                query, categorySlug, priceMin, priceMax, inStockOnly, sort, unsorted);
+                query, categorySlug, sellerId, priceMin, priceMax, inStockOnly, sort, unsorted);
 
         List<UUID> productIds = products.getContent().stream().map(Product::getId).toList();
         Map<UUID, CategoryResponse> categoriesById = categoryService.byId();
         if (productIds.isEmpty()) {
             return products.map(product -> ProductMapper.toSummary(
-                    product, categoriesById.get(product.getCategoryId()), null, null, false, null, null, null, 0L));
+                    product, categoriesById.get(product.getCategoryId()),
+                    null, null, false, null, null, null, 0L, null));
         }
 
         // Three batched lookups for the whole page, not per card: variants to reach
@@ -108,6 +122,10 @@ public class ProductService
         // The fourth batched lookup, and the reason avgRating is finally real on a
         // card: one grouped aggregate for the page instead of one per product.
         Map<UUID, ReviewSummaryView> summariesByProductId = reviewSummaryQuery.getSummaries(productIds);
+        // The fifth, and the one that makes "Sold by" a link rather than a guess: one
+        // batched answer from identity for the page's sellers, not one per card.
+        Map<UUID, StoreRefResponse> storesBySellerId = storeRefsFor(
+                products.getContent().stream().map(Product::getSellerId).toList());
 
         return products.map(product -> {
             Offer defaultOffer = defaultOfferByProductId.get(product.getId());
@@ -123,7 +141,8 @@ public class ProductService
                     summary != null ? summary.averageRating() : null,
                     // A product nobody has reviewed has no row in the aggregate at
                     // all, which is zero reviews rather than an unknown number.
-                    summary != null && summary.count() != null ? summary.count() : 0L);
+                    summary != null && summary.count() != null ? summary.count() : 0L,
+                    storesBySellerId.get(product.getSellerId()));
         });
     }
 
@@ -187,6 +206,32 @@ public class ProductService
                 .toList();
     }
 
+    /**
+     * The storefront behind each of these sellers, keyed by seller id.
+     *
+     * Through identity's query interface rather than a join: seller_store is another
+     * feature's table and PackageBoundaryTest fails the build on reaching into it. The
+     * batched form takes the whole page at once, because one call per card is how a
+     * sixteen-card page becomes seventeen queries.
+     *
+     * A seller with no store row yet is still named - identity falls back to their
+     * account, with a null handle, rather than inventing one that provisioning would
+     * later disagree with (see StoreRefService). A seller id with no account at all
+     * maps to nothing and the product's store is null, which the contract allows and
+     * the screens cope with.
+     */
+    private Map<UUID, StoreRefResponse> storeRefsFor(List<UUID> sellerIds) {
+        if (sellerIds.isEmpty()) {
+            return Map.of();
+        }
+        return storeRefQuery.findBySellerIds(sellerIds).entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> toStoreRef(entry.getValue())));
+    }
+
+    private static StoreRefResponse toStoreRef(StoreRef ref) {
+        return new StoreRefResponse(ref.id(), ref.name(), ref.handle());
+    }
+
     /** First stored image per product, as a public URL - the card/cart thumbnail. */
     private Map<UUID, String> thumbnailUrlsByProductId(List<UUID> productIds) {
         return imageRepository
@@ -228,7 +273,8 @@ public class ProductService
                 variants,
                 offersByVariantId,
                 summary,
-                imageUrls);
+                imageUrls,
+                storeRefsFor(List.of(product.getSellerId())).get(product.getSellerId()));
     }
 
     /**
@@ -272,5 +318,14 @@ public class ProductService
     public Map<UUID, String> variantLabelsByIds(Collection<UUID> variantIds) {
         return variantRepository.findAllById(variantIds).stream()
                 .collect(Collectors.toMap(Variant::getId, Variant::getLabel));
+    }
+
+    @Override
+    public Map<UUID, String> variantSkusByIds(Collection<UUID> variantIds) {
+        // Variants with no sku are filtered out, not mapped to null: Collectors.toMap
+        // throws on a null value, and the contract's sku is optional.
+        return variantRepository.findAllById(variantIds).stream()
+                .filter(variant -> variant.getSku() != null)
+                .collect(Collectors.toMap(Variant::getId, Variant::getSku));
     }
 }

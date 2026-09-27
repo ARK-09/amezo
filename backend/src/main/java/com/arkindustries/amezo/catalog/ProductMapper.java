@@ -5,6 +5,7 @@ import com.arkindustries.amezo.catalog.dto.ImageResponse;
 import com.arkindustries.amezo.catalog.dto.ProductDetailResponse;
 import com.arkindustries.amezo.catalog.dto.ProductSummaryResponse;
 import com.arkindustries.amezo.catalog.dto.ReviewSummaryResponse;
+import com.arkindustries.amezo.catalog.dto.StoreRefResponse;
 import com.arkindustries.amezo.catalog.dto.VariantDetailResponse;
 import com.arkindustries.amezo.reviews.api.ReviewSummaryView;
 
@@ -26,7 +27,8 @@ class ProductMapper {
             Offer defaultOffer,
             UUID defaultVariantId,
             Double averageRating,
-            long reviewCount) {
+            long reviewCount,
+            StoreRefResponse store) {
         return new ProductSummaryResponse(
                 product.getId(),
                 product.getSlug(),
@@ -46,8 +48,12 @@ class ProductMapper {
                 reviewCount,
                 // The card needs this to refuse to add a seller's own product to
                 // their cart. It is the seller's id, which is already public in
-                // effect (a store front is addressable by brand), not a buyer's.
-                product.getSellerId()
+                // effect (the storefront is addressable by it), not a buyer's.
+                product.getSellerId(),
+                // The store that lists this product, so the card links to the
+                // storefront by handle. Null only when the seller has no store row
+                // and no account left either - see ProductService.storeRefsFor.
+                store
         );
     }
 
@@ -58,7 +64,8 @@ class ProductMapper {
             List<Variant> variants,
             Map<UUID, Offer> offersByVariantId,
             ReviewSummaryView summary,
-            ImageUrlResolver imageUrls) {
+            ImageUrlResolver imageUrls,
+            StoreRefResponse store) {
 
         List<ImageResponse> imageResponses = images.stream()
                 .map(image -> new ImageResponse(image.getId(), imageUrls.forKey(image.getS3Key()),
@@ -78,6 +85,7 @@ class ProductMapper {
                 product.getSellerId(),
                 product.getTitle(),
                 product.getBrandName(),
+                store,
                 category,
                 product.getDescription(),
                 imageResponses,

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { useAddToCart } from '@/features/catalog/api/useAddToCart'
 import { useIsOwnProduct } from '@/features/session/api/useIsOwnProduct'
 import { useProduct } from '@/features/catalog/api/useProduct'
+import { storeLabel, storePath } from '@/features/catalog/storeLink'
 import { Breadcrumb } from '@/features/catalog/components/Breadcrumb'
 import { BuyBox } from '@/features/catalog/components/BuyBox'
 import { ImageGallery } from '@/features/catalog/components/ImageGallery'
@@ -41,6 +42,10 @@ export function ProductDetail() {
     product?.variants.find((v) => v.id === selectedVariantId) ??
     product?.variants.find((v) => v.stockQty > 0) ??
     product?.variants[0]
+  // The shop, named and addressed once for both places that print it - this and the
+  // breadcrumb crumb must never disagree about either.
+  const shopName = storeLabel(product?.store, product?.brandName)
+  const shopHref = storePath(product?.store, product?.brandName)
 
   function selectVariant(variantId: string) {
     setSelectedVariantId(variantId)
@@ -89,22 +94,24 @@ export function ProductDetail() {
                 <span className="border-l pl-3 text-sm text-muted-foreground">
                   {product.reviewSummary.count} reviews
                 </span>
-                {product.brandName && (
+                {shopName && (
                   <span className="text-sm text-muted-foreground">
                     Sold by{' '}
-                    {/* By handle. `store` is optional in the contract, so a payload
-                        without one falls back to the display name, which /stores
-                        resolves - never to a slugified guess at the handle. */}
-                    <Link
-                      to={
-                        product.store
-                          ? `/stores/${product.store.handle}`
-                          : `/stores/${encodeURIComponent(product.brandName)}`
-                      }
-                      className="font-semibold text-foreground underline decoration-border underline-offset-[3px] hover:decoration-primary"
-                    >
-                      {product.brandName}
-                    </Link>
+                    {/* The STORE's name, not the product's brand: a shop listing
+                        someone else's goods puts the manufacturer in brandName, so
+                        this used to read "Sold by Sony" on a charger sold by Bob's.
+                        Linked by handle, or plain text when the store has no handle
+                        to link to - see storeLink. */}
+                    {shopHref ? (
+                      <Link
+                        to={shopHref}
+                        className="font-semibold text-foreground underline decoration-border underline-offset-[3px] hover:decoration-primary"
+                      >
+                        {shopName}
+                      </Link>
+                    ) : (
+                      <span className="font-semibold text-foreground">{shopName}</span>
+                    )}
                   </span>
                 )}
               </div>

@@ -76,4 +76,9 @@ public class OfferQueryService implements OfferCheckoutQuery, OfferStockService 
     public boolean decrementStock(UUID offerId, int quantity) {
         return offerRepository.decrementStock(offerId, quantity) > 0;
     }
+
+    @Override
+    public boolean restoreStock(UUID offerId, int quantity) {
+        return offerRepository.restoreStock(offerId, quantity) > 0;
+    }
 }

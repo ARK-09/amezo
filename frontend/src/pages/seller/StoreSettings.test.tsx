@@ -52,6 +52,38 @@ describe('StoreSettings', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 
+  /**
+   * The save bar's sticky offset and the form's bottom gutter are one fix in two
+   * places, and jsdom computes no layout - so this pins the pair that a browser was
+   * used to establish rather than pretending to measure them.
+   *
+   * What was measured, in Chromium at 1280x720 against the real portal shell: a
+   * sticky offset is resolved from the SCROLLPORT'S PADDING BOX, and the shell's
+   * content well carries 24px of bottom padding. With `bottom-0` the bar stuck 24px
+   * above the bottom of the well while `-mb-6` put its resting place at the very
+   * bottom, so at the end of the scroll it still covered the last 24px of the form -
+   * the Visibility options were clipped by it - with a dead 24px strip visible
+   * underneath. `-bottom-6` makes the stuck and resting positions the same place.
+   * `pb-6` then restores the gutter `-mb-6` takes from the content, which otherwise
+   * ends flush against the bar.
+   */
+  it('keeps the save bar out of the form it sits under', async () => {
+    renderPage()
+    const save = await screen.findByRole('button', { name: /Save changes/ })
+    const bar = save.closest('div.sticky')
+
+    expect(bar).not.toBeNull()
+    // Cancels the well's bottom padding for the stuck position, matching the -mb-6
+    // that cancels it for the resting one. bottom-0 is the bug.
+    expect(bar).toHaveClass('-bottom-6')
+    expect(bar).not.toHaveClass('bottom-0')
+    expect(bar).toHaveClass('-mb-6')
+
+    // And the form above it keeps a gutter of its own, because the shell's now sits
+    // below the bar rather than between the two.
+    expect(bar!.previousElementSibling).toHaveClass('pb-6')
+  })
+
   it('rejects a founded year that is not four digits', async () => {
     renderPage()
     const founded = await screen.findByLabelText('Selling since')

@@ -84,6 +84,12 @@ public class SecurityConfig {
                 // navigation and the checkout country selector both render before
                 // anyone signs in.
                 .requestMatchers(HttpMethod.GET, "/categories", "/countries").permitAll()
+                // The public storefront - a shop window, so anonymous by definition.
+                // GET only, and only these two paths: the follow and message endpoints
+                // the contract also declares under /api/v1/stores have no backend, and
+                // a broader matcher would turn their absence from a refusal into a 404
+                // that looks like a missing store.
+                .requestMatchers(HttpMethod.GET, "/api/v1/stores/*", "/api/v1/stores/*/products").permitAll()
                 // The cart's batch lookup. Public for the same reason the rest of the
                 // catalog read surface is: a cart exists before anyone signs in.
                 .requestMatchers(HttpMethod.GET, "/variants").permitAll()

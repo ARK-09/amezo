@@ -4,10 +4,36 @@ The frontend for these screens is written against the contract below. Every path
 is in `frontend/openapi/fixture.yaml`, which is what generates the TypeScript
 client, so the shapes here and the ones the UI compiles against cannot drift.
 
-Nothing in this round is implemented server-side yet. Until it is, the screens
-call the real endpoints and surface the ordinary `ProblemDetail` error; the
-mock handlers that make them work locally are behind `VITE_USE_MSW` and never
-run in production.
+Until an endpoint is implemented, the screens call it for real and surface the
+ordinary `ProblemDetail` error; the mock handlers that make them work locally are
+behind `VITE_USE_MSW` and never run in production.
+
+## What has landed since
+
+Rows marked **BUILT** below are implemented and covered by integration tests
+against a real Postgres. In summary:
+
+- **The whole seller order surface** (`/api/v1/sellers/me/orders`, its `/facets`,
+  `/{orderId}` and that PATCH). This was the one causing 404s: the frontend had
+  called it since the portal was written and only the unversioned
+  `/sellers/me/orders` existed, with a different shape and no facets, search,
+  groups or sorting. `orders.status` gained `PACKED` and `CANCELLED` (V24),
+  `packed_at`/`parcels`/`cancelled_at` came with them, and `order_event` (V25)
+  records what the seller declared at each step.
+- **The product's store.** `ProductSummary` and `ProductDetail` now carry
+  `store {id, name, handle}`, resolved through `identity.api.StoreRefQuery`.
+  `brandName` is free text the seller types per listing and never addressed
+  anything; "Sold by" and the breadcrumb crumb both name the store now.
+- **The public storefront**: `GET /api/v1/stores/{handle}` and its `/products`,
+  the latter running through the same search pipeline as `GET /products` with a
+  seller filter, so a storefront cannot list a product search would not show.
+- A fix that came with it: `GET /products` ignored `product.status` entirely, so
+  every DRAFT listing was publicly searchable. It is `ACTIVE`-only now.
+
+Still not built, and still honest about it: follow, store messages, and the three
+`PublicStore` fields nothing records (`policies`, `positiveRatingPct`,
+`medianResponseMinutes`) — the storefront hides the two controls rather than
+showing buttons that cannot work.
 
 ## Versioning
 
@@ -42,8 +68,8 @@ should be added.
 |---|---|---|
 | GET | `/api/v1/sellers/me/store` | |
 | PATCH | `/api/v1/sellers/me/store` | Partial. `409 handle-taken`, checked before the unique index so the seller learns which field collided. |
-| GET | `/api/v1/stores/{handle}` | Public. Replaces deriving a storefront from `brandName`. Now also returns `policies`, `categories` (the store's own facets), `joinedAt`, `positiveRatingPct`, `medianResponseMinutes` and `following`. |
-| GET | `/api/v1/stores/{handle}/products` | **New.** The store's listings, paged and filtered server-side: `q` (within this store only), `category`, `sort`, `page`, `size`. Replaces reading one page of `GET /products` and matching `brandName` in the browser, which capped a storefront at whatever fitted in that page. |
+| GET | `/api/v1/stores/{handle}` | **BUILT.** Public. Replaces deriving a storefront from `brandName`. Now also returns `policies`, `categories` (the store's own facets), `joinedAt`, `positiveRatingPct`, `medianResponseMinutes` and `following`. |
+| GET | `/api/v1/stores/{handle}/products` | **BUILT.** The store's listings, paged and filtered server-side: `q` (within this store only), `category`, `sort`, `page`, `size`. Replaces reading one page of `GET /products` and matching `brandName` in the browser, which capped a storefront at whatever fitted in that page. |
 | PUT | `/api/v1/stores/{handle}/follow` | **New.** Buyer session. Idempotent — following twice succeeds, so a double click cannot desync the button. |
 | DELETE | `/api/v1/stores/{handle}/follow` | **New.** Idempotent in the same way. |
 | GET | `/api/v1/stores?name=` | **Worth considering.** Legacy `/stores/{displayName}` links are kept alive client-side by reading one page of `GET /products` and matching `brandName` — exactly the reach the old storefront had, so no link that worked before breaks, but a store whose listings fall outside that page will not resolve. A server-side resolver (this, or letting `/api/v1/stores/{handle}` accept a legacy name) would make it exact. Only needed for as long as the old URLs are supported. |
@@ -57,7 +83,7 @@ should be added.
 | PUT | `/api/v1/products/{productId}/images/order` | **New.** The whole ordering at once — a per-image position PATCH cannot express a swap without a transient duplicate position. First id is the cover. |
 | GET | `/api/v1/reviews/eligibility?productRefs=` | **Worth considering.** My Orders' inline review block asks `GET /products/{productRef}/reviews/eligibility` once per distinct product in an expanded order, because nothing on `BuyerOrderLine` says whether it has been reviewed. Bounded by the lines in one order, and the answer is cached and shared with the product page, so it is not urgent — but a batched form would collapse it to one request. |
 | PATCH | `/api/v1/reviews/{reviewId}` | **New.** Author only; rating and body editable, the purchase it belongs to is not, or a review could be moved onto another product after the fact. |
-| GET | `/api/v1/sellers/me/orders?productId=` | **New filter.** Narrows the queue to orders containing one product, for the product drawer's "Active orders" block. |
+| GET | `/api/v1/sellers/me/orders?productId=` | **BUILT.** Narrows the queue to orders containing one product, for the product drawer's "Active orders" block. |
 
 **`ProductDetail.attributes`** — the specification table under the Details tab
 (`{label, value}`, seller-authored, free text on both sides). The marketplace
@@ -73,9 +99,9 @@ did not sell then, which is a fact rather than a zero.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/v1/sellers/me/products` | `q`, `status`, `categorySlug`, `stockBelow`, `sort`, `page`, `size`. Supersedes the unversioned one, which takes no parameters and caps at 100. |
-| GET | `/api/v1/sellers/me/orders` | `q`, `status`, `sort`, `page`, `size`. |
-| GET | `/api/v1/sellers/me/orders/{orderId}` | |
-| PATCH | `/api/v1/sellers/me/orders/{orderId}` | **Replaces `POST /sellers/me/orders/{id}/ship`**, which put the verb in the path. Body carries `parcels`/`packedBy` for PACKED and `handoverMethod`/`hub` for SHIPPED. `trackingNumber` is **not** writable — the design says it is issued by the platform on handover. |
+| GET | `/api/v1/sellers/me/orders` | **BUILT.** `productId`, `q`, `group`, `status`, `sort`, `page`, `size`. `q` matches order reference, recipient name and buyer email. |
+| GET | `/api/v1/sellers/me/orders/{orderId}` | **BUILT.** `404` (not `403`) for an order none of whose lines are the caller's. |
+| PATCH | `/api/v1/sellers/me/orders/{orderId}` | **BUILT.** Replaces `POST /sellers/me/orders/{id}/ship`,, which put the verb in the path. Body carries `parcels`/`packedBy` for PACKED and `handoverMethod`/`hub` for SHIPPED. `trackingNumber` is **not** writable — it is issued by the platform on handover. `CANCELLED` restores the reserved stock and is refused on an order that also carries another seller's lines: `orders.status` is one column for the whole order, so cancelling would end their sale too. |
 | PATCH | `/products/{productRef}` | Accept `status` (`ACTIVE\|DRAFT`) on the existing endpoint, for publishing and unpublishing a listing. `ARCHIVED` is the soft delete `DELETE /products/{productRef}` performs, so it is not writable here. |
 | POST | `/products` | Accept an optional `status` (`ACTIVE\|DRAFT`) so a listing can be staged before it goes live. Omitted means `ACTIVE`. |
 | GET | `/products/{productRef}` (seller view) | Return `status` on `SellerProductDetail`. It is writable on PATCH but was absent from the detail the edit form reads back, so the form had no way to show which state the listing is in. |

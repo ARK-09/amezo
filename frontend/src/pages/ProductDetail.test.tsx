@@ -111,6 +111,55 @@ describe('ProductDetail', () => {
     }
   })
 
+  /**
+   * "Sold by" names the SHOP, and brandName is the product's brand. They are
+   * different facts, and until the store ref existed this page could only print the
+   * brand - so a charger a shop lists under "Sony" read "Sold by Sony".
+   */
+  it('names the store rather than the brand when they differ', async () => {
+    const detail = {
+      ...productDetails[HEADPHONES_SLUG],
+      brandName: 'Sony',
+      store: { id: 'seller-1', name: "Bob's Electronics", handle: 'bobs-electronics' },
+    }
+    server.use(
+      http.get('http://localhost:8080/products/:productRef', () => HttpResponse.json(detail)),
+    )
+
+    renderPage(HEADPHONES_SLUG)
+    await screen.findByRole('heading', { name: /Wireless/ })
+
+    // Both places that name the shop - the crumb and "Sold by" - agree, and both
+    // link by handle.
+    const links = screen.getAllByRole('link', { name: "Bob's Electronics" })
+    expect(links).toHaveLength(2)
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', '/stores/bobs-electronics')
+    }
+    expect(screen.queryByRole('link', { name: 'Sony' })).not.toBeInTheDocument()
+  })
+
+  /**
+   * A store row is provisioned lazily, so a seller who has never opened Store settings
+   * has a name and no handle. There is nothing to link to, and /stores/null is worse
+   * than plain text.
+   */
+  it('names a store with no handle without linking to it', async () => {
+    const detail = {
+      ...productDetails[HEADPHONES_SLUG],
+      store: { id: 'seller-1', name: 'Unprovisioned Shop', handle: null },
+    }
+    server.use(
+      http.get('http://localhost:8080/products/:productRef', () => HttpResponse.json(detail)),
+    )
+
+    renderPage(HEADPHONES_SLUG)
+    await screen.findByRole('heading', { name: /Wireless/ })
+
+    expect(screen.getAllByText('Unprovisioned Shop').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('link', { name: 'Unprovisioned Shop' })).not.toBeInTheDocument()
+  })
+
   it('adds the selected variant and quantity to the cart', async () => {
     renderPage(HEADPHONES_SLUG)
     await screen.findByRole('heading', { name: /Wireless/ })

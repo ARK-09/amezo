@@ -50,7 +50,75 @@ class ProductRepositorySearchTest {
 
     /** Unfiltered search - every filter null/false, relevance order. */
     private Page<Product> searchAll(String query) {
-        return productRepository.search(query, null, null, null, false, "relevance", PageRequest.of(0, 10));
+        return productRepository.search(query, null, null, null, null, false, "relevance", PageRequest.of(0, 10));
+    }
+
+    @Test
+    void sellerIdNarrowsTheSearchToOneStorefrontsListings() {
+        Seller mine = sellerRepository.save(Seller.builder()
+                .email("storefront-" + UUID.randomUUID() + "@example.com").fullName("Mine").build());
+        Seller theirs = sellerRepository.save(Seller.builder()
+                .email("storefront-" + UUID.randomUUID() + "@example.com").fullName("Theirs").build());
+        Product ours = product(mine.getId(), "Aurora Lamp", "lighting");
+        Product notOurs = product(theirs.getId(), "Aurora Lamp", "lighting");
+
+        // The one pipeline behind both the search page and GET /api/v1/stores/{handle}
+        // /products, so a storefront cannot list a product search would not show.
+        Page<Product> storefront = productRepository.search(
+                null, null, mine.getId(), null, null, false, "relevance", PageRequest.of(0, 50));
+
+        assertThat(storefront.getContent()).extracting(Product::getId)
+                .contains(ours.getId())
+                .doesNotContain(notOurs.getId());
+    }
+
+    @Test
+    void aDraftListingIsNotPubliclySearchable() {
+        Seller seller = sellerRepository.save(Seller.builder()
+                .email("drafts-" + UUID.randomUUID() + "@example.com").fullName("Drafty").build());
+        Product live = product(seller.getId(), "Published Kettle", "kitchen");
+        Product draft = product(seller.getId(), "Unpublished Kettle", "kitchen");
+        draft.setStatus(ProductStatus.DRAFT);
+        productRepository.save(draft);
+
+        // product.status exists to say whether a listing is visible to shoppers (V17),
+        // and this query used to ignore it entirely - so every draft was searchable by
+        // anyone. Unconditional, not a parameter: there is no public search that should
+        // return a draft.
+        Page<Product> results = productRepository.search(
+                null, "kitchen", seller.getId(), null, null, false, "relevance", PageRequest.of(0, 50));
+
+        assertThat(results.getContent()).extracting(Product::getId)
+                .contains(live.getId())
+                .doesNotContain(draft.getId());
+    }
+
+    @Test
+    void storefrontCountsAndCategoriesCoverOnlyThisSellersLiveListings() {
+        Seller seller = sellerRepository.save(Seller.builder()
+                .email("counts-" + UUID.randomUUID() + "@example.com").fullName("Counter").build());
+        Seller other = sellerRepository.save(Seller.builder()
+                .email("counts-" + UUID.randomUUID() + "@example.com").fullName("Other").build());
+
+        Product stocked = product(seller.getId(), "Stocked Chair", "furniture");
+        offer(stocked, "40.00", 3);
+        Product soldOut = product(seller.getId(), "Sold Out Chair", "furniture");
+        offer(soldOut, "40.00", 0);
+        Product inAnotherCategory = product(seller.getId(), "Reading Lamp", "lighting");
+        offer(inAnotherCategory, "20.00", 1);
+        Product draft = product(seller.getId(), "Draft Chair", "furniture");
+        draft.setStatus(ProductStatus.DRAFT);
+        productRepository.save(draft);
+        product(other.getId(), "Someone Else's Chair", "furniture");
+
+        assertThat(productRepository.countActiveForSeller(seller.getId())).isEqualTo(3);
+        assertThat(productRepository.countInStockForSeller(seller.getId())).isEqualTo(2);
+        assertThat(productRepository.activeProductIdsForSeller(seller.getId()))
+                .containsExactlyInAnyOrder(stocked.getId(), soldOut.getId(), inAnotherCategory.getId());
+        assertThat(productRepository.activeCategoryIdsForSeller(seller.getId()))
+                .containsExactlyInAnyOrder(
+                        Fixtures.categoryId(categoryRepository, "furniture"),
+                        Fixtures.categoryId(categoryRepository, "lighting"));
     }
 
     private Product product(UUID sellerId, String title, String category) {
@@ -131,7 +199,7 @@ class ProductRepositorySearchTest {
         product(seller.getId(), "Desk Lamp", "electronics");
 
         Page<Product> results = productRepository.search(
-                null, "furniture", null, null, false, "relevance", PageRequest.of(0, 10));
+                null, "furniture", null, null, null, false, "relevance", PageRequest.of(0, 10));
 
         assertThat(results.getContent()).extracting(Product::getId).contains(desk.getId());
         // The filter takes a slug and joins category, so the assertion checks the
@@ -150,7 +218,8 @@ class ProductRepositorySearchTest {
         offer(pricey, "900.00", 2);
 
         Page<Product> inRange = productRepository.search(
-                null, null, new BigDecimal("10"), new BigDecimal("100"), false, "relevance", PageRequest.of(0, 50));
+                null, null, null, new BigDecimal("10"), new BigDecimal("100"), false, "relevance",
+                PageRequest.of(0, 50));
 
         assertThat(inRange.getContent()).extracting(Product::getId)
                 .contains(cheap.getId())
@@ -165,7 +234,8 @@ class ProductRepositorySearchTest {
 
         assertThat(searchAll(null).getContent()).extracting(Product::getId).contains(noOffer.getId());
         assertThat(productRepository.search(
-                null, null, BigDecimal.ZERO, new BigDecimal("1000"), false, "relevance", PageRequest.of(0, 50))
+                null, null, null, BigDecimal.ZERO, new BigDecimal("1000"), false, "relevance",
+                PageRequest.of(0, 50))
                 .getContent())
                 .extracting(Product::getId)
                 .doesNotContain(noOffer.getId());
@@ -181,7 +251,7 @@ class ProductRepositorySearchTest {
         offer(soldOut, "30.00", 0);
 
         Page<Product> results = productRepository.search(
-                null, "kitchen", null, null, true, "relevance", PageRequest.of(0, 50));
+                null, "kitchen", null, null, null, true, "relevance", PageRequest.of(0, 50));
 
         assertThat(results.getContent()).extracting(Product::getId)
                 .contains(available.getId())
@@ -200,12 +270,12 @@ class ProductRepositorySearchTest {
         offer(dearest, "200.00", 1);
 
         assertThat(productRepository.search(
-                null, "rugs", null, null, false, "price_asc", PageRequest.of(0, 10)).getContent())
+                null, "rugs", null, null, null, false, "price_asc", PageRequest.of(0, 10)).getContent())
                 .extracting(Product::getId)
                 .containsExactly(cheapest.getId(), mid.getId(), dearest.getId());
 
         assertThat(productRepository.search(
-                null, "rugs", null, null, false, "price_desc", PageRequest.of(0, 10)).getContent())
+                null, "rugs", null, null, null, false, "price_desc", PageRequest.of(0, 10)).getContent())
                 .extracting(Product::getId)
                 .containsExactly(dearest.getId(), mid.getId(), cheapest.getId());
     }
@@ -218,7 +288,7 @@ class ProductRepositorySearchTest {
         Product newer = product(seller.getId(), "Newer Crate", "storage");
 
         Page<Product> results = productRepository.search(
-                null, "storage", null, null, false, "not-a-sort-option", PageRequest.of(0, 10));
+                null, "storage", null, null, null, false, "not-a-sort-option", PageRequest.of(0, 10));
 
         assertThat(results.getContent()).isNotEmpty();
         assertThat(results.getContent().get(0).getId()).isEqualTo(newer.getId());

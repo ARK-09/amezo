@@ -30,4 +30,18 @@ public interface OfferRepository extends JpaRepository<Offer, UUID> {
     @Query("UPDATE Offer o SET o.stockQty = o.stockQty - :quantity "
             + "WHERE o.id = :offerId AND o.stockQty >= :quantity")
     int decrementStock(@Param("offerId") UUID offerId, @Param("quantity") int quantity);
+
+    /**
+     * Puts stock back, for an order cancelled before it shipped.
+     *
+     * No WHERE guard beyond the id, and that asymmetry with decrementStock is the
+     * point: a decrement can fail because the shelf is empty, while an increment
+     * has nothing to refuse. The returned row count therefore only says whether the
+     * offer still exists - a line whose offer has since been deleted restores
+     * nothing, which is the honest outcome rather than an error the seller can do
+     * anything about.
+     */
+    @Modifying
+    @Query("UPDATE Offer o SET o.stockQty = o.stockQty + :quantity WHERE o.id = :offerId")
+    int restoreStock(@Param("offerId") UUID offerId, @Param("quantity") int quantity);
 }

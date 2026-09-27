@@ -188,13 +188,15 @@ describe('SiteHeader seller entry point', () => {
   })
 
   /**
-   * The header falls back to the portal's local flag when the server reports no
-   * session, which is what makes demo mode work - there the portal signs in
-   * locally and never sets a cookie. That fallback must not let a leftover flag
-   * claim sellerhood for real: with a live backend the provider evicts it, and
-   * the header goes back to pitching.
+   * Nothing on the client can make someone signed in.
+   *
+   * The header used to fall back to a flag the portal kept in localStorage, because
+   * the demo sign-in bypass minted a seller with no cookie behind it and that flag
+   * was the only trace of it. The bypass is gone and so is the fallback: a value left
+   * in localStorage - by an older build, or by hand - buys nothing. The server's
+   * answer is the only answer.
    */
-  it('stops treating a leftover local flag as a seller once the server denies it', async () => {
+  it('does not treat anything in localStorage as a signed-in seller', async () => {
     localStorage.setItem(
       'seller:session',
       JSON.stringify({ sellerId: 'seller-1', email: 'shop@example.com' }),
@@ -207,7 +209,7 @@ describe('SiteHeader seller entry point', () => {
     )
   })
 
-  // A real cookie is the better answer than a flag left in localStorage.
+  // The cookie decides, and a leftover flag beside it changes nothing.
   it('treats a buyer cookie as a buyer even with a stale seller flag', async () => {
     localStorage.setItem(
       'seller:session',

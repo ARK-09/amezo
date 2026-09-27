@@ -21,6 +21,8 @@ public record ProductDetailResponse(
         UUID sellerId,
         String title,
         String brandName,
+        /** The store that lists it - see ProductSummaryResponse on why brandName is not one. */
+        StoreRefResponse store,
         CategoryResponse category,
         String description,
         List<ImageResponse> images,

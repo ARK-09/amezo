@@ -28,7 +28,7 @@ import {
   type SellerProductFilters,
   type SellerProductRow,
 } from '@/features/seller-portal/api/useSellerCatalog'
-import { useDeleteProduct } from '@/features/seller-portal/api/useSellerProducts'
+import { useDeleteProduct, useSellerProduct } from '@/features/seller-portal/api/useSellerProducts'
 import {
   Drawer,
   DrawerBody,
@@ -49,6 +49,12 @@ import { useProductForm } from '@/features/seller-portal/components/useProductFo
 import { ProductViewPanel } from '@/features/seller-portal/components/ProductViewPanel'
 import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
 import { formatPrice } from '@/lib/formatPrice'
+import {
+  drawerParamsOnly,
+  useRecordDrawer,
+  useRecordSnapshot,
+  type DrawerMode,
+} from '@/lib/recordDrawer'
 
 /** The design's own default; below this the stock cell warns. */
 const LOW_STOCK = 10
@@ -92,28 +98,19 @@ function sizeParam(raw: string | null) {
 }
 
 /**
- * What the drawer is showing. One piece of state rather than three booleans, so
- * "viewing" and "editing" cannot both be true - they are two drawers the design
- * swaps between, not a drawer with a tab.
- */
-type DrawerState =
-  | { mode: 'view'; id: string; row: SellerProductRow | null }
-  | { mode: 'edit'; id: string; row: SellerProductRow | null }
-  | { mode: 'add' }
-  | null
-
-/**
- * The route the drawer's "Full page" opens, for whatever it is showing. Null
+ * The route the drawer's "Full page" opens, for whatever it is showing. Undefined
  * while the drawer is closed, which is also when there is nothing to link to.
  */
-function fullPageTo(drawer: DrawerState) {
-  if (!drawer) return undefined
-  return drawer.mode === 'add' ? '/seller/products/new' : `/seller/products/${drawer.id}`
+function fullPageTo(mode: DrawerMode | null, recordId: string | null) {
+  if (!mode) return undefined
+  return mode === 'create' ? '/seller/products/new' : `/seller/products/${recordId ?? ''}`
 }
 
 export function SellerProducts() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [drawer, setDrawer] = useState<DrawerState>(null)
+  // Which product is open, and in which of the three modes, lives in the URL:
+  // ?id=123&mode=view, ?id=123&mode=edit, ?id=new&mode=create. See lib/recordDrawer.
+  const drawer = useRecordDrawer()
   // The design confirms a row delete inline in the cell rather than in a modal.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
@@ -182,8 +179,10 @@ export function SellerProducts() {
     patch({ q: value }, Boolean(q))
   }
 
-  function closeDrawer() {
-    setDrawer(null)
+  // Clears the table's own state only: the drawer's ?id=/?mode= survive, because
+  // tidying the list is not a reason to shut the record the seller is reading.
+  function clearFilters() {
+    setSearchParams(drawerParamsOnly(searchParams))
   }
 
   const rows = query.data?.content ?? []
@@ -193,6 +192,11 @@ export function SellerProducts() {
   // doesn't exist, and let Previous walk back into the range that does.
   const shownPage = Math.min(page, totalPages - 1)
   const hasFilters = Boolean(q) || status !== 'all' || categorySlug !== 'all' || sort !== 'newest'
+  // The list row the drawer's header reads while the record's own request is in
+  // flight, kept for as long as the URL names it - archiving a product takes it out
+  // of the active filter, and a drawer derived only from the current page slammed
+  // shut the moment the save succeeded.
+  const openRow = useRecordSnapshot(drawer.recordId, rows)
 
   return (
     // h-full, and every child but the table shrink-0: the shell hands this page a
@@ -206,7 +210,7 @@ export function SellerProducts() {
             {counts.isLoading ? 'Loading…' : `${counts.total} products · ${counts.active} active`}
           </p>
         </div>
-        <Button className="gap-1.5" onClick={() => setDrawer({ mode: 'add' })}>
+        <Button className="gap-1.5" onClick={drawer.openCreate}>
           <Plus className="size-4" aria-hidden />
           Add product
         </Button>
@@ -266,7 +270,7 @@ export function SellerProducts() {
         </Select>
 
         {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={() => setSearchParams(new URLSearchParams())}>
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
             Clear filters
           </Button>
         )}
@@ -324,11 +328,11 @@ export function SellerProducts() {
               : 'Add your first listing to start selling.'}
           </p>
           {hasFilters ? (
-            <Button variant="outline" onClick={() => setSearchParams(new URLSearchParams())}>
+            <Button variant="outline" onClick={clearFilters}>
               Clear filters
             </Button>
           ) : (
-            <Button onClick={() => setDrawer({ mode: 'add' })}>Add product</Button>
+            <Button onClick={drawer.openCreate}>Add product</Button>
           )}
         </div>
       )}
@@ -377,7 +381,7 @@ export function SellerProducts() {
                   // The whole row opens the record, as the design has it.
                   // Keyboard reaches the same thing through the Edit button and
                   // the title, so this is a shortcut rather than the only way in.
-                  onClick={() => setDrawer({ mode: 'view', id: row.id, row })}
+                  onClick={() => drawer.open(row.id)}
                   className="cursor-pointer"
                 >
                   <TableCell>
@@ -452,7 +456,7 @@ export function SellerProducts() {
                           variant="outline"
                           onClick={(e) => {
                             e.stopPropagation()
-                            setDrawer({ mode: 'edit', id: row.id, row })
+                            drawer.open(row.id, 'edit')
                           }}
                         >
                           Edit
@@ -481,44 +485,46 @@ export function SellerProducts() {
       )}
 
       <Drawer
-        open={drawer !== null}
+        open={drawer.isOpen}
         onOpenChange={(next) => {
-          if (!next) closeDrawer()
+          if (!next) drawer.close()
         }}
-        mode={drawer?.mode ?? 'view'}
-        ariaLabel={drawer?.mode === 'view' ? 'Product details' : 'Product form'}
+        // The shared Drawer calls the create mode "add"; the URL calls it "create",
+        // which is the word every screen's ?mode= uses. Translated here, once.
+        mode={drawer.mode === 'create' ? 'add' : (drawer.mode ?? 'view')}
+        ariaLabel={drawer.mode === 'view' ? 'Product details' : 'Product form'}
         // The design's two widths: 520 to read a record, 620 to edit one.
-        width={drawer?.mode === 'view' ? 520 : 620}
+        width={drawer.mode === 'view' ? 520 : 620}
         // The dedicated route behind "Full page", per mode. All three exist:
         // /seller/products/new for a new listing, /seller/products/:id for one
         // that is already there.
-        fullPageTo={fullPageTo(drawer)}
+        fullPageTo={fullPageTo(drawer.mode, drawer.recordId)}
       >
-        {drawer?.mode === 'view' && (
+        {drawer.mode === 'view' && drawer.recordId && (
           <ViewDrawerContent
-            id={drawer.id}
-            row={drawer.row}
-            onEdit={() => setDrawer({ mode: 'edit', id: drawer.id, row: drawer.row })}
+            id={drawer.recordId}
+            row={openRow}
+            onEdit={() => drawer.setMode('edit')}
             onDeleted={(title) => {
-              closeDrawer()
+              drawer.close()
               showFlash(`Deleted ${title}.`)
             }}
           />
         )}
 
-        {drawer?.mode === 'edit' && (
+        {drawer.mode === 'edit' && drawer.recordId && (
           <EditDrawerContent
-            row={drawer.row}
-            id={drawer.id}
-            onCancel={closeDrawer}
+            row={openRow}
+            id={drawer.recordId}
+            onCancel={drawer.close}
             onSaved={(title) => {
-              closeDrawer()
+              drawer.close()
               showFlash(`Saved changes to ${title}.`)
             }}
           />
         )}
 
-        {drawer?.mode === 'add' && (
+        {drawer.mode === 'create' && (
           <AddDrawerContent
             onCreated={(product, imageFailures) => {
               // The listing itself is saved by now; only its pictures can fail
@@ -526,16 +532,16 @@ export function SellerProducts() {
               // drawer becomes that product's edit drawer so the missing images
               // can be added where they are missing from.
               if (imageFailures.length > 0) {
-                setDrawer({ mode: 'edit', id: product.id, row: null })
+                drawer.open(product.id, 'edit')
                 showFlash(
                   `Added ${product.title}, but ${imageFailures.length} ${imageFailures.length === 1 ? 'image' : 'images'} didn't upload.`,
                 )
                 return
               }
-              closeDrawer()
+              drawer.close()
               showFlash(`Added ${product.title}.`)
             }}
-            onCancel={closeDrawer}
+            onCancel={drawer.close}
           />
         )}
       </Drawer>
@@ -592,15 +598,24 @@ function ViewDrawerContent({
 }) {
   const [confirming, setConfirming] = useState(false)
   const deleteProduct = useDeleteProduct()
+  // The record itself, for a drawer opened from a URL rather than from a row: the
+  // list may not contain it at all (?id= names a product the current filter hides,
+  // or a pasted link arrived before any list did), and the header read "Product"
+  // with no status and no category. Same query key as the panel below, so this
+  // costs no extra request.
+  const record = useSellerProduct(id)
+  const header = row ?? record.data ?? null
 
   return (
     <>
       <DrawerHeader
-        status={row && <StatusBadge status={row.status} />}
-        meta={row?.category.name}
+        // The row always carries a status; the detail declares it optional, so a
+        // header built from the record alone can legitimately have none to show.
+        status={header?.status ? <StatusBadge status={header.status} /> : null}
+        meta={header?.category.name}
       >
-        <DrawerTitle>{row?.title ?? 'Product'}</DrawerTitle>
-        <DrawerSubline>{row?.brandName || 'No brand set'}</DrawerSubline>
+        <DrawerTitle>{header?.title ?? 'Product'}</DrawerTitle>
+        <DrawerSubline>{header?.brandName || 'No brand set'}</DrawerSubline>
       </DrawerHeader>
 
       <DrawerBody>

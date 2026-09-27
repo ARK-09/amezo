@@ -23,7 +23,6 @@ import {
 import {
   useSellerOrderRows,
   type SellerOrderFilters,
-  type SellerOrderRow,
 } from '@/features/seller-portal/api/useSellerCatalog'
 import { useSellerOrderFacets } from '@/features/seller-portal/api/useSellerFacets'
 import { DetailDrawer } from '@/features/seller-portal/components/DetailDrawer'
@@ -32,6 +31,7 @@ import { SellerOrderPanel } from '@/features/seller-portal/components/SellerOrde
 import { StatusBadge } from '@/features/seller-portal/components/StatusBadge'
 import { formatMediumDate } from '@/lib/formatDate'
 import { formatPrice } from '@/lib/formatPrice'
+import { drawerParamsOnly, useRecordDrawer, useRecordSnapshot } from '@/lib/recordDrawer'
 
 /** The sizes the design's Per page select offers, and the one it opens on. */
 const PAGE_SIZES = [5, 10, 20, 50] as const
@@ -103,8 +103,8 @@ function groupParam(raw: string | null, status: string): OrderGroup {
 
 export function SellerOrders() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [openId, setOpenId] = useState<string | null>(null)
-  const [openSnapshot, setOpenSnapshot] = useState<SellerOrderRow | null>(null)
+  // Which order is open, and in what mode, lives in the URL - see lib/recordDrawer.
+  const drawer = useRecordDrawer()
 
   const q = searchParams.get('q') ?? ''
   const status = searchParams.get('status') ?? ''
@@ -164,6 +164,12 @@ export function SellerOrders() {
     patch({ q: value }, Boolean(q))
   }
 
+  // Clears the table's own state only: the drawer's ?id=/?mode= survive, because
+  // tidying the list is not a reason to shut the record the seller is reading.
+  function clearFilters() {
+    setSearchParams(drawerParamsOnly(searchParams))
+  }
+
   const rows = query.data?.content ?? []
   const total = query.data?.totalElements ?? 0
   const totalPages = query.data?.totalPages ?? 1
@@ -185,11 +191,10 @@ export function SellerOrders() {
       : query.isLoading
         ? 'Loading…'
         : `${total} order${total === 1 ? '' : 's'}`
-  // Snapshotted when the drawer opens. Acting on a record usually moves it
-  // out of the bucket being viewed - deriving the drawer from the current
-  // page meant it slammed shut the instant the action succeeded, before the
-  // seller saw the result.
-  const openRow = rows.find((row) => row.id === openId) ?? openSnapshot
+  // The row the drawer draws from, kept while the URL names it: packing an order
+  // takes it out of "To pack", and a drawer derived only from the current page
+  // slammed shut the instant the action succeeded.
+  const openRow = useRecordSnapshot(drawer.recordId, rows)
 
   return (
     <div className="flex flex-col gap-5">
@@ -239,7 +244,7 @@ export function SellerOrders() {
         </Select>
 
         {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={() => setSearchParams(new URLSearchParams())}>
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
             Clear filters
           </Button>
         )}
@@ -272,7 +277,7 @@ export function SellerOrders() {
             {hasFilters ? 'Try a different search or filter.' : 'Orders appear here as buyers place them.'}
           </p>
           {hasFilters && (
-            <Button variant="outline" onClick={() => setSearchParams(new URLSearchParams())}>
+            <Button variant="outline" onClick={clearFilters}>
               Clear filters
             </Button>
           )}
@@ -315,10 +320,7 @@ export function SellerOrders() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => {
-                        setOpenId(row.id)
-                        setOpenSnapshot(row)
-                      }}>
+                    <Button variant="outline" size="sm" onClick={() => drawer.open(row.id)}>
                       Open
                     </Button>
                   </TableCell>
@@ -349,11 +351,9 @@ export function SellerOrders() {
       )}
 
       <DetailDrawer
-        open={Boolean(openId)}
+        open={drawer.isOpen}
         onOpenChange={(next) => {
-          if (next) return
-          setOpenId(null)
-          setOpenSnapshot(null)
+          if (!next) drawer.close()
         }}
         title={openRow ? `Order ${openRow.reference}` : 'Order'}
         description={openRow?.recipientName}
