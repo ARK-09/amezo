@@ -48,17 +48,22 @@ export function CategoryRail({
         stayed inset. Sitting inside the container costs a tile being clipped flush
         mid-scroll, which is what a grid section does at its edge too.
 
-        scroll-smooth animates the jumps something else drives - a keyboard's arrow
-        keys, End, a future pair of arrow buttons - rather than teleporting. snap-x is
-        PROXIMITY snapping in Tailwind unless told otherwise, and deliberately so: it
-        settles a swipe onto a tile edge when it lands near one and otherwise leaves
-        the reader exactly where they stopped, where mandatory snapping would fight
-        anyone trying to look between two tiles.
+        snap-x snap-mandatory with snap-start on each tile: every scroll settles with
+        a tile flush against the rail's leading edge, so the strip never comes to rest
+        showing two half-tiles. scroll-smooth animates the jumps something else drives
+        - a keyboard's arrow keys, End, a future pair of arrow buttons - rather than
+        teleporting to them.
+
+        Mandatory rather than the proximity that `snap-x` alone would give, because
+        settling every time is the behaviour asked for. The cost is real and worth
+        knowing: mandatory snapping will not let the rail rest between two tiles, so a
+        reader who wants to look at the seam of two cannot. If that ever bites, the fix
+        is dropping snap-mandatory, not changing anything else here.
 
         overscroll-x-contain keeps a swipe that reaches the end of the rail from
         continuing into the browser's own back gesture.
       */}
-      <div className="rail-no-scrollbar flex snap-x gap-4 overflow-x-auto overscroll-x-contain scroll-smooth pb-1">
+      <div className="rail-no-scrollbar flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain scroll-smooth pb-1">
         {categories.map((category) => {
           const image = categoryImage(category.slug)
           return (

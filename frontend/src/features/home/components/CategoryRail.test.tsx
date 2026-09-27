@@ -46,22 +46,22 @@ describe('CategoryRail scrolling', () => {
   })
 
   /**
-   * Scrolling that settles rather than teleports.
+   * Scrolling that settles on a tile rather than resting mid-tile.
    *
-   * snap-x is PROXIMITY snapping in Tailwind unless told otherwise, which is the
-   * point: it catches a swipe that lands near a tile edge and leaves a reader who
-   * stopped deliberately between two tiles alone. snap-mandatory would fight them,
-   * so its absence is asserted too.
+   * Mandatory, not the proximity that `snap-x` alone would give: every scroll comes to
+   * rest with a tile flush against the rail's leading edge, so the strip never stops
+   * showing two half-tiles. Verified in Chromium as well as here - scrolls of 40, 90,
+   * 200 and 333px all landed on an exact multiple of the 148px tile pitch.
    */
   it('snaps to tiles and animates the scrolls something else drives', () => {
     renderRail()
 
     const strip = screen.getByRole('link', { name: /Electronics/ }).parentElement!
     expect(strip).toHaveClass('snap-x')
+    expect(strip).toHaveClass('snap-mandatory')
     expect(strip).toHaveClass('scroll-smooth')
     // A swipe past the end of the rail must not become the browser's back gesture.
     expect(strip).toHaveClass('overscroll-x-contain')
-    expect([...strip.classList]).not.toContain('snap-mandatory')
     // Each tile is a snap target, at its own leading edge.
     expect(screen.getByRole('link', { name: /Electronics/ })).toHaveClass('snap-start')
   })

@@ -101,7 +101,7 @@ function StoreHeaderSkeleton() {
       <div className="flex flex-wrap items-end gap-6 px-6 pb-[22px]">
         {/* The same lift as the real tile, so the header does not shift under the
             reader when the store lands. */}
-        <Skeleton className="-mt-[44px] size-[88px] shrink-0 self-start rounded-xl" />
+        <Skeleton className="relative z-10 -mt-[44px] size-[88px] shrink-0 self-start rounded-xl" />
         <div className="min-w-[260px] flex-1 pt-4">
           <Skeleton className="h-7 w-52" />
           <Skeleton className="mt-2.5 h-4 w-80" />
@@ -246,25 +246,32 @@ export function StoreFront() {
 
             <div className="flex flex-wrap items-end gap-6 px-6 pb-[22px]">
               {/*
-                Straddling the cover's bottom edge, with a shadow under it.
+                The store's badge, straddling the cover's bottom edge.
 
-                self-start is doing the real work, and the negative margin only started
-                working once it was there. This row is items-end, which pins an item by
-                its margin-box BOTTOM - so a negative margin-top shortened the tile's
-                margin box and moved the tile itself not at all. The -mt here has been
-                inert for as long as it has existed, which is why the tile sat almost
-                entirely below the band (11px of its 88 overlapped) and read as a box
-                under the cover rather than a badge on it.
+                THREE things are load-bearing here and each one was broken on its own:
 
-                Aligned to the top of the row instead, -mt-[44px] means exactly what it
-                says: half the tile over the band. It still costs no layout - the tile
-                is not the tallest item in the row, so what it does is move itself.
+                `relative z-10` is what makes the overlap visible at all. The cover band
+                above is position:relative, and CSS paints positioned elements above
+                non-positioned ones whatever the source order - so this tile overlapped
+                the band by a measured 44px and was painted UNDERNEATH it the whole
+                time. Only the half below the band showed, which read as a box sitting
+                at the cover's edge rather than a badge on it. Verified rather than
+                reasoned about: elementFromPoint at this tile's top centre returned the
+                cover's own layer, and the pixel there was the band's dark grey.
 
-                The shadow separates it from the page BELOW the band, where the 3px
-                white border is invisible against a white background. Between them they
-                work over a pale cover, a dark one and a busy one alike.
+                `self-start` is what makes the negative margin mean anything. The row is
+                items-end, which pins an item by its margin-box BOTTOM, so -mt shortened
+                this tile's margin box and moved the tile itself not at all - inert for
+                as long as it had existed. Aligned to the top of the row, -mt-[44px]
+                says what it does: half the tile over the band.
+
+                The shadow separates it from the page BELOW the band, where a white
+                border on a white background separates nothing. Spelled out rather than
+                a shadow-* step so the weight is tunable on its own: 10% black over a
+                wide blur, which lifts the tile without drawing a grey box around it -
+                measured at rgb(246) against white, a hair off the page and no more.
               */}
-              <div className="-mt-[44px] flex size-[88px] shrink-0 items-center justify-center self-start overflow-hidden rounded-xl border-[3px] border-background bg-muted shadow-lg">
+              <div className="relative z-10 -mt-[44px] flex size-[88px] shrink-0 items-center justify-center self-start overflow-hidden rounded-xl border-[3px] border-background bg-muted shadow-[0_4px_16px_rgba(0,0,0,0.10)]">
                 {store.data.logoUrl ? (
                   <img
                     src={store.data.logoUrl}
