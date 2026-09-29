@@ -1,6 +1,6 @@
 import type { components } from '@/lib/api/schema'
 
-import { seedProducts, seedStoreRefs } from './products'
+import { seedProducts, seedStoreRefs, seedUnitsSold } from './products'
 import { getStoreProfile } from './storeProfile'
 
 type Category = components['schemas']['Category']
@@ -220,6 +220,29 @@ function averageRating(listings: ProductSummary[]): number | null {
 function categoriesOf(listings: ProductSummary[]): Category[] {
   const bySlug = new Map(listings.map((product) => [product.category.slug, product.category]))
   return Array.from(bySlug.values()).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * GET /api/v1/stores/featured, by the same rule the server uses: the shops whose
+ * listings have shifted the most units, falling back to the size of the catalogue
+ * where nothing has sold, and only ever a shop that is OPEN and has something
+ * listed.
+ *
+ * Worth mirroring rather than hard-coding a winner, because the mock catalogue
+ * already contains the interesting case: Hearth & Home has sold the most units of
+ * anyone here and is on VACATION, so it must NOT be the featured shop.
+ */
+export function featuredStores(size: number): PublicStore[] {
+  return storeRefs()
+    .map((ref) => ({ ref, listings: storeListings(ref.id!) }))
+    .filter(({ ref, listings }) => listings.length > 0 && facadeFor(ref).status === 'OPEN')
+    .map((shop) => ({
+      ...shop,
+      units: shop.listings.reduce((sum, product) => sum + seedUnitsSold(product.id), 0),
+    }))
+    .sort((a, b) => b.units - a.units || b.listings.length - a.listings.length)
+    .slice(0, size)
+    .map(({ ref }) => publicStoreOf(ref, null))
 }
 
 export function publicStoreOf(ref: StoreRef, following: boolean | null): PublicStore {

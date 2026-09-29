@@ -25,8 +25,37 @@ export type StoreProductFilters = {
 export const storefrontKeys = {
   all: ['store'] as const,
   detail: (handle: string) => ['store', 'public', handle] as const,
+  featured: (size: number) => ['store', 'featured', size] as const,
   products: (handle: string, filters: StoreProductFilters) =>
     ['store', 'public', handle, 'products', filters] as const,
+}
+
+/**
+ * The shops the landing page puts forward, best first.
+ *
+ * The "Featured seller" panel used to be assembled in the browser out of whichever
+ * product happened to be first in a rail - its brandName as the heading, its
+ * StoreRef as the link. That made "featured" mean "listed most recently", and the
+ * shop's own cover and logo could never appear at all, because a StoreRef carries
+ * neither. The server ranks shops by what they have actually sold and answers with
+ * the whole storefront, artwork included.
+ *
+ * An empty array is a real answer - no open, stocked shop to name - and the caller
+ * drops the panel rather than inventing one.
+ */
+export function useFeaturedStores(size = 1) {
+  return useQuery<PublicStore[], ProblemDetail>({
+    queryKey: storefrontKeys.featured(size),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await apiClient.GET('/api/v1/stores/featured', {
+        signal,
+        params: { query: { size } },
+      })
+      if (error) throw error
+      return data
+    },
+    staleTime: 5 * 60 * 1000,
+  })
 }
 
 /** The storefront header: cover, logo, about, policies and the stats strip. */

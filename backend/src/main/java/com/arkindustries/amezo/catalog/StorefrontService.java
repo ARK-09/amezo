@@ -7,6 +7,7 @@ import com.arkindustries.amezo.catalog.dto.PublicStoreResponse;
 import com.arkindustries.amezo.common.exception.NotFoundException;
 import com.arkindustries.amezo.identity.api.PublicStoreProfile;
 import com.arkindustries.amezo.identity.api.PublicStoreQuery;
+import com.arkindustries.amezo.orders.api.SellerSalesQuery;
 import com.arkindustries.amezo.reviews.api.ReviewSummaryQuery;
 import com.arkindustries.amezo.reviews.api.ReviewSummaryView;
 import org.springframework.data.domain.Page;
@@ -16,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -50,28 +53,114 @@ public class StorefrontService {
     /** The design's default page of listings. */
     static final int DEFAULT_SIZE = 20;
 
+    /**
+     * How many ranked sellers to ask for per store wanted. Covers the ones with no
+     * store row, a closed shop, or an empty catalogue, without ranking every seller
+     * on the marketplace.
+     */
+    private static final int OVER_FETCH = 5;
+
     private final PublicStoreQuery publicStoreQuery;
     private final ProductRepository productRepository;
     private final ProductService productService;
     private final CategoryService categoryService;
     private final ReviewSummaryQuery reviewSummaryQuery;
+    private final SellerSalesQuery sellerSalesQuery;
 
     public StorefrontService(
             PublicStoreQuery publicStoreQuery,
             ProductRepository productRepository,
             ProductService productService,
             CategoryService categoryService,
-            ReviewSummaryQuery reviewSummaryQuery) {
+            ReviewSummaryQuery reviewSummaryQuery,
+            SellerSalesQuery sellerSalesQuery) {
         this.publicStoreQuery = publicStoreQuery;
         this.productRepository = productRepository;
         this.productService = productService;
         this.categoryService = categoryService;
         this.reviewSummaryQuery = reviewSummaryQuery;
+        this.sellerSalesQuery = sellerSalesQuery;
+    }
+
+    /**
+     * The featured storefronts - the landing page's "Featured seller" panel.
+     *
+     * <h2>Why this is an endpoint rather than a tile the client assembles</h2>
+     *
+     * The panel used to be filled from whichever product happened to be first in a
+     * rail: its brand name as a heading, its store ref as a link, and no artwork at
+     * all, because a StoreRef is only {id, name, handle}. So "featured" meant
+     * "listed most recently", the shop's own cover and logo never appeared, and the
+     * page had no way to ask for either. A store is data; this answers with it.
+     *
+     * <h2>What "featured" means here</h2>
+     *
+     * The shop whose listings have shifted the most units, over all of history -
+     * the same signal the best-sellers rail uses, one level up, and the same
+     * division of labour: orders ranks (it owns order_line), identity decides whose
+     * shop may be shown at all, and this assembles the page shape.
+     *
+     * A marketplace with no orders yet is the interesting case, and it falls back to
+     * the sellers with the most listings rather than returning nothing. Both rules
+     * answer "featured" honestly; neither claims a rating or a badge nobody awarded.
+     * A shop is only ever featured if it is OPEN (identity's judgement) and has
+     * something listed - featuring a storefront a shopper would find empty is worse
+     * than featuring nobody, which an empty list leaves the client free to do.
+     */
+    @Transactional(readOnly = true)
+    public List<PublicStoreResponse> featured(int size) {
+        if (size < 1) {
+            return List.of();
+        }
+        int candidates = size * OVER_FETCH;
+
+        List<UUID> ranked = new ArrayList<>(sellerSalesQuery.bestSellingSellerIds(null, candidates));
+        // Topped up rather than replaced: a marketplace with two sellers who have sold
+        // something and a third who has not still fills a three-tile rail, and the two
+        // that sold keep their places at the front.
+        for (UUID sellerId : productRepository.sellerIdsWithMostActiveListings(candidates)) {
+            if (!ranked.contains(sellerId)) {
+                ranked.add(sellerId);
+            }
+        }
+        if (ranked.isEmpty()) {
+            return List.of();
+        }
+
+        Map<UUID, PublicStoreProfile> openStores = new HashMap<>();
+        for (PublicStoreProfile profile : publicStoreQuery.findOpenBySellerIds(ranked)) {
+            openStores.put(profile.sellerId(), profile);
+        }
+
+        Map<UUID, PublicStoreProfile> chosen = new LinkedHashMap<>();
+        for (UUID sellerId : ranked) {
+            PublicStoreProfile profile = openStores.get(sellerId);
+            // Empty shops are not featured. The count is one aggregate per candidate
+            // and stops as soon as the rail is full.
+            if (profile != null && productRepository.countActiveForSeller(sellerId) > 0) {
+                chosen.put(sellerId, profile);
+            }
+            if (chosen.size() == size) {
+                break;
+            }
+        }
+
+        return chosen.values().stream().map(this::toResponse).toList();
     }
 
     @Transactional(readOnly = true)
     public PublicStoreResponse getByHandle(String handle) {
-        PublicStoreProfile store = requireStore(handle);
+        return toResponse(requireStore(handle));
+    }
+
+    /**
+     * A store profile plus everything the catalogue knows about it.
+     *
+     * Extracted so the featured rail and the store page answer with the SAME shape
+     * assembled the same way - a featured card that counted its listings differently
+     * from the page it opens would be a discrepancy a shopper can see.
+     */
+    private PublicStoreResponse toResponse(PublicStoreProfile store) {
         UUID sellerId = store.sellerId();
 
         ReviewSummaryView rating = ratingFor(sellerId);

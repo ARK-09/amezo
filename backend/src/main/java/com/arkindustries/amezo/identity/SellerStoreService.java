@@ -452,6 +452,16 @@ public class SellerStoreService {
      * collide with itself.
      */
     private String requireHandleFree(String handle, UUID ownStoreId) {
+        // A handle the routing owns is refused as a clash rather than as a validation
+        // error: from the seller's side it IS taken, and StoreSettings.tsx already
+        // marks the field from this shape.
+        if (StoreHandles.isReserved(handle)) {
+            throw new ConflictException(
+                    URI.create("https://api/errors/handle-taken"),
+                    "Handle already in use",
+                    "Handle " + handle + " is reserved",
+                    List.of(new ConflictException.FieldError("handle", "already in use")));
+        }
         stores.findByHandle(handle)
                 .filter(other -> !other.getId().equals(ownStoreId))
                 .ifPresent(clash -> {

@@ -1,6 +1,7 @@
 package com.arkindustries.amezo.identity;
 
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
@@ -42,6 +43,16 @@ public final class StoreHandles {
      */
     static final String FALLBACK = "store";
 
+    /**
+     * Handles the routing has taken, so no seller can be given one.
+     *
+     * /api/v1/stores/featured is a literal segment and Spring prefers a literal over
+     * the {handle} variable beside it, so a shop at this handle would be unreachable
+     * at its own URL - the rail would answer instead. Cheaper to refuse the two
+     * characters than to explain the 404 later.
+     */
+    private static final Set<String> RESERVED = Set.of("featured");
+
     private static final Pattern NON_HANDLE = Pattern.compile("[^a-z0-9]+");
 
     private StoreHandles() {
@@ -82,7 +93,7 @@ public final class StoreHandles {
      */
     public static String unique(String raw, Predicate<String> taken) {
         String base = from(raw);
-        if (!taken.test(base)) {
+        if (!isReserved(base) && !taken.test(base)) {
             return base;
         }
         for (int suffix = 2; suffix < Integer.MAX_VALUE; suffix++) {
@@ -92,11 +103,16 @@ public final class StoreHandles {
             // on a dash and a trailing dash is exactly what the pattern forbids.
             String head = trimDashes(cut(base, MAX_LENGTH - tail.length()));
             String candidate = head.isEmpty() ? FALLBACK + tail : head + tail;
-            if (!taken.test(candidate)) {
+            if (!isReserved(candidate) && !taken.test(candidate)) {
                 return candidate;
             }
         }
         throw new IllegalStateException("Could not find a free store handle for '" + raw + "'");
+    }
+
+    /** Whether this handle belongs to a route rather than to a shop. */
+    public static boolean isReserved(String handle) {
+        return handle != null && RESERVED.contains(handle.toLowerCase(Locale.ROOT).trim());
     }
 
     private static String cut(String value, int max) {
