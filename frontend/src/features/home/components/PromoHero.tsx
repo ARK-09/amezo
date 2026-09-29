@@ -5,6 +5,7 @@ import type { ProductSummary } from '@/features/search/schema/types'
 import { formatPrice } from '@/lib/formatPrice'
 import { cn } from '@/lib/utils'
 import type { Category } from '@/features/reference/api/useCategories'
+import { explorePromoImage } from '@/features/reference/promoImage'
 
 const SLIDE_COUNT = 4
 const ROTATE_MS = 6000
@@ -82,6 +83,19 @@ export function PromoHero({
 
         {sideCategory && (
           <div className="relative flex min-h-[240px] flex-col justify-center overflow-hidden rounded-lg border bg-muted p-7 [flex:1_1_260px]">
+            {explorePromoImage(sideCategory.slug) && (
+              <>
+                <img
+                  src={explorePromoImage(sideCategory.slug)!}
+                  alt=""
+                  className="absolute inset-0 size-full object-cover"
+                />
+                {/* A light wash rather than a dark one: the label is muted grey and
+                    the category name is brand orange, both of which need a pale
+                    ground to read against. */}
+                <div className="absolute inset-0 bg-gradient-to-r from-background via-background/85 to-background/25" />
+              </>
+            )}
             <div
               className="absolute inset-0"
               style={{
