@@ -5,7 +5,10 @@ import com.arkindustries.amezo.identity.api.PublicStoreQuery;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Identity's read-only answer for the public storefront - see {@link PublicStoreQuery}.
@@ -37,6 +40,17 @@ class PublicStoreService implements PublicStoreQuery {
             return Optional.empty();
         }
         return stores.findByHandle(handle.trim()).map(this::toProfile);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PublicStoreProfile> findOpenBySellerIds(Collection<UUID> sellerIds) {
+        if (sellerIds == null || sellerIds.isEmpty()) {
+            return List.of();
+        }
+        return stores.findBySellerIdInAndStatus(sellerIds, StoreStatus.OPEN).stream()
+                .map(this::toProfile)
+                .toList();
     }
 
     private PublicStoreProfile toProfile(SellerStore store) {

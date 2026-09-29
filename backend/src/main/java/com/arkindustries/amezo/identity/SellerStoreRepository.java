@@ -18,6 +18,12 @@ public interface SellerStoreRepository extends JpaRepository<SellerStore, UUID> 
     List<SellerStore> findBySellerIdIn(Collection<UUID> sellerIds);
 
     /**
+     * The same, narrowed to shops that are actually trading - for the featured-store
+     * rail, which must not put a closed or holidaying shop on the front page.
+     */
+    List<SellerStore> findBySellerIdInAndStatus(Collection<UUID> sellerIds, StoreStatus status);
+
+    /**
      * Exact match, not IgnoreCase, and that IS the contract's case-insensitive
      * lookup: StoreHandle admits lowercase only, both the request DTO and V18's
      * CHECK enforce it, so every stored and every submitted handle is already

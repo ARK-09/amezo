@@ -11,16 +11,21 @@ import com.arkindustries.amezo.catalog.dto.StoreRefResponse;
 import com.arkindustries.amezo.common.exception.NotFoundException;
 import com.arkindustries.amezo.identity.api.StoreRef;
 import com.arkindustries.amezo.identity.api.StoreRefQuery;
+import com.arkindustries.amezo.orders.api.ProductSalesQuery;
 import com.arkindustries.amezo.reviews.api.ReviewSummaryQuery;
 import com.arkindustries.amezo.reviews.api.ReviewSummaryView;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +39,16 @@ import java.util.stream.Collectors;
 public class ProductService
         implements ProductExistenceQuery, ProductVariantSummaryQuery, ProductReferenceResolver {
 
+    /**
+     * How many ranked candidates to ask orders for, per tile wanted. Covers the best
+     * sellers that have since been archived or delisted, without asking for a ranking
+     * of the whole catalog.
+     */
+    private static final int OVER_FETCH = 4;
+
+    /** A ceiling on that, so a large page size cannot turn a rail into a full scan. */
+    private static final int MAX_RANKED_CANDIDATES = 200;
+
     private final ProductRepository productRepository;
     private final VariantRepository variantRepository;
     private final OfferRepository offerRepository;
@@ -42,6 +57,7 @@ public class ProductService
     private final CategoryService categoryService;
     private final ImageUrlResolver imageUrls;
     private final StoreRefQuery storeRefQuery;
+    private final ProductSalesQuery productSalesQuery;
 
     public ProductService(
             ProductRepository productRepository,
@@ -51,7 +67,8 @@ public class ProductService
             ReviewSummaryQuery reviewSummaryQuery,
             CategoryService categoryService,
             ImageUrlResolver imageUrls,
-            StoreRefQuery storeRefQuery) {
+            StoreRefQuery storeRefQuery,
+            ProductSalesQuery productSalesQuery) {
         this.productRepository = productRepository;
         this.variantRepository = variantRepository;
         this.offerRepository = offerRepository;
@@ -60,6 +77,7 @@ public class ProductService
         this.categoryService = categoryService;
         this.imageUrls = imageUrls;
         this.storeRefQuery = storeRefQuery;
+        this.productSalesQuery = productSalesQuery;
     }
 
     /**
@@ -83,9 +101,93 @@ public class ProductService
         // sort parameter drive ORDER BY inside the query, where the aggregate it
         // sorts on actually exists.
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
-        Page<Product> products = productRepository.search(
-                query, categorySlug, sellerId, priceMin, priceMax, inStockOnly, sort, unsorted);
+        return withCardDetail(productRepository.search(
+                query, categorySlug, sellerId, priceMin, priceMax, inStockOnly, sort, unsorted));
+    }
 
+    /**
+     * The best-selling products, as a merchandising rail.
+     *
+     * <h2>The ranking is not this feature's to compute</h2>
+     *
+     * "Best selling" is {@code SUM(order_line.quantity)} - a fact about ORDERS, and
+     * catalog may not read that table (PackageBoundaryTest). So orders ranks and
+     * publishes ids ({@link ProductSalesQuery}), and this loads them, drops what must
+     * not be shown, and re-imposes the rank. Neither feature learns the other's schema.
+     *
+     * <h2>It over-fetches on purpose</h2>
+     *
+     * A product can sell well and then be archived, or run out of stock. Orders ranks
+     * what SOLD and knows nothing about either, so asking for exactly {@code size} ids
+     * returns a short rail whenever one of them is no longer listable. It asks for a
+     * multiple and trims after filtering.
+     *
+     * <h2>An empty answer is an honest answer</h2>
+     *
+     * A marketplace with no orders has no best sellers, and this returns an empty page
+     * rather than padding it with something else. The rail then removes itself instead
+     * of printing "popular" over products nobody has bought - which is the whole point
+     * of computing this rather than labelling a recency query.
+     */
+    @Transactional(readOnly = true)
+    public Page<ProductSummaryResponse> bestSelling(String categorySlug, Instant since, int size) {
+        if (size < 1) {
+            return Page.empty();
+        }
+        int candidates = Math.min(size * OVER_FETCH, MAX_RANKED_CANDIDATES);
+
+        List<UUID> ranked = categorySlug == null
+                ? productSalesQuery.bestSellingProductIds(since, candidates)
+                : productSalesQuery.bestSellingAmong(
+                        productRepository.activeProductIdsInCategory(categorySlug), since, candidates);
+        if (ranked.isEmpty()) {
+            return Page.empty();
+        }
+
+        // Rank position by id, so the order orders gave us survives a database that
+        // returns the rows in whatever order it likes.
+        Map<UUID, Integer> rankById = new HashMap<>();
+        for (int i = 0; i < ranked.size(); i++) {
+            rankById.put(ranked.get(i), i);
+        }
+
+        List<Product> listable = productRepository.findActiveByIdIn(ranked).stream()
+                .sorted(Comparator.comparingInt(product -> rankById.get(product.getId())))
+                .limit(size)
+                .toList();
+
+        return withCardDetail(new PageImpl<>(listable, PageRequest.of(0, size), listable.size()));
+    }
+
+    /**
+     * Products listed within a window, newest first - the "new arrivals" rail.
+     *
+     * A real window, not a bare ordering. Sorting by recency and calling the result
+     * "new this week" is true only by accident: with no WHERE clause the newest
+     * product in the catalog heads that rail however many months old it is. This
+     * returns nothing for a quiet week, and the rail removes itself rather than
+     * relabelling old stock as new.
+     */
+    @Transactional(readOnly = true)
+    public Page<ProductSummaryResponse> newArrivals(Instant since, int size) {
+        if (size < 1) {
+            return Page.empty();
+        }
+        List<Product> recent = productRepository.newArrivals(since, size);
+        return withCardDetail(new PageImpl<>(recent, PageRequest.of(0, size), recent.size()));
+    }
+
+    /**
+     * Everything a product CARD needs, for a page of products however it was chosen.
+     *
+     * Extracted so that a ranking which cannot be expressed as an ORDER BY - the
+     * best-selling rail, whose order comes from another feature entirely - renders
+     * identical cards to the search page rather than growing a second, drifting copy
+     * of the price, stock, thumbnail, rating and storefront lookups.
+     *
+     * A fixed number of batched queries for the whole page, never one per card.
+     */
+    private Page<ProductSummaryResponse> withCardDetail(Page<Product> products) {
         List<UUID> productIds = products.getContent().stream().map(Product::getId).toList();
         Map<UUID, CategoryResponse> categoriesById = categoryService.byId();
         if (productIds.isEmpty()) {

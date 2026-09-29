@@ -30,6 +30,7 @@ import {
   reserveStoreImage,
 } from './fixtures/storeProfile'
 import {
+  featuredStores,
   findStoreByHandle,
   followStore,
   isFollowing,
@@ -81,8 +82,12 @@ import {
   reviewsFor,
   writtenReviewsFor,
 } from './fixtures/productDetails'
-import { seedProducts } from './fixtures/products'
+import { seedBestSelling, seedNewArrivals, seedProducts } from './fixtures/products'
 import { variantOffers } from './fixtures/variants'
+
+import type { components } from '@/lib/api/schema'
+
+type ProductSummary = components['schemas']['ProductSummary']
 
 interface CheckoutLineBody {
   variantId: string
@@ -100,6 +105,22 @@ function mockSlug(title: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
+}
+
+/**
+ * A single-page ProductSummaryPage, which is what the rail endpoints return.
+ *
+ * They are not paged - a rail is a fixed handful of tiles - so page is always 0
+ * and totalPages always 1. The shape is still a page because the contract reuses
+ * ProductSummaryPage, and a client that reads .content works against both.
+ */
+function railPage(content: ProductSummary[], totalElements: number, size: number) {
+  return HttpResponse.json({
+    content,
+    page: 0,
+    totalElements,
+    totalPages: totalElements > 0 ? Math.ceil(totalElements / size) : 1,
+  })
 }
 
 function notFound() {
@@ -207,6 +228,15 @@ export const handlers = [
    * same catalogue the listings endpoint below serves, so the stats strip cannot
    * disagree with the grid under it.
    */
+  // Before /:handle, as MSW matches in array order. The server settles the same
+  // collision the other way round - it prefers the literal segment whatever the
+  // declaration order - and reserves "featured" as a store handle so no shop can
+  // be shadowed by it.
+  http.get('http://localhost:8080/api/v1/stores/featured', ({ request }) => {
+    const size = Number(new URL(request.url).searchParams.get('size') ?? 1)
+    return HttpResponse.json(featuredStores(size))
+  }),
+
   http.get('http://localhost:8080/api/v1/stores/:handle', ({ params }) => {
     const store = findStoreByHandle(String(params.handle))
     if (!store) return notFound()
@@ -1421,6 +1451,28 @@ export const handlers = [
       totalElements: all.length,
       totalPages: Math.ceil(all.length / size) || 1,
     })
+  }),
+
+  // Both rail routes are declared BEFORE /products/:productRef below: MSW matches
+  // handlers in array order, so a literal registered after the path parameter
+  // would never be reached. (The server settles the same collision the other way
+  // round, by preferring the literal segment whatever the declaration order.)
+  http.get('http://localhost:8080/products/best-selling', ({ request }) => {
+    const url = new URL(request.url)
+    const size = Number(url.searchParams.get('size') ?? 10)
+    // withinDays is accepted and ignored: the mock's sales carry no dates, and
+    // inventing some would make this handler assert a behaviour the real endpoint
+    // has its own tests for.
+    const ranked = seedBestSelling(url.searchParams.get('category') ?? undefined)
+    return railPage(listingsWithStore(ranked.slice(0, size)), ranked.length, size)
+  }),
+
+  http.get('http://localhost:8080/products/new', ({ request }) => {
+    const url = new URL(request.url)
+    const size = Number(url.searchParams.get('size') ?? 10)
+    const withinDays = Number(url.searchParams.get('withinDays') ?? 7)
+    const recent = seedNewArrivals(withinDays)
+    return railPage(listingsWithStore(recent.slice(0, size)), recent.length, size)
   }),
 
   // Resolves a slug or a legacy id - productDetails is keyed by both, as the API

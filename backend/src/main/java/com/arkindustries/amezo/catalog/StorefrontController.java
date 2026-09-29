@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * The public storefront - the last piece of the store/product relationship.
  *
@@ -25,10 +27,31 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/stores")
 public class StorefrontController {
 
+    /** The landing page asks for one. Clamped so ?size=100000 is not a full scan. */
+    private static final int DEFAULT_FEATURED = 1;
+    private static final int MAX_FEATURED = 10;
+
     private final StorefrontService storefrontService;
 
     public StorefrontController(StorefrontService storefrontService) {
         this.storefrontService = storefrontService;
+    }
+
+    /**
+     * GET /stores/featured - the storefronts the landing page puts forward.
+     *
+     * Declared here as a literal segment beside {handle}, which Spring prefers over
+     * the path variable whatever the declaration order. "featured" is reserved as a
+     * store handle (identity's StoreHandles) so no shop can be shadowed by it.
+     *
+     * An empty array is a real answer - a marketplace with no open, stocked shop has
+     * nobody to feature - and the panel drops itself rather than naming a shop that
+     * is closed or has nothing to sell.
+     */
+    @GetMapping("/featured")
+    public List<PublicStoreResponse> featured(
+            @RequestParam(required = false, defaultValue = "" + DEFAULT_FEATURED) int size) {
+        return storefrontService.featured(Math.min(Math.max(1, size), MAX_FEATURED));
     }
 
     /** A handle that names no store is a 404, never a provisioned empty storefront. */

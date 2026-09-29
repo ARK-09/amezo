@@ -147,6 +147,57 @@ export const seedProducts: ProductSummary[] = BASE_PRODUCTS.map((product, index)
   defaultVariantPrice: product.priceFrom,
 }))
 
+/**
+ * Units sold per product, and how long ago each was listed.
+ *
+ * The landing page's rails are no longer pages of the search endpoint - best
+ * sellers come from real order quantities and new arrivals from a real date
+ * window - so the mock has to hold those two facts or the rails it serves would
+ * be the recency query they used to be, and the tests would pass against a mock
+ * that cannot tell the difference.
+ *
+ * Deliberately not in fixture order and deliberately incomplete: the trail shoes
+ * have sold nothing, so they must be absent from a best-sellers rail rather than
+ * last in it.
+ */
+const UNITS_SOLD_BY_ID: Record<string, number> = {
+  '11111111-1111-1111-1111-111111111111': 41,
+  '22222222-2222-2222-2222-222222222222': 12,
+  '33333333-3333-3333-3333-333333333333': 63,
+  '44444444-4444-4444-4444-444444444444': 0,
+  '55555555-5555-5555-5555-555555555555': 27,
+  '66666666-6666-6666-6666-666666666666': 8,
+}
+
+const LISTED_DAYS_AGO_BY_ID: Record<string, number> = {
+  '11111111-1111-1111-1111-111111111111': 2,
+  '22222222-2222-2222-2222-222222222222': 40,
+  '33333333-3333-3333-3333-333333333333': 5,
+  '44444444-4444-4444-4444-444444444444': 1,
+  '55555555-5555-5555-5555-555555555555': 90,
+  '66666666-6666-6666-6666-666666666666': 3,
+}
+
+/** How many units this product has sold, for the rankings the server computes. */
+export function seedUnitsSold(productId: string): number {
+  return UNITS_SOLD_BY_ID[productId] ?? 0
+}
+
+/** GET /products/best-selling: sold products only, most units first. */
+export function seedBestSelling(category?: string): ProductSummary[] {
+  return seedProducts
+    .filter((product) => (UNITS_SOLD_BY_ID[product.id] ?? 0) > 0)
+    .filter((product) => !category || product.category.slug === category)
+    .sort((a, b) => (UNITS_SOLD_BY_ID[b.id] ?? 0) - (UNITS_SOLD_BY_ID[a.id] ?? 0))
+}
+
+/** GET /products/new: listed inside the window, newest first. */
+export function seedNewArrivals(withinDays: number): ProductSummary[] {
+  return seedProducts
+    .filter((product) => (LISTED_DAYS_AGO_BY_ID[product.id] ?? Infinity) <= withinDays)
+    .sort((a, b) => (LISTED_DAYS_AGO_BY_ID[a.id] ?? 0) - (LISTED_DAYS_AGO_BY_ID[b.id] ?? 0))
+}
+
 /** The seed product with this slug, for tests that navigate by URL. */
 export function seedProductBySlug(slug: string): ProductSummary {
   const found = seedProducts.find((product) => product.slug === slug)
