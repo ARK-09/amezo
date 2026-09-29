@@ -54,6 +54,73 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
+  /products/best-selling:
+    get:
+      operationId: bestSellingProducts
+      description: >
+        The merchandising rail for "best sellers": products ranked by units
+        actually sold (SUM of order_line.quantity), most first. A separate route
+        rather than a ?sort= on /products, because the ranking comes from the
+        orders feature rather than from any column the search query can ORDER BY,
+        and so cannot be combined with its filters or paged alongside them.
+        An empty content array is a real answer - a marketplace with no orders has
+        no best sellers, and the rail is dropped rather than filled with something
+        else under that heading.
+      parameters:
+        - name: category
+          in: query
+          description: Narrow the ranking to one category, by slug.
+          schema: { type: string }
+        - name: withinDays
+          in: query
+          description: >
+            Only count sales this many days old or newer. Omitted means all of
+            history, which is the useful default for a young catalogue.
+          schema: { type: integer }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductSummaryPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /products/new:
+    get:
+      operationId: newArrivals
+      description: >
+        Listings created within the last `withinDays` days, newest first. The
+        window is the point: ordering by recency with no lower bound and calling
+        it "new this week" is true only by accident, since the newest listing in a
+        quiet catalogue heads it however old it is.
+      parameters:
+        - name: withinDays
+          in: query
+          schema: { type: integer, default: 7 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductSummaryPage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
   /products/{productRef}:
     get:
       operationId: getProduct
@@ -1125,6 +1192,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StoreProfile'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/stores/featured:
+    get:
+      operationId: featuredStores
+      description: >
+        The storefronts the landing page puts forward, best first. "Featured"
+        means the shops whose listings have shifted the most units; on a
+        marketplace with no orders yet it falls back to the shops with the most
+        listings, so a new deployment still has an answer. Only OPEN shops with at
+        least one active listing are ever returned - a closed or empty storefront
+        is a dead end to send a shopper to - so an empty array is a real answer and
+        the panel drops itself rather than naming a shop that cannot serve anyone.
+
+        A literal path segment beside /{handle}, which the server prefers over the
+        path variable; "featured" is a reserved store handle for that reason.
+      parameters:
+        - name: size
+          in: query
+          description: How many stores to return. Clamped server-side to 10.
+          schema: { type: integer, default: 1 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PublicStore'
         default:
           description: Error
           content:

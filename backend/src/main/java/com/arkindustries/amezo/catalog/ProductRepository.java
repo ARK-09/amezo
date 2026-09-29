@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -154,6 +156,73 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             + "WHERE p.seller_id = :sellerId AND p.status = 'ACTIVE'",
             nativeQuery = true)
     List<UUID> activeProductIdsForSeller(@Param("sellerId") UUID sellerId);
+
+    /**
+     * Sellers with the most listings, most first.
+     *
+     * The fallback ranking for the featured-store rail. Sales are the better signal
+     * and the rail prefers them, but a marketplace on its first day has none - and
+     * "no orders yet" is not a reason to show an empty panel where a shop should be.
+     * A seller with nothing listed is not in the answer at all: featuring a storefront
+     * a shopper would find empty is worse than featuring nobody.
+     *
+     * Tie-broken on seller_id so two shops with the same number of listings do not
+     * swap the front page between refreshes.
+     */
+    @Query(value = "SELECT p.seller_id FROM product p "
+            + "WHERE p.status = 'ACTIVE' "
+            + "GROUP BY p.seller_id "
+            + "ORDER BY count(*) DESC, p.seller_id "
+            + "LIMIT :limit",
+            nativeQuery = true)
+    List<UUID> sellerIdsWithMostActiveListings(@Param("limit") int limit);
+
+    /**
+     * The active products in a category, as ids.
+     *
+     * For the best-selling category rail: catalog knows what is IN a category and
+     * what may be shown, orders knows how it sold. Passing these to
+     * orders.api.ProductSalesQuery keeps the category definition here and the
+     * ranking there, rather than teaching either feature about the other's tables.
+     */
+    @Query(value = "SELECT p.id FROM product p "
+            + "JOIN category cat ON cat.id = p.category_id "
+            + "WHERE cat.slug = CAST(:categorySlug AS text) AND p.status = 'ACTIVE'",
+            nativeQuery = true)
+    List<UUID> activeProductIdsInCategory(@Param("categorySlug") String categorySlug);
+
+    /**
+     * Active products by id, for a ranking computed somewhere other than this query.
+     *
+     * Returns them in whatever order the database likes - the CALLER re-imposes the
+     * rank it asked for. Sorting here would mean passing the ranking into SQL just to
+     * read it back out.
+     *
+     * Silently drops ids that are no longer ACTIVE or no longer exist, which is the
+     * point: orders ranks what SOLD, and a product archived since its best month must
+     * not reappear on the storefront because of it.
+     */
+    @Query(value = "SELECT p.* FROM product p WHERE p.id IN (:ids) AND p.status = 'ACTIVE'",
+            nativeQuery = true)
+    List<Product> findActiveByIdIn(@Param("ids") Collection<UUID> ids);
+
+    /**
+     * Products listed since a given moment, newest first.
+     *
+     * The whole point of the {@code since} bound: "New this week" used to be an
+     * ORDER BY with no WHERE, so the newest product in the catalog appeared under
+     * that heading however old it was. A rail that claims a time window has to
+     * actually apply one, and an empty result is the honest answer for a quiet week.
+     *
+     * Tie-broken on id so two products listed in the same millisecond - which is
+     * every product in a seeded database - do not swap places between refreshes.
+     */
+    @Query(value = "SELECT p.* FROM product p "
+            + "WHERE p.status = 'ACTIVE' AND p.created_at >= CAST(:since AS timestamptz) "
+            + "ORDER BY p.created_at DESC, p.id "
+            + "LIMIT :limit",
+            nativeQuery = true)
+    List<Product> newArrivals(@Param("since") Instant since, @Param("limit") int limit);
 
     /**
      * The seller's own catalogue, filtered and sorted the way their products

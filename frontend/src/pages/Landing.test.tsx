@@ -42,6 +42,8 @@ function renderPage(initialEntry = '/') {
 
 const LAPTOP = '14" Ultrabook Laptop, 16GB RAM'
 const SHOES = 'Trail Running Shoes'
+const COOKWARE = 'Ceramic Non-Stick Cookware Set (10-piece)'
+const HEADPHONES = 'Wireless Noise-Cancelling Headphones'
 
 describe('Landing', () => {
   it('leads with a hero built from a real listing, not invented campaign copy', async () => {
@@ -92,15 +94,41 @@ describe('Landing', () => {
     )
   })
 
-  it('keeps out-of-stock listings out of the picks rail but not new arrivals', async () => {
+  /**
+   * This rail used to be "Today's best picks for you", personalised for nobody and
+   * ranked by nothing: relevance with no search term falls through to newest, so it
+   * was the catalogue in listing order. It is the real sales ranking now.
+   *
+   * Both halves matter. The order has to be the SALES order rather than the
+   * catalogue's own - the cookware is third in the fixture and first by units sold -
+   * and a listing nobody has bought has to be absent rather than last, which is the
+   * assertion a recency query could never pass.
+   */
+  it('ranks the best-sellers rail by units sold and leaves unsold listings out', async () => {
     renderPage()
 
-    const picks = within(await screen.findByRole('region', { name: "Today's best picks for you" }))
-    expect(await picks.findByText(LAPTOP)).toBeInTheDocument()
-    expect(picks.queryByText(SHOES)).not.toBeInTheDocument()
+    const rail = await screen.findByRole('region', { name: 'Best sellers' })
+    const best = within(rail)
+    expect(await best.findByText(COOKWARE)).toBeInTheDocument()
+    expect(best.queryByText(SHOES)).not.toBeInTheDocument()
 
-    const fresh = within(screen.getByRole('region', { name: 'New this week' }))
+    const text = rail.textContent ?? ''
+    expect(text.indexOf(COOKWARE)).toBeLessThan(text.indexOf(HEADPHONES))
+    expect(text.indexOf(HEADPHONES)).toBeLessThan(text.indexOf(LAPTOP))
+  })
+
+  /**
+   * And "New this week" means the last seven days, not "the newest rows there are".
+   *
+   * The laptop is the contrast that makes it an assertion: it is in stock and in the
+   * catalogue, so only the date window can be keeping it out.
+   */
+  it('shows only listings inside its window under "New this week"', async () => {
+    renderPage()
+
+    const fresh = within(await screen.findByRole('region', { name: 'New this week' }))
     expect(await fresh.findByText(SHOES)).toBeInTheDocument()
+    expect(fresh.queryByText(LAPTOP)).not.toBeInTheDocument()
   })
 
   /**
@@ -113,12 +141,12 @@ describe('Landing', () => {
     renderPage()
 
     const electronics = within(
-      await screen.findByRole('region', { name: 'Top picks in Electronics' }),
+      await screen.findByRole('region', { name: 'Best sellers in Electronics' }),
     )
     expect(await electronics.findByText(LAPTOP)).toBeInTheDocument()
     expect(electronics.queryByText(SHOES)).not.toBeInTheDocument()
 
-    const footwear = within(await screen.findByRole('region', { name: 'Best sellers in Footwear' }))
+    const footwear = within(await screen.findByRole('region', { name: 'New in Footwear' }))
     expect(await footwear.findByText(SHOES)).toBeInTheDocument()
 
     // Beauty is in the system list and has nothing listed, so it gets no rail - but
@@ -157,13 +185,17 @@ describe('Landing', () => {
   })
 
   it('offers a retry when a rail cannot load', async () => {
+    // Every rail's endpoint, not just /products: the rails are served by three
+    // routes now, and breaking one would leave the others quietly filling the page.
+    const failing = () =>
+      HttpResponse.json(
+        { type: 'about:blank', title: 'Internal error', status: 500, detail: 'Query blew up' },
+        { status: 500 },
+      )
     server.use(
-      http.get('http://localhost:8080/products', () =>
-        HttpResponse.json(
-          { type: 'about:blank', title: 'Internal error', status: 500, detail: 'Query blew up' },
-          { status: 500 },
-        ),
-      ),
+      http.get('http://localhost:8080/products/best-selling', failing),
+      http.get('http://localhost:8080/products/new', failing),
+      http.get('http://localhost:8080/products', failing),
     )
     renderPage()
 
@@ -179,15 +211,15 @@ describe('Landing', () => {
    * wording matters most.
    */
   it('says the server is starting up when a rail fails on a cold start', async () => {
+    const badGateway = () =>
+      new HttpResponse('<html>Bad gateway</html>', {
+        status: 502,
+        headers: { 'content-type': 'text/html' },
+      })
     server.use(
-      http.get(
-        'http://localhost:8080/products',
-        () =>
-          new HttpResponse('<html>Bad gateway</html>', {
-            status: 502,
-            headers: { 'content-type': 'text/html' },
-          }),
-      ),
+      http.get('http://localhost:8080/products/best-selling', badGateway),
+      http.get('http://localhost:8080/products/new', badGateway),
+      http.get('http://localhost:8080/products', badGateway),
     )
     renderPage()
 
